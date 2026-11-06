@@ -6,7 +6,6 @@ const plurals = new Intl.PluralRules('pl');
 export function competitionStatus(round: Competition): string {
 	if (round.status === 'waiting') return 'Oczekiwanie na przyjęcie wyzwania';
 	if (round.status === 'finished') return `Wygrywa ${round.participants.find(person => person.id === round.winnerId)?.displayName}!`;
-	if (round.status === 'cancelled') return 'Wyzwanie anulowane';
 	const [a, b] = round.participants;
 	const difference = Math.abs(a.score - b.score);
 	if (!difference) return 'Remis.';

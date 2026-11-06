@@ -1,4 +1,4 @@
-import worker, { type Env } from '../src/index';
+import worker from '../src/index';
 import { ONION_DRAFT, testBindings, WORD_DRAFT } from './fixtures';
 import { apiError, createProvider, message } from './provider';
 
@@ -25,10 +25,4 @@ provider.messages = async request => {
 };
 globalThis.fetch = provider.fetch;
 
-export default {
-	async fetch(request: Request, env: Env) {
-		const response = await worker.fetch(request, env);
-		response.headers.set('X-Test-Provider-Calls', String(provider.calls.length));
-		return response;
-	},
-};
+export default worker;
