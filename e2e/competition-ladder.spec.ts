@@ -294,7 +294,8 @@ for (const scenario of [
 		expect(lifting.prize).not.toBe(landed.prize);
 		await evidence(page, `winner-${scenario.index}-lift-${sample.name}`);
 	}
-	await page.clock.runFor(88);
+	// The pickup ends 1100 ms after the score change. Wait two more frames, because the last frame can come up to 16 ms after the end.
+	await page.clock.runFor(108);
 	expect((await geometry(ladder)).prize).toBe(scenario.prize);
 	await expect(ladder).toHaveClass(/celebrate/);
 	await evidence(page, `winner-${scenario.index}-held`);
