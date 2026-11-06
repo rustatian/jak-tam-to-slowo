@@ -120,7 +120,7 @@ function stepPose(from: Pose, to: Pose, progress: number, rungs: number[]): Pose
 	};
 }
 
-export function updateLadder(svg: SVGSVGElement, round: Competition | null, animate: boolean): () => void {
+export function updateLadder(svg: SVGSVGElement, round: Competition | null): () => void {
 	const previous = motions.get(svg);
 	if (previous) cancelAnimationFrame(previous.frame);
 	const bars = [...svg.querySelectorAll<SVGRectElement>('.rung-bar')];
@@ -135,10 +135,10 @@ export function updateLadder(svg: SVGSVGElement, round: Competition | null, anim
 			const score = round?.participants[index].score ?? 0;
 			const winning = round?.status === 'finished' && round.winnerId === round.participants[index].id;
 			const before = sameRound ? previous.climbers[index] : undefined;
-			if (animate && before?.score === score && before.winning === winning) return before;
+			if (before?.score === score && before.winning === winning) return before;
 			const landing = climberPose(score, index, ladder);
 			const to = winning ? winningPose(index, 1, ladder) : landing;
-			const moving = animate && before && Math.abs(before.score - score) === 1 && !reducedMotion();
+			const moving = before && Math.abs(before.score - score) === 1 && !reducedMotion();
 			const from = moving ? before.pose : to;
 			return {
 				element, score, pose: from, from, landing, to, winning, started: moving ? performance.now() : null,

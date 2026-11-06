@@ -19,8 +19,8 @@ function accounts(env: Env): Account[] {
 	} catch { throw new HttpError(503, 'setup_required', 'Konta nie są skonfigurowane. Skontaktuj się z właścicielem aplikacji.'); }
 }
 
-export function competitionAccounts(env: Env): Pick<User, 'id' | 'displayName'>[] {
-	return accounts(env).map(({ id, displayName }) => ({ id, displayName }));
+export function competitionAccounts(env: Env): Pick<User, 'id'>[] {
+	return accounts(env).map(({ id }) => ({ id }));
 }
 
 function hex(bytes: Uint8Array): string { return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join(''); }

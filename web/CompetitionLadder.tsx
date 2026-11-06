@@ -35,7 +35,7 @@ export function CompetitionLadder({ round, compact = false }: { round: Competiti
 	const target = round?.target ?? COMPETITION_TARGET;
 	const bottom = 150 + target * 23;
 	const rungY = (score: number) => bottom - score * 23 + 2;
-	useLayoutEffect(() => updateLadder(svg.current!, round, true), [round]);
+	useLayoutEffect(() => updateLadder(svg.current!, round), [round]);
 	return <svg ref={svg} className={`competition-ladder${compact ? ' compact' : ''}`} viewBox={`0 0 480 ${bottom + 40}`} aria-hidden="true" focusable="false">
 		<defs>
 			<linearGradient id={`wood-${id}`} x2="1" y2="0"><stop stopColor="#b1814e" /><stop offset=".23" stopColor="#ddbc89" /><stop offset=".65" stopColor="#cfab76" /><stop offset="1" stopColor="#a47745" /></linearGradient>
