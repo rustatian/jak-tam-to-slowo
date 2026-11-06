@@ -208,13 +208,14 @@ export function useStudy(user: User, competitionId: string | null, onReview: (re
 		update({ queue, feedback: null, reviewedCard: null, state: queue.length ? 'answering' : 'empty' });
 	}
 
+	const locked = !!session.pending || session.savingDirection;
 	return {
-		current: session.queue[0] ?? null,
-		reviewedCard: session.reviewedCard,
+		// The reviewed card stays on screen while its review is pending or its feedback shows. load() can already put the next card first.
+		card: session.reviewedCard ?? session.queue[0]?.card ?? null,
 		dueCount: session.dueCount,
 		state: session.state, answer: session.answer, feedback: session.feedback, nextDueAt: session.nextDueAt, error: session.error,
 		direction: session.direction, savedDirection: session.savedDirection, retainedAnswer: session.retainedAnswer,
-		busy: session.state === 'checking' || session.savingDirection, locked: !!session.pending || session.savingDirection,
+		busy: session.state === 'checking' || session.savingDirection, locked, editable: session.state === 'answering' && !locked,
 		setAnswer, setDirection, check: () => submit('answer'), reveal: () => submit('reveal'), next,
 		retry: () => {
 			if (live.current.pending) void submit('answer');

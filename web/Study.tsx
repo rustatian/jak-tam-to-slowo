@@ -12,7 +12,7 @@ export function Study({ user, competition, onReview, onDirection, onBusy }: {
 	const nextButton = useRef<HTMLButtonElement>(null);
 	const polish = study.direction === 'ru-pl';
 	const target = polish ? 'pl' : 'ru';
-	const current = study.reviewedCard ?? study.current?.card;
+	const current = study.card;
 	const grade = study.feedback && { correct: 'Dobrze', almost: 'Prawie dobrze', again: 'Powtórz' }[study.feedback.grade];
 	const contribution = study.feedback?.competition?.competitionId === competition?.id ? study.feedback?.competition : null;
 
@@ -39,11 +39,11 @@ export function Study({ user, competition, onReview, onDirection, onBusy }: {
 			<label htmlFor="study-answer">{polish ? 'Odpowiedź po polsku' : 'Odpowiedź po rosyjsku'}</label>
 			<div className="dictation">
 				<input ref={input} id="study-answer" lang={target} maxLength={500} autoComplete="off" value={study.answer} disabled={study.locked} onChange={event => study.setAnswer(event.target.value)} />
-				<Dictation key={`${current?.id}:${current?.version}`} language={target} disabled={study.locked || study.state !== 'answering'} onText={text => { if (input.current) study.setAnswer(dictatedValue(input.current, text)); }} />
+				<Dictation key={`${current?.id}:${current?.version}`} language={target} disabled={!study.editable} onText={text => { if (input.current) study.setAnswer(dictatedValue(input.current, text)); }} />
 			</div>
 			<div className="study-actions">
-				<button className="primary" type="submit" disabled={study.locked || study.state !== 'answering' || !study.answer.trim()}>Sprawdź</button>
-				<button type="button" disabled={study.locked || study.state !== 'answering'} onClick={() => void study.reveal()}>Pokaż odpowiedź</button>
+				<button className="primary" type="submit" disabled={!study.editable || !study.answer.trim()}>Sprawdź</button>
+				<button type="button" disabled={!study.editable} onClick={() => void study.reveal()}>Pokaż odpowiedź</button>
 			</div>
 		</form>}
 		{study.state === 'checking' && <p role="status">Sprawdzanie odpowiedzi…</p>}
