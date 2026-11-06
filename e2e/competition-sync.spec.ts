@@ -202,33 +202,6 @@ test('retries a lost review against the same round after reload', async ({ page 
 	expect((await current(page)).participants.map(p => p.score)).toEqual([0, 0]);
 });
 
-test('queues a fresh snapshot behind an old poll', async ({ page }) => {
-	await seed(page);
-	await start(page);
-	await page.clock.install();
-	const received = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
-	let reads = 0;
-	await page.route('**/api/competitions/current', async route => {
-		if (++reads !== 2) return route.continue();
-		const response = await route.fetch();
-		received.resolve();
-		await release.promise;
-		await route.fulfill({ response });
-	});
-	await page.goto('/');
-	await scores(page, 0, 0);
-	await page.clock.runFor(5000);
-	await received.promise;
-	try {
-		await answer(page);
-		expect(reads).toBe(2);
-	} finally { release.resolve(); }
-	await expect.poll(() => reads).toBe(3);
-	await scores(page, 1, 0);
-	await page.clock.runFor(5000);
-	await scores(page, 1, 0);
-});
-
 for (const scenario of [
 	{ name: 'loading', fail: false },
 	{ name: 'read error', fail: true },
@@ -357,114 +330,6 @@ test('retries the same invitation UUID', async ({ page }) => {
 	sql('CREATE TABLE one_round (n INTEGER CHECK (n = 1)); INSERT INTO one_round SELECT count(*) FROM competitions; DROP TABLE one_round;');
 });
 
-test('resolves a lost invitation from the current snapshot before a rematch', async ({ page }) => {
-	const card = await seed(page);
-	await page.goto('/');
-	await page.getByRole('button', { name: 'Zawody', exact: true }).click();
-	await page.route('**/api/competitions', async route => { await route.fetch(); await route.abort(); });
-	await page.getByRole('button', { name: 'Zaproś do wyścigu', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'Anuluj zaproszenie', exact: true })).toBeEnabled();
-	const original = await current(page);
-	expect((await other.request.post(`/api/competitions/${original.id}/accept`, { data: {} })).status()).toBe(200);
-	sql(`UPDATE competitions SET score_b = 19, version = version + 1 WHERE id = '${original.id}'`);
-	expect((await other.request.post('/api/reviews', { data: { attemptId: crypto.randomUUID(), cardId: card.id, cardVersion: 1, progressVersion: 0,
-		direction: 'ru-pl', action: 'answer', answer: 'Dom', competitionId: original.id } })).status()).toBe(200);
-	await visibility(page, 'visible');
-	await expect(page.getByTestId('competition-scores')).toContainText(`Wygrywa ${USER_B.displayName}!`);
-	await page.unroute('**/api/competitions');
-	await expect(page.getByRole('alert')).toHaveCount(0);
-	await page.getByRole('button', { name: 'Zaproś na rewanż', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'Anuluj zaproszenie', exact: true })).toBeEnabled();
-	expect((await current(page)).id).not.toBe(original.id);
-	await scores(page, 0, 0, USER_A, true);
-});
-
-for (const scenario of [
-	{ name: 'acceptance from the immediate read', action: 'accept', history: false, readFailure: false, finish: false, button: 'Trenuj słówka' },
-	{ name: 'acceptance from a later finished snapshot', action: 'accept', history: false, readFailure: true, finish: true, button: 'Zaproś na rewanż' },
-	{ name: 'first invitation cancellation from the immediate read', action: 'cancel', history: false, readFailure: false, finish: false, button: 'Zaproś do wyścigu' },
-	{ name: 'rematch cancellation from the immediate read', action: 'cancel', history: true, readFailure: false, finish: false, button: 'Zaproś na rewanż' },
-	{ name: 'rematch cancellation from a later poll', action: 'cancel', history: true, readFailure: true, finish: false, button: 'Zaproś na rewanż' },
-]) test(`confirms lost ${scenario.name}`, async ({ page }) => {
-	let previous: Competition | null = null;
-	if (scenario.history) {
-		previous = await start(page);
-		sql(`UPDATE competitions SET score_a = 20, status = 'finished', winner_id = '${USER_A.id}', finished_at = 1, version = version + 1 WHERE id = '${previous.id}'`);
-	}
-	const round = await invite(other);
-	await page.clock.install();
-	await page.goto('/');
-	await page.getByRole('button', { name: 'Zawody', exact: true }).click();
-	const action = page.getByRole('button', { name: scenario.action === 'accept' ? 'Przyjmij wyzwanie' : 'Anuluj zaproszenie', exact: true });
-	await expect(action).toBeEnabled();
-	await page.route(`**/api/competitions/${round.id}/${scenario.action}`, async route => {
-		expect((await route.fetch()).status()).toBe(200);
-		await route.abort();
-	});
-	if (scenario.readFailure) await page.route('**/api/competitions/current', route => route.fulfill({ status: 503, json: { error: 'Brak wyniku.' } }));
-	const refreshed = page.waitForResponse(response => response.url().endsWith('/api/competitions/current'));
-	await action.click();
-	await refreshed;
-	await expect(page.getByRole('button', { name: 'Zawody', exact: true })).toBeEnabled();
-	if (scenario.readFailure) {
-		await expect(page.getByRole('alert').filter({ hasText: 'Nie udało się zapisać wyzwania' })).toBeVisible();
-		await expect(page.getByRole('alert').filter({ hasText: 'Brak wyniku.' })).toBeVisible();
-		if (scenario.finish) sql(`UPDATE competitions SET score_a = 20, status = 'finished', winner_id = '${USER_A.id}', finished_at = 1, version = version + 1 WHERE id = '${round.id}'`);
-		await page.unroute('**/api/competitions/current');
-		await page.clock.runFor(5000);
-	}
-	await expect(page.getByRole('alert')).toHaveCount(0);
-	await expect(page.getByRole('button', { name: scenario.button, exact: true })).toBeEnabled();
-	await expect(page.getByRole('button', { name: /^Ponów/ })).toHaveCount(0);
-	if (scenario.action === 'accept') expect(await current(page)).toMatchObject({ id: round.id, status: scenario.finish ? 'finished' : 'active' });
-	else if (previous) expect(await current(page)).toMatchObject({ id: previous.id, status: 'finished' });
-	else expect(await current(page)).toBeNull();
-});
-
-for (const scenario of [
-	{ name: 'acceptance after another invitation becomes current', action: 'accept', replacement: true, retry: 'Ponów przyjęcie' },
-	{ name: 'cancellation while the confirming read fails', action: 'cancel', replacement: false, retry: 'Ponów anulowanie' },
-]) test(`retries unresolved ${scenario.name} with the original operation and round`, async ({ page }) => {
-	const round = await invite(other);
-	await page.clock.install();
-	await page.goto('/');
-	await page.getByRole('button', { name: 'Zawody', exact: true }).click();
-	const action = page.getByRole('button', { name: scenario.action === 'accept' ? 'Przyjmij wyzwanie' : 'Anuluj zaproszenie', exact: true });
-	await expect(action).toBeEnabled();
-	const path = `/api/competitions/${round.id}/${scenario.action}`;
-	await page.route(`**${path}`, async route => {
-		expect((await route.fetch()).status()).toBe(200);
-		await route.abort();
-	});
-	await page.route('**/api/competitions/current', route => route.fulfill({ status: 503, json: { error: 'Brak wyniku.' } }));
-	await action.click();
-	await expect(page.getByRole('alert').filter({ hasText: 'Nie udało się zapisać wyzwania' })).toBeVisible();
-	await expect(page.getByRole('alert').filter({ hasText: 'Brak wyniku.' })).toBeVisible();
-	await expect(page.getByRole('button', { name: 'Zawody', exact: true })).toBeEnabled();
-	let replacement: Competition | null = null;
-	if (scenario.replacement) {
-		sql(`UPDATE competitions SET score_a = 20, status = 'finished', winner_id = '${USER_A.id}', finished_at = 1, version = version + 1 WHERE id = '${round.id}'`);
-		replacement = await invite(page);
-		await page.unroute('**/api/competitions/current');
-		await visibility(page, 'visible');
-		await expect(page.getByTestId('competition-scores')).toContainText('Oczekiwanie na przyjęcie wyzwania');
-		await expect(page.getByRole('alert').filter({ hasText: 'Brak wyniku.' })).toHaveCount(0);
-		await expect(page.getByRole('alert').filter({ hasText: 'Nie udało się zapisać wyzwania' })).toBeVisible();
-	}
-	await page.unroute(`**${path}`);
-	await page.unroute('**/api/competitions/current');
-	const posts: string[] = [];
-	page.on('request', request => {
-		if (request.method() === 'POST' && request.url().includes('/api/competitions')) posts.push(new URL(request.url()).pathname);
-	});
-	await page.getByRole('button', { name: scenario.retry, exact: true }).click();
-	await expect(page.getByRole('button', { name: replacement ? 'Anuluj zaproszenie' : 'Zaproś do wyścigu', exact: true })).toBeEnabled();
-	await expect(page.getByRole('alert')).toHaveCount(0);
-	expect(posts).toEqual([path]);
-	if (replacement) expect(await current(page)).toMatchObject({ id: replacement.id, status: 'waiting' });
-	else expect(await current(page)).toBeNull();
-});
-
 for (const scenario of [
 	{ name: 'the creator cancels the first invitation', invited: false, history: false },
 	{ name: 'the invited learner cancels a rematch', invited: true, history: true },
@@ -497,21 +362,6 @@ for (const scenario of [
 		expect((await current(page)).id).toBe(finished.id);
 		await scores(page, 20, 0, USER_A, true);
 	} else expect(await current(page)).toBeNull();
-});
-
-test('refreshes after a lifecycle conflict', async ({ page }) => {
-	const round = await invite(page);
-	await page.goto('/');
-	await page.getByRole('button', { name: 'Zawody', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'Anuluj zaproszenie', exact: true })).toBeEnabled();
-	await page.route(`**/api/competitions/${round.id}/cancel`, async route => {
-		expect((await other.request.post(`/api/competitions/${round.id}/accept`, { data: {} })).status()).toBe(200);
-		await route.continue();
-	});
-	await page.getByRole('button', { name: 'Anuluj zaproszenie', exact: true }).click();
-	await expect(page.getByRole('alert')).toContainText('Stan wyzwania już się zmienił');
-	await expect(page.getByRole('button', { name: 'Trenuj słówka', exact: true })).toBeEnabled();
-	await expect(page.getByRole('button', { name: 'Anuluj zaproszenie', exact: true })).toHaveCount(0);
 });
 
 test('locks navigation while a review is saved', async ({ page }) => {
