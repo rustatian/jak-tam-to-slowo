@@ -10,7 +10,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 	const expectedAccount = accountId;
 	if (path !== '/session' || (init.method && init.method !== 'GET' && init.method !== 'POST')) headers.set('X-Account-ID', expectedAccount);
 	if (typeof init.body === 'string') headers.set('Content-Type', 'application/json');
-	const response = await fetch(`/api${path}`, { ...init, headers, credentials: 'same-origin', cache: 'no-store' });
+	const response = await fetch(`/api${path}`, { ...init, headers, cache: 'no-store' });
 	if (!response.ok) {
 		const data = await response.json() as { error?: string; code?: string };
 		if (expectedAccount && expectedAccount === accountId && (data.code === 'account_mismatch' || data.code === 'unauthorized')) window.dispatchEvent(new Event('session-ended'));

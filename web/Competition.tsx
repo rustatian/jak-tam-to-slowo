@@ -6,7 +6,7 @@ import { CompetitionLadder } from './CompetitionLadder';
 export function Competition({ user, competition, onStudy }: {
 	user: User; competition: CompetitionState; onStudy(): void;
 }): React.JSX.Element {
-	const { round, loading, readError, actionError, retryAction, busy } = competition;
+	const { round, loading, readError, actionError, retryAction, busy, actions } = competition;
 	return <section className="page competition" aria-labelledby="competition-title">
 		<h1 id="competition-title">Wyścig do {round?.target ?? COMPETITION_TARGET}</h1>
 		<p className="intro">Dobra odpowiedź: +1. Błąd lub pokazanie odpowiedzi: -1. Wynik nie spada poniżej zera.</p>
@@ -17,13 +17,10 @@ export function Competition({ user, competition, onStudy }: {
 			{round && <p className="competition-lead">{competitionStatus(round)}</p>}
 		</div>
 		<div className="competition-actions">
-			{!round && !loading && !readError && !retryAction && <button className="primary" disabled={busy} onClick={competition.invite}>Zaproś do wyścigu</button>}
-			{round?.status === 'waiting' && !retryAction && <>
-				{round.createdBy !== user.id && <button className="primary" disabled={busy} onClick={competition.accept}>Przyjmij wyzwanie</button>}
-				<button disabled={busy} onClick={competition.cancel}>Anuluj zaproszenie</button>
-			</>}
+			{actions.includes('invite') && <button className="primary" disabled={busy} onClick={competition.invite}>{round ? 'Zaproś na rewanż' : 'Zaproś do wyścigu'}</button>}
+			{actions.includes('accept') && <button className="primary" disabled={busy} onClick={competition.accept}>Przyjmij wyzwanie</button>}
+			{actions.includes('cancel') && <button disabled={busy} onClick={competition.cancel}>Anuluj zaproszenie</button>}
 			{round?.status === 'active' && <button className="primary" disabled={busy} onClick={onStudy}>Trenuj słówka</button>}
-			{round?.status === 'finished' && !retryAction && <button className="primary" disabled={busy} onClick={competition.invite}>Zaproś na rewanż</button>}
 		</div>
 		{busy && <p className="delayed" role="status">Zapisywanie wyzwania…</p>}
 		{actionError && <div className="notice"><p className="error" role="alert">{actionError}</p>
