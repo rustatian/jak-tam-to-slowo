@@ -26,6 +26,7 @@ function replay(row: ReviewRow | undefined, input: ReviewInput): ReviewResult | 
 	} };
 }
 
+// current is the stored progress row at input.progressVersion. handleReview checks this before it grades the answer.
 export async function commitReview(env: Env, userId: string, input: ReviewInput, current: Progress | undefined, grade: GradeResult, source: ReviewResult['source'], now: number): Promise<ReviewResult> {
 	// "Prawie dobrze" counts as a miss.
 	const correct = grade.grade === 'correct';
@@ -38,15 +39,14 @@ export async function commitReview(env: Env, userId: string, input: ReviewInput,
 	const [, , , , saved] = await env.DB.batch<ReviewRow>([
 		env.DB.prepare(`INSERT INTO card_progress (user_id, card_id, correct, incorrect, last_correct_at, last_incorrect_at, version)
 			SELECT ?1, ?2, ?5, ?6, ?7, ?8, ?4 + 1
-			WHERE ?10 = ?4
-			AND EXISTS (SELECT 1 FROM cards WHERE id = ?2 AND version = ?3 AND archived = 0)
+			WHERE EXISTS (SELECT 1 FROM cards WHERE id = ?2 AND version = ?3 AND archived = 0)
 			AND NOT EXISTS (SELECT 1 FROM reviews WHERE user_id = ?1 AND attempt_id = ?9)
 			AND (?4 = 0 OR EXISTS (SELECT 1 FROM card_progress WHERE user_id = ?1 AND card_id = ?2))
 			ON CONFLICT (user_id, card_id) DO UPDATE SET correct = excluded.correct, incorrect = excluded.incorrect,
 				last_correct_at = excluded.last_correct_at, last_incorrect_at = excluded.last_incorrect_at, version = excluded.version
 			WHERE card_progress.version = ?4`)
 			.bind(userId, input.cardId, input.cardVersion, input.progressVersion,
-				progress.correct, progress.incorrect, progress.lastCorrectAt, progress.lastIncorrectAt, input.attemptId, current?.version ?? 0),
+				progress.correct, progress.incorrect, progress.lastCorrectAt, progress.lastIncorrectAt, input.attemptId),
 		// Keep dependent writes adjacent. changes() reads the preceding write count: https://www.sqlite.org/lang_corefunc.html#changes
 		env.DB.prepare(`INSERT INTO reviews (user_id, attempt_id, input_json, result_json)
 			SELECT ?1, ?2, ?3, ?4 WHERE changes() = 1`).bind(userId, input.attemptId, identity(input), JSON.stringify(result)),

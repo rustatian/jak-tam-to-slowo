@@ -149,21 +149,6 @@ it.each([
 	expect({ state: await state(), reviews: await reviews() }).toEqual(before);
 });
 
-it('rejects a candidate calculated from a different progress version even if that version becomes current', async () => {
-	await commitReview(env, USER_A.id, input, undefined, correct, 'exact', now);
-	const held = holdBatches();
-	const pending = commitReview(env, USER_A.id, { ...input, attemptId: crypto.randomUUID(), progressVersion: 2 }, reviewed, correct, 'exact', now);
-	await Promise.race([held.ready, Promise.allSettled([pending])]);
-	let before;
-	try {
-		await env.DB.prepare('UPDATE card_progress SET correct = 2, version = 2, last_correct_at = ? WHERE user_id = ? AND card_id = ?')
-			.bind(now + 1000, USER_A.id, CARD_A.id).run();
-		before = { state: await state(), reviews: await reviews() };
-	} finally { held.release(); }
-	await expect(pending).rejects.toMatchObject({ status: 409 });
-	expect({ state: await state(), reviews: await reviews() }).toEqual(before);
-});
-
 it.each([
 	{ name: 'new attempts at version zero', second: { ...input, attemptId: '10000000-0000-4000-8000-000000000002' }, successes: 1 },
 	{ name: 'identical attempts', second: input, successes: 2 },
