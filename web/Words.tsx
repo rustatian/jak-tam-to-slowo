@@ -68,11 +68,14 @@ export function Words({ userId, onBusy, initialCard = null }: { userId: string; 
 		finally { setBusy(false); onBusy(false); }
 	}
 
+	function close() { changeEdit(null); void load(search); }
+
 	function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); void save(); }
 
 	return <section className="page words" aria-labelledby="words-title" aria-busy={busy}>
 		<h1 id="words-title">Słówka</h1>
 		{edit ? <>
+			<button type="button" className="quiet back" aria-label="Wróć do listy słówek" disabled={busy} onClick={close}>‹ Wróć</button>
 			<p>Zmiany będą widoczne dla obu osób.</p>
 			<p className="hint">Zachowaj znaczenie fiszki. Dla innego znaczenia użyj „Dodaj”.</p>
 			<form onSubmit={submit}>
@@ -80,7 +83,7 @@ export function Words({ userId, onBusy, initialCard = null }: { userId: string; 
 				{error && <p className="error" role="alert">{error}</p>}
 				<button className="primary" disabled={busy} type="submit">Zapisz</button>
 				<div className="edit-actions">
-					<button type="button" disabled={busy} onClick={() => { changeEdit(null); void load(search); }}>Odrzuć zmiany</button>
+					<button type="button" disabled={busy} onClick={close}>Odrzuć zmiany</button>
 					<button type="button" disabled={busy} onClick={() => void save(true)}>Do archiwum</button>
 				</div>
 				<p className="hint">Archiwizacja ukryje fiszkę u obu osób.</p>
