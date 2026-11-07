@@ -677,7 +677,7 @@ test('pages the race list', async ({ page }) => {
 	sql(`INSERT INTO competitions (id, participant_a_id, participant_b_id, target, created_by, direction, status, score_a, winner_id, created_at, started_at, finished_at)
 		VALUES ${races.map(race => `('${race.id}', '${USER_A.id}', '${USER_B.id}', 20, '${USER_A.id}', 'ru-pl', '${race.active ? 'active' : 'finished'}', ${race.active ? 0 : 20},
 			${race.active ? 'NULL' : `'${USER_A.id}'`}, ${race.createdAt}, ${race.createdAt}, ${race.active ? 'NULL' : race.createdAt})`).join(', ')}`);
-	const active = races[11];
+	const active = races[11], oldest = races[0], marked = races[10];
 	await page.clock.install();
 	await page.goto('/');
 	await page.getByRole('button', { name: 'Zawody', exact: true }).click();
@@ -688,23 +688,38 @@ test('pages the race list', async ({ page }) => {
 	await page.getByRole('button', { name: 'Więcej wyścigów', exact: true }).click();
 	await expect(rows).toHaveCount(12);
 	await expect(page.getByRole('button', { name: 'Więcej wyścigów', exact: true })).toHaveCount(0);
+	await page.locator(`[data-race-id="${oldest.id}"] .race-open`).click();
+	const back = page.getByRole('button', { name: 'Wróć do listy wyścigów', exact: true });
+	await expect(back).toBeVisible();
+	// Only the next list read shows this score, so it marks that the read reached the screen.
+	sql(`UPDATE competitions SET score_b = 5, version = version + 1 WHERE id = '${marked.id}'`);
 	const saved = await other.request.post('/api/reviews', { data: { attemptId: crypto.randomUUID(), cardId: card.id, cardVersion: card.version,
 		progressVersion: 0, direction: 'ru-pl', competitionId: active.id, action: 'answer', answer: 'Dom' } });
 	expect(saved.status()).toBe(200);
 	expect((await saved.json()).competition).toMatchObject({ competitionId: active.id, delta: 1, scoreAfter: 1 });
+	const reread = page.waitForResponse(response => response.url().endsWith('/api/competitions') && response.request().method() === 'GET');
 	await page.clock.runFor(5000);
+	await reread;
+	await expect(back).toBeVisible();
+	await back.click();
+	await expect(page.locator(`[data-race-id="${marked.id}"]`)).toContainText(`${USER_A.displayName} 20 : 5 ${USER_B.displayName}`);
 	await expect(rows.first()).toContainText(`${USER_A.displayName} 0 : 1 ${USER_B.displayName}`);
-	await expect(rows).toHaveCount(10);
+	await expect(rows).toHaveCount(12);
+	await expect(page.getByRole('button', { name: 'Więcej wyścigów', exact: true })).toHaveCount(0);
 });
 
 test('retries a failed race list read', async ({ page }) => {
-	const round = await invite(other);
+	// Only the list returns the finished race. The polled round is the newer invitation.
+	const old = await start(page);
+	finish(old);
+	await invite(other);
 	await page.route('**/api/competitions', route => route.abort(), { times: 1 });
 	await page.goto('/');
 	await expect(page.locator('.tabs .tab-dot')).toHaveAttribute('data-state', 'waiting');
 	await page.getByRole('button', { name: 'Zawody', exact: true }).click();
 	await expect(page.getByRole('alert')).toContainText('Nie udało się wczytać wyścigów. Sprawdź połączenie i spróbuj ponownie.');
+	await expect(page.locator(`[data-race-id="${old.id}"]`)).toHaveCount(0);
 	await page.getByRole('button', { name: 'Ponów', exact: true }).click();
+	await expect(page.locator(`[data-race-id="${old.id}"]`)).toContainText('Zakończony');
 	await expect(page.getByRole('alert')).toHaveCount(0);
-	await expect(page.locator(`[data-race-id="${round.id}"]`)).toContainText('Czeka');
 });
