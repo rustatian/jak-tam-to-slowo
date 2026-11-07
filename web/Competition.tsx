@@ -7,10 +7,10 @@ import { NewRace } from './NewRace';
 import { RaceView } from './RaceView';
 import { RaceTraining } from './RaceTraining';
 
-export type RaceView = { kind: 'list' } | { kind: 'new' } | { kind: 'race'; id: string } | { kind: 'training'; id: string };
+export type ZawodyView = { kind: 'list' } | { kind: 'new' } | { kind: 'race'; id: string } | { kind: 'training'; id: string };
 
 export function Competition({ user, competition, locked, view, onView, onReview, onDirection, onBusy }: {
-	user: User; competition: CompetitionState; locked: boolean; view: RaceView; onView(view: RaceView): void;
+	user: User; competition: CompetitionState; locked: boolean; view: ZawodyView; onView(view: ZawodyView): void;
 	onReview(result: ReviewResult): void; onDirection(direction: Direction): void; onBusy(busy: boolean): void;
 }): React.JSX.Element {
 	const { round, loading, readError, actionError, retryAction, busy, actions } = competition;

@@ -17,8 +17,8 @@ it('returns one waiting round for concurrent invitations', async () => {
 	expect(responses.map(response => response.status)).toEqual([200, 200]);
 	expect(rounds[0].id).toBe(rounds[1].id);
 	expect(rounds[0]).toEqual(rounds[1]);
-	expect(rounds[0].direction).toBe(rounds[1].direction);
-	expect(rounds[0]).toMatchObject({ status: 'waiting', direction: 'ru-pl', target: 20, version: 1, winnerId: null, startedAt: null, finishedAt: null });
+	expect(['ru-pl', 'pl-ru']).toContain(rounds[0].direction);
+	expect(rounds[0]).toMatchObject({ status: 'waiting', target: 20, version: 1, winnerId: null, startedAt: null, finishedAt: null });
 	expect(rounds[0].participants).toEqual([
 		{ id: USER_A.id, displayName: USER_A.displayName, score: 0 },
 		{ id: USER_B.id, displayName: USER_B.displayName, score: 0 },

@@ -7,7 +7,7 @@ import { Study } from './Study';
 export function RaceTraining({ user, round, finished, stale, busy, onReview, onDirection, onBusy, onBack, onRestart, restartDisabled }: {
 	user: User; round: Competition; finished: boolean; stale: boolean; busy: boolean;
 	onReview(result: ReviewResult): void; onDirection(direction: Direction): void; onBusy(busy: boolean): void; onBack(): void;
-	onRestart?(): void; restartDisabled?: boolean;
+	onRestart(): void; restartDisabled: boolean;
 }): React.JSX.Element {
 	const [ended, setEnded] = useState(false);
 	const result = useRef<HTMLDivElement>(null);
@@ -20,7 +20,7 @@ export function RaceTraining({ user, round, finished, stale, busy, onReview, onD
 		{ended ? <div className="race-result" ref={result}>
 			<p className="competition-lead">{competitionStatus(round)}</p>
 			<div className="competition-actions">
-				{onRestart && <button className="primary restart" disabled={restartDisabled} onClick={onRestart}><Icon name="again" />Zagraj jeszcze raz</button>}
+				<button className="primary restart" disabled={restartDisabled} onClick={onRestart}><Icon name="again" />Zagraj jeszcze raz</button>
 				<button aria-label="Wróć do wyścigu" disabled={busy} onClick={onBack}>Wróć</button>
 			</div>
 		</div> : <Study user={user} race={race} onReview={onReview} onDirection={onDirection} onBusy={onBusy} onEnded={() => setEnded(true)} />}

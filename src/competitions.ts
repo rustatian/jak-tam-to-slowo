@@ -55,7 +55,8 @@ async function listAttempts(env: Env, id: string, userId: string): Promise<Compe
 }
 
 export async function handleCompetitions(request: Request, env: Env, user: User): Promise<Response | null> {
-	const { pathname } = new URL(request.url);
+	const url = new URL(request.url);
+	const { pathname } = url;
 	if (pathname === '/api/competitions/current') {
 		methods(request, ['GET']);
 		const [open, finished] = await env.DB.batch<CompetitionRow>([
@@ -68,7 +69,7 @@ export async function handleCompetitions(request: Request, env: Env, user: User)
 	}
 	if (pathname === '/api/competitions') {
 		methods(request, ['GET', 'POST']);
-		if (request.method === 'GET') return Response.json(await listCompetitions(new URL(request.url), env, user.id));
+		if (request.method === 'GET') return Response.json(await listCompetitions(url, env, user.id));
 		const { id, direction } = object(await readJson(request), ['id', 'direction']);
 		if (typeof id !== 'string' || !uuidPattern.test(id)) throw new HttpError(400, 'invalid_input', 'Nieprawidłowy identyfikator wyzwania.');
 		if (direction !== 'ru-pl' && direction !== 'pl-ru') throw new HttpError(400, 'invalid_input', 'Wybierz kierunek wyścigu.');

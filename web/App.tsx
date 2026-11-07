@@ -7,7 +7,7 @@ import { AddWord } from './AddWord';
 import { Study } from './Study';
 import { Icon } from './Icon';
 import { useCompetition } from './useCompetition';
-import { Competition, type RaceView } from './Competition';
+import { Competition, type ZawodyView } from './Competition';
 import { dropStaleRaceDrafts } from './useStudy';
 
 export function App() {
@@ -17,7 +17,7 @@ export function App() {
 	const [error, setError] = useState('');
 	const [screen, setScreen] = useState<'study' | 'words' | 'add' | 'competitions'>('study');
 	const [selectedCard, setSelectedCard] = useState<Card | null>(null);
-	const [raceView, setRaceView] = useState<RaceView>({ kind: 'list' });
+	const [raceView, setRaceView] = useState<ZawodyView>({ kind: 'list' });
 	const competition = useCompetition(user);
 	const locked = busy || competition.busy;
 	const reviewSaved = useCallback(() => { void competition.refresh(); }, [competition.refresh]);
