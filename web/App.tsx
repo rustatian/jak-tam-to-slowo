@@ -9,6 +9,7 @@ import { Icon } from './Icon';
 import { useCompetition } from './useCompetition';
 import { Competition } from './Competition';
 import { CompetitionSummary } from './CompetitionSummary';
+import { dropStaleRaceDrafts } from './useStudy';
 
 export function App() {
 	const [user, setUser] = useState<User | null>(null);
@@ -51,6 +52,10 @@ export function App() {
 		return () => window.removeEventListener('session-ended', expired);
 	}, [expired]);
 	useEffect(() => { window.scrollTo(0, 0); }, [screen]);
+	const activeRaceId = competition.round?.status === 'active' ? competition.round.id : null;
+	useEffect(() => {
+		if (user && !competition.loading && !competition.readError) dropStaleRaceDrafts(user.id, activeRaceId);
+	}, [user?.id, competition.loading, competition.readError, activeRaceId]);
 	useEffect(() => {
 		const viewport = window.visualViewport;
 		if (!viewport) return;
@@ -111,7 +116,7 @@ export function App() {
 				<button aria-pressed={screen === 'add'} disabled={locked} onClick={() => setScreen('add')}><Icon name="add" />Dodaj</button>
 				<button aria-pressed={screen === 'competitions'} disabled={locked} onClick={() => setScreen('competitions')}><Icon name="trophy" />Zawody</button>
 			</nav>
-			{screen === 'competitions' ? <Competition user={user} competition={competition} onStudy={() => setScreen('study')} /> : screen === 'add' ? <AddWord key={user.id} userId={user.id} busy={busy} onBusy={setBusy} onOpen={card => { setSelectedCard(card); setScreen('words'); }} /> : screen === 'words' ? <Words key={user.id} userId={user.id} initialCard={selectedCard} onBusy={setBusy} /> : <Study key={user.id} user={user} competition={competition.round} onReview={reviewSaved} onDirection={directionSaved} onBusy={setBusy} />}
+			{screen === 'competitions' ? <Competition user={user} competition={competition} locked={locked} onReview={reviewSaved} onDirection={directionSaved} onBusy={setBusy} /> : screen === 'add' ? <AddWord key={user.id} userId={user.id} busy={busy} onBusy={setBusy} onOpen={card => { setSelectedCard(card); setScreen('words'); }} /> : screen === 'words' ? <Words key={user.id} userId={user.id} initialCard={selectedCard} onBusy={setBusy} /> : <Study key={user.id} user={user} onReview={reviewSaved} onDirection={directionSaved} onBusy={setBusy} />}
 		</> : !error && <Login onLogin={signedIn} />}
 		{error && <div className="notice"><p className="error" role="alert">{error}</p>{!user && <button onClick={load}>Ponów</button>}</div>}
 	</main>;

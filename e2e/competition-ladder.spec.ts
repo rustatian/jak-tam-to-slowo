@@ -164,7 +164,12 @@ for (const scenario of [
 		resting(frame, scenario.score, index);
 	}
 	await evidence(page, `full-${scenario.score}`);
-	await page.getByRole('button', { name: 'Nauka', exact: true }).click();
+	await page.getByRole('button', { name: 'Trenuj słówka', exact: true }).click();
+	const strip = await geometry(page.getByTestId('competition-summary').locator('svg.competition-ladder'));
+	for (const [index, person] of strip.people.entries()) {
+		expect(person.hands.every(hand => onBar(hand, strip.bars))).toBe(true);
+		resting(strip, scenario.score, index);
+	}
 	await evidence(page, `compact-${scenario.score}`);
 });
 
@@ -276,7 +281,10 @@ for (const scenario of [
 	{ name: 'second participant', index: 1, a: 19, b: 20, prize: 'translate(227,12)' },
 ]) test(`lets either winner grab the trophy: ${scenario.name}`, async ({ page }) => {
 	const update = await fixedRound(page, withScores(19, 19));
-	const ladder = await open(page);
+	await open(page);
+	await page.getByRole('button', { name: 'Trenuj słówka', exact: true }).click();
+	const ladder = page.getByTestId('competition-summary').locator('svg.competition-ladder');
+	await expect(ladder).toBeVisible();
 	await update(withScores(scenario.a, scenario.b, { ...snapshot, version: 2 }));
 	await expect(ladder.locator(`[data-score-label="${scenario.index}"]`)).toHaveText('20');
 	await page.clock.runFor(656);
@@ -299,9 +307,9 @@ for (const scenario of [
 	expect((await geometry(ladder)).prize).toBe(scenario.prize);
 	await expect(ladder).toHaveClass(/celebrate/);
 	await evidence(page, `winner-${scenario.index}-held`);
-	await page.getByRole('button', { name: 'Nauka', exact: true }).click();
-	expect((await geometry(ladder)).prize).toBe(scenario.prize);
-	await evidence(page, `winner-${scenario.index}-compact`);
+	await page.getByTestId('competition-summary').click();
+	expect((await geometry(page.locator('svg.competition-ladder'))).prize).toBe(scenario.prize);
+	await evidence(page, `winner-${scenario.index}-full`);
 });
 
 test('does not repeat the pickup on an unchanged poll', async ({ page }) => {

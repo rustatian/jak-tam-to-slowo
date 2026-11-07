@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { Card, Competition, ReviewResult } from '../shared/types';
+import type { Card, Competition, Direction, ReviewResult } from '../shared/types';
 import { CARD_B, USER_A, USER_B } from '../test/fixtures';
 import { allCards, sql } from './cards';
 
@@ -19,14 +19,14 @@ async function seed(page: Page): Promise<Card> {
 	return card;
 }
 
-async function invite(page: Page): Promise<Competition> {
-	const response = await page.request.post('/api/competitions', { data: { id: crypto.randomUUID(), direction: 'ru-pl' } });
+async function invite(page: Page, direction: Direction = 'ru-pl'): Promise<Competition> {
+	const response = await page.request.post('/api/competitions', { data: { id: crypto.randomUUID(), direction } });
 	expect(response.status()).toBe(200);
 	return response.json();
 }
 
-async function start(page: Page): Promise<Competition> {
-	const round = await invite(page);
+async function start(page: Page, direction: Direction = 'ru-pl'): Promise<Competition> {
+	const round = await invite(page, direction);
 	const response = await other.request.post(`/api/competitions/${round.id}/accept`, { data: {} });
 	expect(response.status()).toBe(200);
 	return response.json();
@@ -34,6 +34,15 @@ async function start(page: Page): Promise<Competition> {
 
 async function current(page: Page): Promise<Competition> {
 	return (await page.request.get('/api/competitions/current')).json();
+}
+
+async function train(page: Page) {
+	await page.getByRole('button', { name: 'Zawody', exact: true }).click();
+	await page.getByRole('button', { name: 'Trenuj słówka', exact: true }).click();
+}
+
+function finish(round: Competition) {
+	sql(`UPDATE competitions SET score_b = 20, status = 'finished', winner_id = '${USER_B.id}', finished_at = 1, version = version + 1 WHERE id = '${round.id}'`);
 }
 
 async function answer(page: Page) {
@@ -86,6 +95,7 @@ test("shows another learner's invitation and saved score", async ({ page }) => {
 	await other.getByRole('button', { name: 'Przyjmij wyzwanie', exact: true }).click();
 	await expect(other.getByRole('button', { name: 'Trenuj słówka', exact: true })).toBeEnabled();
 	await page.goto('/');
+	await train(page);
 	await scores(page, 0, 0);
 	await answer(page);
 	await expect(other.getByTestId('competition-scores')).toContainText(`${USER_A.displayName}: 1`, { timeout: 7000 });
@@ -100,6 +110,7 @@ test('shares one snapshot across tabs', async ({ page }) => {
 	let reads = 0;
 	page.on('request', request => { if (request.url().endsWith('/api/competitions/current')) reads++; });
 	await page.goto('/');
+	await train(page);
 	await scores(page, 0, 0);
 	await answer(page);
 	await scores(page, 1, 0);
@@ -123,9 +134,9 @@ test('shares one snapshot across tabs', async ({ page }) => {
 
 test('uses the current round when an editable review retry creates a new attempt', async ({ page }) => {
 	await seed(page);
-	const round = await invite(page);
-	await page.clock.install();
+	const round = await start(page);
 	await page.goto('/');
+	await train(page);
 	await scores(page, 0, 0);
 	await page.getByLabel('Odpowiedź po polsku').fill('ошибка подключения');
 	const failed = page.waitForResponse(response => response.url().endsWith('/api/reviews'));
@@ -134,11 +145,8 @@ test('uses the current round when an editable review retry creates a new attempt
 	expect(rejected.status()).toBe(503);
 	expect(rejected.headers()['x-review-recovery']).toBe('editable');
 	const original = rejected.request().postDataJSON();
-	expect(original.competitionId).toBeUndefined();
+	expect(original.competitionId).toBe(round.id);
 	await expect(page.getByLabel('Odpowiedź po polsku')).toBeEnabled();
-	expect((await other.request.post(`/api/competitions/${round.id}/accept`, { data: {} })).status()).toBe(200);
-	await page.clock.runFor(5000);
-	await expect(page.getByTestId('competition-summary')).not.toContainText('Oczekiwanie na przyjęcie wyzwania');
 	await page.getByLabel('Odpowiedź po polsku').fill('Dom');
 	const saved = page.waitForResponse(response => response.url().endsWith('/api/reviews'));
 	await page.getByRole('button', { name: 'Ponów', exact: true }).click();
@@ -162,6 +170,7 @@ for (const scenario of [
 	const round = await start(page);
 	sql(`UPDATE competitions SET score_a = ${scenario.a}, score_b = ${scenario.b}, version = version + 1 WHERE id = '${round.id}'`);
 	await page.goto('/');
+	await train(page);
 	await expect(page.getByTestId('competition-summary')).toContainText(scenario.text);
 	await scores(page, scenario.a, scenario.b);
 	await page.getByTestId('competition-summary').click();
@@ -170,8 +179,8 @@ for (const scenario of [
 });
 
 test('retries a lost review against the same round after reload', async ({ page }) => {
-	const card = await seed(page);
-	const oldRound = await start(page);
+	await seed(page);
+	const round = await start(page);
 	let originalBody = '';
 	await page.route('**/api/reviews', async route => {
 		originalBody = route.request().postData()!;
@@ -179,27 +188,116 @@ test('retries a lost review against the same round after reload', async ({ page 
 		await route.abort();
 	});
 	await page.goto('/');
+	await train(page);
 	await scores(page, 0, 0);
 	await page.getByLabel('Odpowiedź po polsku').fill('Dom');
 	await page.getByRole('button', { name: 'Sprawdź', exact: true }).click();
 	await expect(page.getByRole('alert')).toContainText('nie został potwierdzony');
-	expect(JSON.parse(originalBody).competitionId).toBe(oldRound.id);
-	sql(`UPDATE competitions SET score_b = 19, version = version + 1 WHERE id = '${oldRound.id}'`);
-	expect((await other.request.post('/api/reviews', { data: { attemptId: crypto.randomUUID(), cardId: card.id, cardVersion: 1, progressVersion: 0,
-		direction: 'ru-pl', action: 'answer', answer: 'Dom', competitionId: oldRound.id } })).status()).toBe(200);
-	expect((await current(other)).status).toBe('finished');
-	const rematch = await invite(other);
-	expect((await page.request.post(`/api/competitions/${rematch.id}/accept`, { data: {} })).status()).toBe(200);
+	expect(JSON.parse(originalBody).competitionId).toBe(round.id);
 	await page.unroute('**/api/reviews');
 	await page.reload();
-	await scores(page, 0, 0);
+	await expect(page.getByText('Na dziś wszystko gotowe.', { exact: true })).toBeVisible();
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	await train(page);
+	await expect(page.getByRole('alert')).toContainText('nie został potwierdzony');
 	const retry = page.waitForRequest(request => request.url().endsWith('/api/reviews'));
 	await page.getByRole('button', { name: 'Ponów', exact: true }).click();
 	expect((await retry).postData()).toBe(originalBody);
-	await expect(page.locator('.study-feedback')).toContainText('Dobrze');
+	await expect(page.locator('.study-feedback')).toContainText('Wynik: 1.');
+	await scores(page, 1, 0);
+	expect((await current(page)).participants.map(p => p.score)).toEqual([1, 0]);
+});
+
+test('sends no race ID from Nauka during a race', async ({ page }) => {
+	await seed(page);
+	await start(page);
+	await page.goto('/');
+	await scores(page, 0, 0);
+	const saved = page.waitForResponse(response => response.url().endsWith('/api/reviews'));
+	await answer(page);
+	const response = await saved;
+	expect(response.request().postDataJSON().competitionId).toBeUndefined();
+	expect((await response.json()).competition).toBeNull();
 	await expect(page.locator('.study-feedback')).not.toContainText('Wynik:');
 	await scores(page, 0, 0);
 	expect((await current(page)).participants.map(p => p.score)).toEqual([0, 0]);
+});
+
+test('shows the fixed race direction in race training', async ({ page }) => {
+	await seed(page);
+	const round = await start(page, 'pl-ru');
+	await page.goto('/');
+	await train(page);
+	await expect(page.getByText('Polski → Rosyjski', { exact: true })).toBeVisible();
+	await expect(page.getByText('Kierunek wyścigu. Nie zmienia się do końca wyścigu.', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'RU -> PL', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'PL -> RU', exact: true })).toHaveCount(0);
+	await page.getByLabel('Odpowiedź po rosyjsku').fill('Дом');
+	const saved = page.waitForRequest(request => request.url().endsWith('/api/reviews'));
+	await page.getByRole('button', { name: 'Sprawdź', exact: true }).click();
+	expect((await saved).postDataJSON()).toMatchObject({ direction: 'pl-ru', competitionId: round.id });
+	await expect(page.locator('.study-feedback')).toContainText('Wynik: 1.');
+	await page.getByRole('button', { name: 'Nauka', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'RU -> PL', exact: true })).toHaveAttribute('aria-pressed', 'true');
+});
+
+for (const scenario of [
+	{ name: 'a typed answer is on screen', typed: true, restart: false },
+	{ name: 'the other learner restarts', typed: false, restart: true },
+]) test(`ends race training after the finish when ${scenario.name}`, async ({ page }) => {
+	await seed(page);
+	const round = await start(page);
+	await page.clock.install();
+	await page.goto('/');
+	await train(page);
+	const field = page.getByLabel('Odpowiedź po polsku');
+	await expect(field).toBeEnabled();
+	if (scenario.typed) await field.fill('Dom');
+	finish(round);
+	const rematch = scenario.restart ? await invite(other) : null;
+	const polled = page.waitForResponse(response => response.url().endsWith('/api/competitions/current'));
+	await page.clock.runFor(5000);
+	await polled;
+	if (!rematch) await expect(page.getByTestId('competition-summary')).toContainText(`Wygrywa ${USER_B.displayName}!`);
+	await expect(page.getByTestId('study-term')).toHaveText('Дом');
+	if (scenario.typed) await expect(field).toHaveValue('Dom');
+	else await field.fill('Dom');
+	const saved = page.waitForResponse(response => response.url().endsWith('/api/reviews'));
+	await page.getByRole('button', { name: 'Sprawdź', exact: true }).click();
+	const response = await saved;
+	expect(response.status()).toBe(200);
+	expect(response.request().postDataJSON().competitionId).toBe(round.id);
+	await expect(page.locator('.study-feedback')).toContainText('Wyścig już się zakończył. Ta odpowiedź nie liczy się do wyniku.');
+	await page.getByRole('button', { name: 'Dalej', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'Wróć do wyścigu', exact: true })).toBeEnabled();
+	await expect(page.getByLabel('Odpowiedź po polsku')).toHaveCount(0);
+	if (rematch) {
+		const next = await current(page);
+		expect(next.id).toBe(rematch.id);
+		expect(next.participants.map(p => p.score)).toEqual([0, 0]);
+	} else await expect(page.locator('.race-result')).toContainText(`Wygrywa ${USER_B.displayName}!`);
+	await page.getByRole('button', { name: 'Wróć do wyścigu', exact: true }).click();
+	await expect(page.getByRole('heading', { name: 'Wyścig do 20' })).toBeVisible();
+});
+
+test('removes the draft of a finished race', async ({ page }) => {
+	await seed(page);
+	const round = await start(page);
+	await page.clock.install();
+	await page.goto('/');
+	await train(page);
+	await page.getByLabel('Odpowiedź po polsku').fill('Dom');
+	expect(await page.evaluate(() => Object.keys(sessionStorage))).toContain(`race-draft:${round.id}:${USER_A.id}`);
+	await page.getByTestId('competition-summary').click();
+	finish(round);
+	await page.clock.runFor(5000);
+	await expect(page.getByTestId('competition-scores')).toContainText(`Wygrywa ${USER_B.displayName}!`);
+	await expect.poll(() => page.evaluate(() => Object.keys(sessionStorage).filter(key => key.startsWith('race-draft:')))).toEqual([]);
+	await start(page);
+	await page.clock.runFor(5000);
+	await page.getByRole('button', { name: 'Trenuj słówka', exact: true }).click();
+	await expect(page.getByLabel('Odpowiedź po polsku')).toBeEnabled();
+	await expect(page.getByLabel('Odpowiedź po polsku')).toHaveValue('');
 });
 
 for (const scenario of [
@@ -274,6 +372,7 @@ test('keeps answer feedback after a competition read failure', async ({ page }) 
 	await start(page);
 	await page.clock.install();
 	await page.goto('/');
+	await train(page);
 	await scores(page, 0, 0);
 	await page.route('**/api/competitions/current', route => route.fulfill({ status: 503, json: { error: 'Brak wyniku.' } }));
 	await answer(page);
@@ -370,6 +469,7 @@ test('locks navigation while a review is saved', async ({ page }) => {
 	const received = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
 	await page.route('**/api/reviews', async route => { received.resolve(); await release.promise; await route.continue(); });
 	await page.goto('/');
+	await train(page);
 	await scores(page, 0, 0);
 	await page.getByLabel('Odpowiedź po polsku').fill('Dom');
 	await page.getByRole('button', { name: 'Sprawdź', exact: true }).click();
@@ -394,6 +494,7 @@ for (const scenario of [
 	const round = await start(page);
 	if (scenario.score) sql(`UPDATE competitions SET score_a = ${scenario.score}, version = version + 1 WHERE id = '${round.id}'`);
 	await page.goto('/');
+	await train(page);
 	await scores(page, scenario.score, 0);
 	const saved = page.waitForResponse(response => response.url().endsWith('/api/reviews'));
 	if (scenario.action === 'answer') await answer(page);
