@@ -19,7 +19,7 @@ interface Climber {
 	started: number | null;
 }
 interface Motion {
-	id: string | null;
+	id: string;
 	target: number;
 	climbers: Climber[];
 	frame: number;
@@ -120,20 +120,20 @@ function stepPose(from: Pose, to: Pose, progress: number, rungs: number[]): Pose
 	};
 }
 
-export function updateLadder(svg: SVGSVGElement, round: Competition | null): () => void {
+export function updateLadder(svg: SVGSVGElement, round: Competition): () => void {
 	const previous = motions.get(svg);
 	if (previous) cancelAnimationFrame(previous.frame);
 	const bars = [...svg.querySelectorAll<SVGRectElement>('.rung-bar')];
 	const rungs = [bars[0].y.baseVal.value + 23, ...bars.map(bar => bar.y.baseVal.value)];
 	const ladder: Ladder = { target: bars.length, rungY: score => rungs[score] };
-	const sameRound = previous?.id === (round?.id ?? null) && previous?.target === ladder.target;
+	const sameRound = previous?.id === round.id && previous?.target === ladder.target;
 	const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 	const prize = svg.querySelector<SVGGElement>('.prize')!;
 	if (!sameRound) prize.setAttribute('transform', `translate(${prizeHome.x},${prizeHome.y})`);
-	const motion: Motion = { id: round?.id ?? null, target: ladder.target, frame: 0, glowUntil: sameRound ? previous.glowUntil : 0,
+	const motion: Motion = { id: round.id, target: ladder.target, frame: 0, glowUntil: sameRound ? previous.glowUntil : 0,
 		climbers: [...svg.querySelectorAll<SVGGElement>('[data-person]')].map((element, index) => {
-			const score = round?.participants[index].score ?? 0;
-			const winning = round?.status === 'finished' && round.winnerId === round.participants[index].id;
+			const score = round.participants[index].score;
+			const winning = round.status === 'finished' && round.winnerId === round.participants[index].id;
 			const before = sameRound ? previous.climbers[index] : undefined;
 			if (before?.score === score && before.winning === winning) return before;
 			const landing = climberPose(score, index, ladder);

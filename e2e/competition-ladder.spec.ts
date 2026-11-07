@@ -28,6 +28,7 @@ async function refresh(page: Page) {
 async function fixedRound(page: Page, initial: Competition | null) {
 	let round = initial;
 	await page.route('**/api/competitions/current', route => route.fulfill({ json: round }));
+	await page.route('**/api/competitions', route => route.fulfill({ json: { competitions: round ? [round] : [], nextCursor: null } }));
 	return async (next: Competition | null, poll = false) => {
 		round = next;
 		if (poll) {
@@ -38,9 +39,11 @@ async function fixedRound(page: Page, initial: Competition | null) {
 	};
 }
 
-async function open(page: Page, compact = false) {
+async function open(page: Page, training = false) {
 	await page.goto('/');
-	if (!compact) await page.getByRole('button', { name: 'Zawody', exact: true }).click();
+	await page.getByRole('button', { name: 'Zawody', exact: true }).click();
+	await page.getByTestId('race-row').locator('.race-open').click();
+	if (training) await page.getByRole('button', { name: 'Trenuj słówka', exact: true }).click();
 	await expect(page.locator('svg.competition-ladder')).toBeVisible();
 	return page.locator('svg.competition-ladder');
 }
@@ -335,7 +338,7 @@ test('resets for a rematch', async ({ page }) => {
 	await save(page, round, 'answer');
 	await expect(ladder.locator('[data-score-label="0"]')).toHaveText('20');
 	await page.clock.runFor(1800);
-	await page.getByRole('button', { name: 'Zaproś na rewanż', exact: true }).click();
+	await page.getByRole('button', { name: 'Zagraj jeszcze raz', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'Anuluj zaproszenie', exact: true })).toBeEnabled();
 	const frame = await geometry(ladder);
 	resting(frame, 0, 0); resting(frame, 0, 1);
@@ -371,7 +374,7 @@ for (const scenario of [
 		round.participants[0].displayName = 'Aleksandra Katarzyna';
 		round.participants[1].displayName = 'Konstanty Aleksander';
 	}
-	await fixedRound(page, round);
+	const update = await fixedRound(page, round);
 	await open(page, true);
 	await page.addStyleTag({ content: `html { font-size: ${scenario.text}% }` });
 	await expect(page.getByTestId('competition-summary')).toContainText(round.participants[0].displayName);
@@ -383,27 +386,37 @@ for (const scenario of [
 	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(scenario.width);
 	await expect(page.getByTestId('competition-scores')).toContainText('19 / 20');
 	await evidence(page, `${scenario.name}-full`);
-	await page.getByRole('button', { name: 'Trenuj słówka', exact: true }).click();
-	await page.getByRole('button', { name: 'Dodaj', exact: true }).click();
-	await expect(page.getByRole('textbox').first()).toBeVisible();
+	await update(withScores(20, 19, round));
+	const back = page.getByRole('button', { name: 'Wróć do listy wyścigów', exact: true });
+	const restart = page.getByRole('button', { name: 'Zagraj jeszcze raz', exact: true });
+	await expect(restart).toBeEnabled();
+	for (const control of [back, restart]) {
+		const box = (await control.boundingBox())!;
+		expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
+	}
+	await back.click();
+	await expect(page.getByTestId('race-row')).toContainText(`Wygrywa ${round.participants[0].displayName}`);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(scenario.width);
+	const small = (await page.getByTestId('race-row').locator('.race-restart').boundingBox())!;
+	expect(small.width).toBeGreaterThanOrEqual(44); expect(small.height).toBeGreaterThanOrEqual(44);
+	await evidence(page, `${scenario.name}-list`);
 });
 
 test('preserves keyboard and screen-reader access', async ({ page }) => {
 	const update = await fixedRound(page, withScores(8, 8));
-	const ladder = await open(page, true);
-	const summary = page.getByTestId('competition-summary');
-	expect((await summary.getByText('Remis.', { exact: true }).boundingBox())!.width).toBeGreaterThan(1);
-	await summary.focus();
+	await page.goto('/');
+	await page.getByRole('button', { name: 'Zawody', exact: true }).click();
+	await page.getByTestId('race-row').locator('.race-open').focus();
 	await page.keyboard.press('Enter');
 	await expect(page.getByRole('heading', { name: 'Wyścig do 20' })).toBeVisible();
-	await expect(ladder).toHaveAttribute('aria-hidden', 'true');
+	await expect(page.locator('svg.competition-ladder')).toHaveAttribute('aria-hidden', 'true');
 	const live = page.getByTestId('competition-scores');
 	await expect(live).toHaveAttribute('aria-atomic', 'true');
 	const before = await live.innerText();
 	await update(withScores(8, 8));
 	await page.clock.runFor(32);
 	expect(await live.innerText()).toBe(before);
-	const controls = page.locator('.tabs button, .competition-actions button, .competition-rules summary');
+	const controls = page.locator('.tabs button, .back, .competition-actions button');
 	for (const control of await controls.all()) {
 		const box = (await control.boundingBox())!;
 		expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
@@ -412,29 +425,30 @@ test('preserves keyboard and screen-reader access', async ({ page }) => {
 	}
 	await update(withScores(20, 8, { ...snapshot, version: 3 }));
 	await expect(live).toContainText(`Wygrywa ${USER_A.displayName}!`);
+	await page.getByRole('button', { name: 'Wróć do listy wyścigów', exact: true }).focus();
+	await page.keyboard.press('Enter');
+	await expect(page.getByRole('heading', { name: 'Zawody', exact: true })).toBeVisible();
+	const rules = page.locator('.competition-rules summary');
+	const box = (await rules.boundingBox())!;
+	expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
 });
 
-test('shows the default ladder before the first invitation', async ({ page }) => {
+test('shows an empty race list before the first invitation', async ({ page }) => {
 	await fixedRound(page, null);
-	const ladder = await open(page);
-	await expect(ladder.locator('.rung-bar')).toHaveCount(20);
-	const frame = await geometry(ladder);
-	resting(frame, 0, 0); resting(frame, 0, 1);
-	await expect(page.getByRole('button', { name: 'Zaproś do wyścigu', exact: true })).toBeEnabled();
+	await page.goto('/');
+	await page.getByRole('button', { name: 'Zawody', exact: true }).click();
+	await expect(page.getByText('Nie ma jeszcze wyścigów.', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Nowy wyścig', exact: true })).toBeEnabled();
+	await expect(page.locator('svg.competition-ladder')).toHaveCount(0);
 });
 
-for (const scenario of [
-	{ name: 'study', screen: 'Nauka', label: 'Odpowiedź po polsku' },
-	{ name: 'add', screen: 'Dodaj', label: 'Słowo lub wyrażenie' },
-]) test(`keeps the compact ladder in page flow above the keyboard: ${scenario.name}`, async ({ page }) => {
+test('keeps the compact ladder in page flow above the keyboard', async ({ page }) => {
 	await start(page, 8);
-	expect((await page.request.patch('/api/me', { data: { direction: 'ru-pl' } })).status()).toBe(200);
 	const response = await page.request.post('/api/cards', { data: { ...CARD_B, id: crypto.randomUUID() } });
 	expect(response.status()).toBe(201);
 	cards.push(await response.json());
 	await open(page, true);
-	await page.getByRole('button', { name: scenario.screen, exact: true }).click();
-	const input = page.getByLabel(scenario.label);
+	const input = page.getByLabel('Odpowiedź po polsku');
 	await expect(input).toBeEnabled();
 	await input.focus();
 	await page.evaluate(() => {
@@ -449,7 +463,7 @@ for (const scenario of [
 	expect(await page.getByTestId('competition-summary').evaluate(node => getComputedStyle(node).position)).toBe('static');
 	await input.fill('Dom');
 	await expect(input).toHaveValue('Dom');
-	await page.screenshot({ path: `.superpowers/competitions/${test.info().project.name}-keyboard-${scenario.name}.png`, clip: { x: 0, y: 0, width: page.viewportSize()!.width, height: 420 }, scale: 'css' });
+	await page.screenshot({ path: `.superpowers/competitions/${test.info().project.name}-keyboard-training.png`, clip: { x: 0, y: 0, width: page.viewportSize()!.width, height: 420 }, scale: 'css' });
 	await input.blur();
 	await page.evaluate(() => {
 		Object.defineProperty(window.visualViewport!, 'height', { configurable: true, value: innerHeight });
@@ -457,6 +471,6 @@ for (const scenario of [
 	});
 	await page.clock.runFor(32);
 	await expect(page.getByRole('navigation')).toBeVisible();
-	await page.getByRole('button', { name: 'Zawody', exact: true }).click();
+	await page.getByTestId('competition-summary').click();
 	await expect(page.getByRole('heading', { name: 'Wyścig do 20' })).toBeVisible();
 });

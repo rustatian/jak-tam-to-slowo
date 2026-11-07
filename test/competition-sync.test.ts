@@ -108,7 +108,7 @@ it('retries an unconfirmed invitation with its first ID', async () => {
 	const sync = createCompetitionSync(USER_A.id);
 	await sync.refresh();
 	overrides.push({ method: 'POST', path: '/api/competitions', respond: lost }, { method: 'GET', path: current, respond: unavailable('Brak wyniku.') });
-	await sync.invite('ru-pl');
+	expect(await sync.invite('ru-pl')).toBeNull();
 	expect(sync.snapshot()).toMatchObject({ round: null, actionError: saveError, readError: 'Brak wyniku.', retryAction: 'invite', busy: false, actions: [] });
 	await sync.retry();
 	const [first, retry] = posts();
@@ -125,8 +125,9 @@ it('confirms an unconfirmed invitation from the current round and invites a rema
 	const sync = createCompetitionSync(USER_A.id);
 	await sync.refresh();
 	overrides.push({ method: 'POST', path: '/api/competitions', respond: lost });
-	await sync.invite('ru-pl');
+	const confirmed = await sync.invite('ru-pl');
 	const lostId = JSON.parse(posts()[0].body!).id;
+	expect(confirmed).toMatchObject({ id: lostId, status: 'waiting' });
 	expect(sync.snapshot()).toMatchObject({ round: { id: lostId, status: 'waiting' }, actionError: '', retryAction: null, actions: ['cancel'] });
 	await act(cookieB, lostId, 'accept');
 	await finish(lostId);

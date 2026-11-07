@@ -6,7 +6,7 @@ import { Icon } from './Icon';
 import { directionNames } from './race-text';
 
 export function Study({ user, race, onReview, onDirection, onBusy, onEnded }: {
-	user: User; race?: RaceMode; onReview(result: ReviewResult): void; onDirection(direction: Direction): void; onBusy(busy: boolean): void; onEnded?(): void;
+	user: User; race?: RaceMode; onReview?(result: ReviewResult): void; onDirection(direction: Direction): void; onBusy(busy: boolean): void; onEnded?(): void;
 }) {
 	const study = useStudy(user, race ?? null, onReview);
 	const input = useRef<HTMLInputElement>(null);

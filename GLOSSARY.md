@@ -21,3 +21,5 @@ A vocabulary app for two learners of Polish and Russian. They share one collecti
 **Unconfirmed action**: A lifecycle action whose result did not reach the app. A later read of the current competition confirms it, or the learner retries it for the same competition. _Avoid_: lost write.
 
 **Competition sync**: The app's copy of the current competition for the signed-in learner, kept up to date with the server, together with the lifecycle actions that the learner can start now.
+
+**Competition list**: All competitions of the two learners, newest first, without cancelled invitations.

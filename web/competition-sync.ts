@@ -86,7 +86,6 @@ export function createCompetitionSync(userId: string): CompetitionSync {
 	}
 	async function mutate(action: LifecycleAction, id = action === 'invite' ? crypto.randomUUID() : round?.id, direction?: Direction): Promise<Competition | null> {
 		if (busy || !active || !id) return null;
-		let failed = false;
 		busy = true;
 		generation++;
 		pending = null;
@@ -97,7 +96,6 @@ export function createCompetitionSync(userId: string): CompetitionSync {
 			});
 		} catch (error) {
 			if (!active) return null;
-			failed = true;
 			if (!(error instanceof ApiError) || error.status >= 500) pending = { action, id, direction };
 			update({ retryAction: pending?.action ?? null, actionError: error instanceof ApiError ? error.message : 'Nie udało się zapisać wyzwania. Sprawdź połączenie i ponów próbę.' });
 		} finally {
@@ -107,7 +105,8 @@ export function createCompetitionSync(userId: string): CompetitionSync {
 				update({ busy: false });
 			}
 		}
-		return failed ? null : state.round;
+		// After the read, the result is the open round, or null when an action error stays or no race is open.
+		return !state.actionError && (state.round?.status === 'waiting' || state.round?.status === 'active') ? state.round : null;
 	}
 
 	return {

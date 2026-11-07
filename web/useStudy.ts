@@ -41,7 +41,7 @@ export function dropStaleRaceDrafts(userId: string, activeRaceId: string | null)
 	for (const key of Object.keys(sessionStorage)) if (key.startsWith('race-draft:') && key.endsWith(`:${userId}`) && key !== keep) sessionStorage.removeItem(key);
 }
 
-export function useStudy(user: User, race: RaceMode | null, onReview: (result: ReviewResult) => void) {
+export function useStudy(user: User, race: RaceMode | null, onReview?: (result: ReviewResult) => void) {
 	const key = race ? `race-draft:${race.id}:${user.id}` : `study-draft:${user.id}`;
 	const [session, setSession] = useState(() => initial(user, key, race));
 	const live = useRef(session);
@@ -186,7 +186,7 @@ export function useStudy(user: User, race: RaceMode | null, onReview: (result: R
 			update({ feedback, state: 'feedback', pending: null, answer: '', cardId: null, retainedAnswer: '', error: '' });
 			retryAction.current = null;
 			persist();
-			onReview(feedback);
+			onReview?.(feedback);
 			// The answer changes the order, so the queue is built again while the feedback shows.
 			generation.current++;
 			refill.current = null;
