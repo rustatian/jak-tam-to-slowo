@@ -1,23 +1,26 @@
 import { useEffect, useRef } from 'react';
-import type { Competition, Direction, ReviewResult, User } from '../shared/types';
-import { useStudy } from './useStudy';
+import type { Direction, ReviewResult, User } from '../shared/types';
+import { useStudy, type RaceMode } from './useStudy';
 import { Dictation, dictatedValue } from './Dictation';
 import { Icon } from './Icon';
+import { directionNames } from './race-text';
 
-export function Study({ user, competition, onReview, onDirection, onBusy }: {
-	user: User; competition: Competition | null; onReview(result: ReviewResult): void; onDirection(direction: Direction): void; onBusy(busy: boolean): void;
+export function Study({ user, race, onReview, onDirection, onBusy, onEnded }: {
+	user: User; race?: RaceMode; onReview?(result: ReviewResult): void; onDirection(direction: Direction): void; onBusy(busy: boolean): void; onEnded?(): void;
 }) {
-	const study = useStudy(user, competition?.status === 'active' ? competition.id : null, onReview);
+	const study = useStudy(user, race ?? null, onReview);
 	const input = useRef<HTMLInputElement>(null);
 	const nextButton = useRef<HTMLButtonElement>(null);
 	const polish = study.direction === 'ru-pl';
 	const target = polish ? 'pl' : 'ru';
 	const current = study.card;
 	const grade = study.feedback && { correct: 'Dobrze', almost: 'Prawie dobrze', again: 'Powtórz' }[study.feedback.grade];
-	const contribution = study.feedback?.competition?.competitionId === competition?.id ? study.feedback?.competition : null;
+	const contribution = study.feedback?.competition;
 
 	useEffect(() => { onDirection(study.savedDirection); }, [study.savedDirection, onDirection]);
 	useEffect(() => { onBusy(study.busy); }, [study.busy, onBusy]);
+	// After the race finishes, race training ends when no card is left on screen.
+	useEffect(() => { if (race?.finished && !current && !study.locked) onEnded?.(); }, [race?.finished, current, study.locked, onEnded]);
 	useEffect(() => {
 		if (navigator.maxTouchPoints > 0 || matchMedia('(pointer: coarse)').matches) return;
 		if (study.state === 'answering') input.current?.focus();
@@ -26,10 +29,11 @@ export function Study({ user, competition, onReview, onDirection, onBusy }: {
 
 	return <section className="page study" aria-labelledby="study-title">
 		<div className="page-heading"><h1 id="study-title">Nauka słówek</h1><p className="hint" data-testid="study-remaining">W kolejce: {study.dueCount}</p></div>
-		<div className="directions" role="group" aria-label="Kierunek tłumaczenia">
-			<button aria-label="RU -> PL" aria-pressed={polish} disabled={study.locked} onClick={() => void study.setDirection('ru-pl')}>Rosyjski <span aria-hidden="true">→</span> Polski</button>
-			<button aria-label="PL -> RU" aria-pressed={!polish} disabled={study.locked} onClick={() => void study.setDirection('pl-ru')}>Polski <span aria-hidden="true">→</span> Rosyjski</button>
-		</div>
+		{race ? <div className="race-direction"><p>{directionNames[race.direction]}</p><p className="hint">Kierunek wyścigu. Nie zmienia się do końca wyścigu.</p></div>
+			: <div className="directions" role="group" aria-label="Kierunek tłumaczenia">
+				<button aria-label="RU -> PL" aria-pressed={polish} disabled={study.locked} onClick={() => void study.setDirection('ru-pl')}>Rosyjski <span aria-hidden="true">→</span> Polski</button>
+				<button aria-label="PL -> RU" aria-pressed={!polish} disabled={study.locked} onClick={() => void study.setDirection('pl-ru')}>Polski <span aria-hidden="true">→</span> Rosyjski</button>
+			</div>}
 		{study.state === 'loading' && <p role="status">Wczytywanie fiszek…</p>}
 		{current && <div className="study-prompt">
 			<h2 className="study-term" data-testid="study-term" lang={polish ? 'ru' : 'pl'}>{polish ? current.ru : current.pl}</h2>
@@ -53,9 +57,10 @@ export function Study({ user, competition, onReview, onDirection, onBusy }: {
 				<p className="study-correction" data-testid="study-correction" lang={target}>{study.feedback.correction}</p>
 				{current && <p className="study-example" lang={target}>{polish ? current.examplePl : current.exampleRu}</p>}
 				<p>{study.feedback.explanation}</p>
-				{contribution && <p>{contribution.delta > 0 ? 'Idziesz w górę o 1.' : contribution.delta < 0 ? 'Cofasz się o 1.' : 'Zostajesz na starcie.'} Wynik: {contribution.scoreAfter}.</p>}
+				{race && (contribution ? <p>{contribution.delta > 0 ? 'Idziesz w górę o 1.' : contribution.delta < 0 ? 'Cofasz się o 1.' : 'Zostajesz na starcie.'} Wynik: {contribution.scoreAfter}.</p>
+					: <p>Wyścig już się zakończył. Ta odpowiedź nie liczy się do wyniku.</p>)}
 			</div>
-			<button ref={nextButton} className="primary" onClick={study.next}>Dalej</button>
+			<button ref={nextButton} className="primary" onClick={race?.finished ? onEnded : study.next}>Dalej</button>
 		</>}
 		{study.state === 'empty' && <div role="status">
 			<p>{study.nextDueAt ? 'Na dziś wszystko gotowe.' : 'Dodaj słówko, aby zacząć.'}</p>

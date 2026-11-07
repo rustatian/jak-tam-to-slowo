@@ -21,26 +21,34 @@ interface Session extends Recovery {
 	savedDirection: Direction;
 	savingDirection: boolean;
 }
+export interface RaceMode { id: string; direction: Direction; finished: boolean }
 
-function initial(user: User): Session {
+function initial(user: User, key: string, race: RaceMode | null): Session {
 	let recovery: Recovery | null = null;
-	try { recovery = JSON.parse(sessionStorage.getItem(`study-draft:${user.id}`) ?? 'null'); } catch { recovery = null; }
+	try { recovery = JSON.parse(sessionStorage.getItem(key) ?? 'null'); } catch { recovery = null; }
 	return {
-		direction: user.direction, cardId: null, answer: '', pending: null, reviewedCard: null, retainedAnswer: '', ...recovery,
+		// The race direction comes after the draft, so a stored draft cannot change it.
+		direction: user.direction, cardId: null, answer: '', pending: null, reviewedCard: null, retainedAnswer: '', ...recovery, ...(race && { direction: race.direction }),
 		queue: [], dueCount: 0, state: recovery?.pending ? 'error' : 'loading', feedback: null, nextDueAt: null,
 		error: recovery?.pending ? 'Zapis odpowiedzi nie został potwierdzony. Ponów żądanie.' : '',
 		savedDirection: user.direction, savingDirection: false,
 	};
 }
 
-export function useStudy(user: User, competitionId: string | null, onReview: (result: ReviewResult) => void) {
-	const [session, setSession] = useState(() => initial(user));
+// A race draft is kept only while its race is active.
+export function dropStaleRaceDrafts(userId: string, activeRaceId: string | null): void {
+	const keep = activeRaceId && `race-draft:${activeRaceId}:${userId}`;
+	for (const key of Object.keys(sessionStorage)) if (key.startsWith('race-draft:') && key.endsWith(`:${userId}`) && key !== keep) sessionStorage.removeItem(key);
+}
+
+export function useStudy(user: User, race: RaceMode | null, onReview?: (result: ReviewResult) => void) {
+	const key = race ? `race-draft:${race.id}:${user.id}` : `study-draft:${user.id}`;
+	const [session, setSession] = useState(() => initial(user, key, race));
 	const live = useRef(session);
 	const generation = useRef(0);
 	const refill = useRef<symbol | null>(null);
 	const retryAction = useRef<ReviewInput['action'] | (() => void) | null>(null);
 	const clockOffset = useRef(0);
-	const key = `study-draft:${user.id}`;
 
 	function update(value: Partial<Session>) {
 		live.current = { ...live.current, ...value };
@@ -130,7 +138,7 @@ export function useStudy(user: User, competitionId: string | null, onReview: (re
 
 	async function setDirection(direction: Direction) {
 		const current = live.current;
-		if (direction === current.direction || current.pending || current.savingDirection) return;
+		if (race || direction === current.direction || current.pending || current.savingDirection) return;
 		if ((current.answer || current.retainedAnswer) && !window.confirm('Zmienić kierunek i usunąć niezapisaną odpowiedź?')) return;
 		const version = generation.current;
 		update({ savingDirection: true, error: current.queue.length ? '' : current.error });
@@ -161,7 +169,7 @@ export function useStudy(user: User, competitionId: string | null, onReview: (re
 		const input: ReviewInput | null = current.pending ? null : {
 			attemptId: crypto.randomUUID(), cardId: item.card.id, cardVersion: item.card.version,
 			progressVersion: item.progress?.version ?? 0, direction: current.direction,
-			...(competitionId ? { competitionId } : {}),
+			...(race ? { competitionId: race.id } : {}),
 			...(action === 'answer' ? { action, answer: current.answer } : { action }),
 		};
 		const pending = current.pending ?? JSON.stringify(input);
@@ -178,7 +186,7 @@ export function useStudy(user: User, competitionId: string | null, onReview: (re
 			update({ feedback, state: 'feedback', pending: null, answer: '', cardId: null, retainedAnswer: '', error: '' });
 			retryAction.current = null;
 			persist();
-			onReview(feedback);
+			onReview?.(feedback);
 			// The answer changes the order, so the queue is built again while the feedback shows.
 			generation.current++;
 			refill.current = null;

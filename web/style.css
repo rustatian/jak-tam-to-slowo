@@ -109,7 +109,7 @@ p { margin: 16px 0; }
 .login h1 { font-size: 1.875rem; }
 .login .intro { margin-bottom: 28px; font-size: 1rem; }
 form { display: flex; flex-direction: column; }
-label { display: block; margin: 0 0 6px 2px; color: var(--ink); font-size: .9375rem; font-weight: 500; }
+label, .field-label { display: block; margin: 0 0 6px 2px; color: var(--ink); font-size: .9375rem; font-weight: 500; }
 input, textarea, select { width: 100%; min-width: 0; min-height: 50px; border: 1px solid var(--field-edge); border-radius: 10px; background: var(--card); padding: 12px 14px; margin-bottom: 20px; font-size: 1.0625rem; }
 input:focus, textarea:focus, select:focus { outline: 3px solid color-mix(in srgb, var(--accent) 30%, transparent); outline-offset: 0; border-color: var(--accent); }
 textarea { resize: none; field-sizing: content; }
@@ -124,10 +124,17 @@ form .error { margin: 0 0 16px; }
 .directions { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); }
 .directions button { min-height: 44px; padding: 8px 6px 10px; border: 0; border-radius: 0; background: transparent; color: var(--secondary); font-size: .9375rem; font-weight: 500; line-height: 1.3; }
 .directions button[aria-pressed='true'] { color: var(--ink); font-weight: 600; box-shadow: inset 0 -2px 0 var(--accent); }
+/* Race training shows the race direction as fixed text in place of the direction tabs. */
+.race-direction { padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.race-direction p { margin: 0; font-weight: 600; }
+.race-direction .hint { margin-top: 2px; font-size: .8125rem; font-weight: 400; }
 .tabs { position: fixed; z-index: 3; inset: auto 0 0; height: var(--nav-height); display: grid; grid-template-columns: repeat(4, minmax(0, 9rem)); justify-content: center; padding: 0 max(8px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(8px, env(safe-area-inset-left)); border-top: 1px solid var(--line); background: var(--bg); }
-.tabs button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 0; height: 100%; padding: 4px 2px; border: 0; border-radius: 0; background: transparent; color: var(--secondary); font-size: .75rem; font-weight: 500; }
+.tabs button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 0; height: 100%; padding: 4px 2px; border: 0; border-radius: 0; background: transparent; color: var(--secondary); font-size: .75rem; font-weight: 500; }
 .tabs button[aria-pressed='true'] { color: var(--ink); font-weight: 600; box-shadow: inset 0 2px 0 var(--accent); }
 .tabs button[aria-pressed='true'] svg { color: var(--accent); }
+/* The race dot sits on the corner of the trophy icon. In the row layout it follows the tab name. */
+.tab-dot { position: absolute; top: 6px; left: calc(50% + 6px); width: 8px; height: 8px; border-radius: 50%; background: var(--green-icon); box-shadow: 0 0 0 2px var(--bg); }
+.tab-dot[data-state='waiting'] { background: var(--amber-icon); }
 .competition-summary { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 66px; margin-bottom: 20px; padding: 6px 10px; text-align: left; overflow-wrap: anywhere; font-weight: 400; }
 .competition-summary-copy { flex: 1; min-width: 0; }
 .competition-title { display: flex; flex-wrap: wrap; gap: 0 8px; color: var(--secondary); font-size: .75rem; }
@@ -151,9 +158,23 @@ form .error { margin: 0 0 16px; }
 .competition-ladder .tick { font-family: system-ui, sans-serif; font-size: 18px; fill: var(--secondary); }
 .competition-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .competition-actions button { flex: 1 1 auto; }
+h1 + .competition-actions { margin-top: 20px; }
 .competition-rules { margin-top: 24px; }
 .competition-rules summary { min-height: 44px; padding-block: 10px; cursor: pointer; }
 .competition-rules summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.back { margin: -10px 0 4px -12px; padding-inline: 12px; font-weight: 500; }
+.restart { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.race-list { list-style: none; padding: 0; margin: 20px 0; border: 1px solid var(--line); border-radius: 14px; background: var(--card); overflow: hidden; }
+.race-list:empty { display: none; }
+.race-list li { display: flex; align-items: center; }
+.race-list li + li { border-top: 1px solid var(--line); }
+.race-list button:focus-visible { outline-offset: -3px; }
+.race-open { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; padding: 10px 16px; border: 0; border-radius: 0; background: transparent; text-align: left; }
+.race-open .hint { font-size: .875rem; font-weight: 400; }
+.race-chip { display: inline-block; margin-left: 6px; padding: 0 8px; border-radius: 6px; background: var(--fill); color: var(--secondary); font-size: .75rem; line-height: 1.6; }
+.race-chip[data-status='waiting'] { background: var(--amber-tint); color: var(--amber); }
+.race-chip[data-status='active'] { background: var(--green-tint); color: var(--green); }
+.race-restart { flex: 0 0 44px; display: grid; place-items: center; height: 44px; min-height: 44px; margin-right: 6px; padding: 0; border: 0; background: transparent; color: var(--secondary); }
 .study-prompt { min-height: clamp(140px, 24vh, 200px); display: flex; flex-direction: column; justify-content: center; text-align: center; padding: 28px 22px; margin: 20px 0; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
 .study-term { margin: 0; font-family: var(--serif); font-size: 2.625rem; line-height: 1.15; letter-spacing: -.015em; font-weight: 500; overflow-wrap: anywhere; }
 .study-example { margin: 14px 0 0; color: var(--secondary); font-size: 1.0625rem; overflow-wrap: anywhere; }
@@ -235,6 +256,7 @@ a.word { color: var(--accent-text); padding: 12px 44px 2px 16px; text-decoration
 	.study-prompt { min-height: 260px; }
 	.tabs button { flex-direction: row; gap: 8px; font-size: .875rem; }
 	.tabs svg { width: 20px; height: 20px; }
+	.tab-dot { position: static; }
 }
 @media (max-width: 359px) {
 	.brand { gap: 8px; font-size: .9375rem; }
@@ -275,3 +297,8 @@ a.word { color: var(--accent-text); padding: 12px 44px 2px 16px; text-decoration
 button:active:not(:disabled) { background-color: var(--fill); }
 .primary:active:not(:disabled) { background-color: color-mix(in srgb, var(--primary) 85%, var(--bg)); }
 .mic:active:not(:disabled) { background-color: color-mix(in srgb, var(--accent) 85%, #000); }
+.race-history { margin-top: 28px; }
+.race-history h3 { margin: 16px 0 4px; font-size: 1rem; }
+.race-history details { padding: 8px 0; border-top: 1px solid var(--line); }
+.race-history summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
+.race-history details p { margin: 4px 0; }

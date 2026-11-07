@@ -53,8 +53,8 @@ export async function commitReview(env: Env, userId: string, input: ReviewInput,
 		env.DB.prepare(`INSERT INTO competition_events (competition_id, user_id, attempt_id, delta, score_after, version)
 			SELECT id, ?1, ?2, max(0, min(target, score + ?4)) - score, max(0, min(target, score + ?4)), version + 1
 			FROM (SELECT id, target, version, CASE WHEN participant_a_id = ?1 THEN score_a ELSE score_b END AS score
-				FROM competitions WHERE id = ?3 AND status = 'active' AND ?1 IN (participant_a_id, participant_b_id))
-			WHERE changes() = 1`).bind(userId, input.attemptId, input.competitionId ?? null, correct ? 1 : -1),
+				FROM competitions WHERE id = ?3 AND status = 'active' AND ?1 IN (participant_a_id, participant_b_id) AND direction = ?5)
+			WHERE changes() = 1`).bind(userId, input.attemptId, input.competitionId ?? null, correct ? 1 : -1, input.direction),
 		env.DB.prepare(`UPDATE competitions SET
 			score_a = CASE WHEN participant_a_id = ?1 THEN e.score_after ELSE score_a END,
 			score_b = CASE WHEN participant_b_id = ?1 THEN e.score_after ELSE score_b END,

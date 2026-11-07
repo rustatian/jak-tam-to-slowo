@@ -30,7 +30,7 @@ async function tables() {
 
 async function startCompetition() {
 	const otherCookie = await login(USER_B.id);
-	expect((await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId } })).status).toBe(200);
+	expect((await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId, direction: 'ru-pl' } })).status).toBe(200);
 	const response = await request(`/api/competitions/${roundId}/accept`, { method: 'POST', cookie: otherCookie });
 	expect(response.status).toBe(200);
 	expect(await response.json()).toMatchObject({ id: roundId, status: 'active', version: 2 });

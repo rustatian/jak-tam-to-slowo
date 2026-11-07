@@ -5,7 +5,7 @@ import { sql } from './cards';
 
 const snapshot: Competition = {
 	id: '33333333-3333-4333-8333-333333333333', createdBy: USER_A.id, target: 20,
-	status: 'active', winnerId: null, createdAt: 1, startedAt: 2, finishedAt: null, version: 1,
+	status: 'active', direction: 'ru-pl', winnerId: null, createdAt: 1, startedAt: 2, finishedAt: null, version: 1,
 	participants: [{ id: USER_A.id, displayName: USER_A.displayName, score: 8 }, { id: USER_B.id, displayName: USER_B.displayName, score: 8 }],
 };
 let other: Page;
@@ -28,6 +28,8 @@ async function refresh(page: Page) {
 async function fixedRound(page: Page, initial: Competition | null) {
 	let round = initial;
 	await page.route('**/api/competitions/current', route => route.fulfill({ json: round }));
+	await page.route('**/api/competitions/*/attempts', route => route.fulfill({ json: [] }));
+	await page.route('**/api/competitions', route => route.fulfill({ json: { competitions: round ? [round] : [], nextCursor: null } }));
 	return async (next: Competition | null, poll = false) => {
 		round = next;
 		if (poll) {
@@ -38,9 +40,11 @@ async function fixedRound(page: Page, initial: Competition | null) {
 	};
 }
 
-async function open(page: Page, compact = false) {
+async function open(page: Page, training = false) {
 	await page.goto('/');
-	if (!compact) await page.getByRole('button', { name: 'Zawody', exact: true }).click();
+	await page.getByRole('button', { name: 'Zawody', exact: true }).click();
+	await page.getByTestId('race-row').locator('.race-open').click();
+	if (training) await page.getByRole('button', { name: 'Trenuj słówka', exact: true }).click();
 	await expect(page.locator('svg.competition-ladder')).toBeVisible();
 	return page.locator('svg.competition-ladder');
 }
@@ -94,7 +98,7 @@ async function evidence(page: Page, name: string) {
 
 async function start(page: Page, score: number): Promise<Competition> {
 	realRound = true;
-	const response = await page.request.post('/api/competitions', { data: { id: crypto.randomUUID() } });
+	const response = await page.request.post('/api/competitions', { data: { id: crypto.randomUUID(), direction: 'ru-pl' } });
 	expect(response.status()).toBe(200);
 	const round: Competition = await response.json();
 	expect(round.target).toBe(20);
@@ -164,7 +168,12 @@ for (const scenario of [
 		resting(frame, scenario.score, index);
 	}
 	await evidence(page, `full-${scenario.score}`);
-	await page.getByRole('button', { name: 'Nauka', exact: true }).click();
+	await page.getByRole('button', { name: 'Trenuj słówka', exact: true }).click();
+	const strip = await geometry(page.getByTestId('competition-summary').locator('svg.competition-ladder'));
+	for (const [index, person] of strip.people.entries()) {
+		expect(person.hands.every(hand => onBar(hand, strip.bars))).toBe(true);
+		resting(strip, scenario.score, index);
+	}
 	await evidence(page, `compact-${scenario.score}`);
 });
 
@@ -276,7 +285,10 @@ for (const scenario of [
 	{ name: 'second participant', index: 1, a: 19, b: 20, prize: 'translate(227,12)' },
 ]) test(`lets either winner grab the trophy: ${scenario.name}`, async ({ page }) => {
 	const update = await fixedRound(page, withScores(19, 19));
-	const ladder = await open(page);
+	await open(page);
+	await page.getByRole('button', { name: 'Trenuj słówka', exact: true }).click();
+	const ladder = page.getByTestId('competition-summary').locator('svg.competition-ladder');
+	await expect(ladder).toBeVisible();
 	await update(withScores(scenario.a, scenario.b, { ...snapshot, version: 2 }));
 	await expect(ladder.locator(`[data-score-label="${scenario.index}"]`)).toHaveText('20');
 	await page.clock.runFor(656);
@@ -299,9 +311,9 @@ for (const scenario of [
 	expect((await geometry(ladder)).prize).toBe(scenario.prize);
 	await expect(ladder).toHaveClass(/celebrate/);
 	await evidence(page, `winner-${scenario.index}-held`);
-	await page.getByRole('button', { name: 'Nauka', exact: true }).click();
-	expect((await geometry(ladder)).prize).toBe(scenario.prize);
-	await evidence(page, `winner-${scenario.index}-compact`);
+	await page.getByTestId('competition-summary').click();
+	expect((await geometry(page.locator('svg.competition-ladder'))).prize).toBe(scenario.prize);
+	await evidence(page, `winner-${scenario.index}-full`);
 });
 
 test('does not repeat the pickup on an unchanged poll', async ({ page }) => {
@@ -327,7 +339,7 @@ test('resets for a rematch', async ({ page }) => {
 	await save(page, round, 'answer');
 	await expect(ladder.locator('[data-score-label="0"]')).toHaveText('20');
 	await page.clock.runFor(1800);
-	await page.getByRole('button', { name: 'Zaproś na rewanż', exact: true }).click();
+	await page.getByRole('button', { name: 'Zagraj jeszcze raz', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'Anuluj zaproszenie', exact: true })).toBeEnabled();
 	const frame = await geometry(ladder);
 	resting(frame, 0, 0); resting(frame, 0, 1);
@@ -363,7 +375,7 @@ for (const scenario of [
 		round.participants[0].displayName = 'Aleksandra Katarzyna';
 		round.participants[1].displayName = 'Konstanty Aleksander';
 	}
-	await fixedRound(page, round);
+	const update = await fixedRound(page, round);
 	await open(page, true);
 	await page.addStyleTag({ content: `html { font-size: ${scenario.text}% }` });
 	await expect(page.getByTestId('competition-summary')).toContainText(round.participants[0].displayName);
@@ -375,27 +387,37 @@ for (const scenario of [
 	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(scenario.width);
 	await expect(page.getByTestId('competition-scores')).toContainText('19 / 20');
 	await evidence(page, `${scenario.name}-full`);
-	await page.getByRole('button', { name: 'Trenuj słówka', exact: true }).click();
-	await page.getByRole('button', { name: 'Dodaj', exact: true }).click();
-	await expect(page.getByRole('textbox').first()).toBeVisible();
+	await update(withScores(20, 19, round));
+	const back = page.getByRole('button', { name: 'Wróć do listy wyścigów', exact: true });
+	const restart = page.getByRole('button', { name: 'Zagraj jeszcze raz', exact: true });
+	await expect(restart).toBeEnabled();
+	for (const control of [back, restart]) {
+		const box = (await control.boundingBox())!;
+		expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
+	}
+	await back.click();
+	await expect(page.getByTestId('race-row')).toContainText(`Wygrywa ${round.participants[0].displayName}`);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(scenario.width);
+	const small = (await page.getByTestId('race-row').locator('.race-restart').boundingBox())!;
+	expect(small.width).toBeGreaterThanOrEqual(44); expect(small.height).toBeGreaterThanOrEqual(44);
+	await evidence(page, `${scenario.name}-list`);
 });
 
 test('preserves keyboard and screen-reader access', async ({ page }) => {
 	const update = await fixedRound(page, withScores(8, 8));
-	const ladder = await open(page, true);
-	const summary = page.getByTestId('competition-summary');
-	expect((await summary.getByText('Remis.', { exact: true }).boundingBox())!.width).toBeGreaterThan(1);
-	await summary.focus();
+	await page.goto('/');
+	await page.getByRole('button', { name: 'Zawody', exact: true }).click();
+	await page.getByTestId('race-row').locator('.race-open').focus();
 	await page.keyboard.press('Enter');
 	await expect(page.getByRole('heading', { name: 'Wyścig do 20' })).toBeVisible();
-	await expect(ladder).toHaveAttribute('aria-hidden', 'true');
+	await expect(page.locator('svg.competition-ladder')).toHaveAttribute('aria-hidden', 'true');
 	const live = page.getByTestId('competition-scores');
 	await expect(live).toHaveAttribute('aria-atomic', 'true');
 	const before = await live.innerText();
 	await update(withScores(8, 8));
 	await page.clock.runFor(32);
 	expect(await live.innerText()).toBe(before);
-	const controls = page.locator('.tabs button, .competition-actions button, .competition-rules summary');
+	const controls = page.locator('.tabs button, .back, .competition-actions button');
 	for (const control of await controls.all()) {
 		const box = (await control.boundingBox())!;
 		expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
@@ -404,29 +426,30 @@ test('preserves keyboard and screen-reader access', async ({ page }) => {
 	}
 	await update(withScores(20, 8, { ...snapshot, version: 3 }));
 	await expect(live).toContainText(`Wygrywa ${USER_A.displayName}!`);
+	await page.getByRole('button', { name: 'Wróć do listy wyścigów', exact: true }).focus();
+	await page.keyboard.press('Enter');
+	await expect(page.getByRole('heading', { name: 'Zawody', exact: true })).toBeVisible();
+	const rules = page.locator('.competition-rules summary');
+	const box = (await rules.boundingBox())!;
+	expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
 });
 
-test('shows the default ladder before the first invitation', async ({ page }) => {
+test('shows an empty race list before the first invitation', async ({ page }) => {
 	await fixedRound(page, null);
-	const ladder = await open(page);
-	await expect(ladder.locator('.rung-bar')).toHaveCount(20);
-	const frame = await geometry(ladder);
-	resting(frame, 0, 0); resting(frame, 0, 1);
-	await expect(page.getByRole('button', { name: 'Zaproś do wyścigu', exact: true })).toBeEnabled();
+	await page.goto('/');
+	await page.getByRole('button', { name: 'Zawody', exact: true }).click();
+	await expect(page.getByText('Nie ma jeszcze wyścigów.', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Nowy wyścig', exact: true })).toBeEnabled();
+	await expect(page.locator('svg.competition-ladder')).toHaveCount(0);
 });
 
-for (const scenario of [
-	{ name: 'study', screen: 'Nauka', label: 'Odpowiedź po polsku' },
-	{ name: 'add', screen: 'Dodaj', label: 'Słowo lub wyrażenie' },
-]) test(`keeps the compact ladder in page flow above the keyboard: ${scenario.name}`, async ({ page }) => {
+test('keeps the compact ladder in page flow above the keyboard', async ({ page }) => {
 	await start(page, 8);
-	expect((await page.request.patch('/api/me', { data: { direction: 'ru-pl' } })).status()).toBe(200);
 	const response = await page.request.post('/api/cards', { data: { ...CARD_B, id: crypto.randomUUID() } });
 	expect(response.status()).toBe(201);
 	cards.push(await response.json());
 	await open(page, true);
-	await page.getByRole('button', { name: scenario.screen, exact: true }).click();
-	const input = page.getByLabel(scenario.label);
+	const input = page.getByLabel('Odpowiedź po polsku');
 	await expect(input).toBeEnabled();
 	await input.focus();
 	await page.evaluate(() => {
@@ -441,7 +464,7 @@ for (const scenario of [
 	expect(await page.getByTestId('competition-summary').evaluate(node => getComputedStyle(node).position)).toBe('static');
 	await input.fill('Dom');
 	await expect(input).toHaveValue('Dom');
-	await page.screenshot({ path: `.superpowers/competitions/${test.info().project.name}-keyboard-${scenario.name}.png`, clip: { x: 0, y: 0, width: page.viewportSize()!.width, height: 420 }, scale: 'css' });
+	await page.screenshot({ path: `.superpowers/competitions/${test.info().project.name}-keyboard-training.png`, clip: { x: 0, y: 0, width: page.viewportSize()!.width, height: 420 }, scale: 'css' });
 	await input.blur();
 	await page.evaluate(() => {
 		Object.defineProperty(window.visualViewport!, 'height', { configurable: true, value: innerHeight });
@@ -449,6 +472,6 @@ for (const scenario of [
 	});
 	await page.clock.runFor(32);
 	await expect(page.getByRole('navigation')).toBeVisible();
-	await page.getByRole('button', { name: 'Zawody', exact: true }).click();
+	await page.getByTestId('competition-summary').click();
 	await expect(page.getByRole('heading', { name: 'Wyścig do 20' })).toBeVisible();
 });

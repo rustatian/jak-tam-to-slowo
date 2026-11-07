@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { expect, it } from 'vitest';
-import type { Competition } from '../shared/types';
+import type { Competition, CompetitionPage } from '../shared/types';
 import { login, request } from './client';
 import { USER_A, USER_B, testAccountSecret } from './fixtures';
 
@@ -10,13 +10,14 @@ const previousId = '55555555-5555-4555-8555-555555555555';
 it('returns one waiting round for concurrent invitations', async () => {
 	const cookieA = await login(USER_A.id), cookieB = await login(USER_B.id);
 	const responses = await Promise.all([
-		request('/api/competitions', { method: 'POST', cookie: cookieA, body: { id: crypto.randomUUID() } }),
-		request('/api/competitions', { method: 'POST', cookie: cookieB, body: { id: crypto.randomUUID() } }),
+		request('/api/competitions', { method: 'POST', cookie: cookieA, body: { id: crypto.randomUUID(), direction: 'ru-pl' } }),
+		request('/api/competitions', { method: 'POST', cookie: cookieB, body: { id: crypto.randomUUID(), direction: 'pl-ru' } }),
 	]);
 	const rounds = await Promise.all(responses.map(response => response.json<Competition>()));
 	expect(responses.map(response => response.status)).toEqual([200, 200]);
 	expect(rounds[0].id).toBe(rounds[1].id);
 	expect(rounds[0]).toEqual(rounds[1]);
+	expect(['ru-pl', 'pl-ru']).toContain(rounds[0].direction);
 	expect(rounds[0]).toMatchObject({ status: 'waiting', target: 20, version: 1, winnerId: null, startedAt: null, finishedAt: null });
 	expect(rounds[0].participants).toEqual([
 		{ id: USER_A.id, displayName: USER_A.displayName, score: 0 },
@@ -29,24 +30,24 @@ it('returns one waiting round for concurrent invitations', async () => {
 it('replays an invitation ID', async () => {
 	const cookie = await login(USER_A.id);
 	await login(USER_B.id);
-	const first = await (await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId } })).json<Competition>();
-	const replay = await (await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId } })).json<Competition>();
+	const first = await (await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId, direction: 'ru-pl' } })).json<Competition>();
+	const replay = await (await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId, direction: 'ru-pl' } })).json<Competition>();
 	expect(replay).toEqual(first);
 	expect(await env.DB.prepare('SELECT count(*) FROM competitions').first('count(*)')).toBe(1);
 	await env.DB.prepare("UPDATE competitions SET status = 'finished', score_a = 20, winner_id = ?, started_at = 100, finished_at = 200, version = 22 WHERE id = ?")
 		.bind(USER_A.id, roundId).run();
 	const finished = await (await request('/api/competitions/current', { cookie })).json<Competition>();
-	const finishedReplay = await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId } });
+	const finishedReplay = await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId, direction: 'ru-pl' } });
 	expect(finishedReplay.status).toBe(200);
 	expect(await finishedReplay.json()).toEqual(finished);
 	expect(await env.DB.prepare('SELECT count(*) FROM competitions').first('count(*)')).toBe(1);
-	expect((await request('/api/competitions', { method: 'POST', cookie, body: { id: previousId } })).status).toBe(200);
-	expect(await (await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId } })).json()).toEqual(finished);
+	expect((await request('/api/competitions', { method: 'POST', cookie, body: { id: previousId, direction: 'ru-pl' } })).status).toBe(200);
+	expect(await (await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId, direction: 'ru-pl' } })).json()).toEqual(finished);
 });
 
 it('starts only after the invited learner accepts', async () => {
 	const cookieA = await login(USER_A.id), cookieB = await login(USER_B.id);
-	const waiting = await (await request('/api/competitions', { method: 'POST', cookie: cookieB, body: { id: roundId } })).json<Competition>();
+	const waiting = await (await request('/api/competitions', { method: 'POST', cookie: cookieB, body: { id: roundId, direction: 'ru-pl' } })).json<Competition>();
 	expect(waiting).toMatchObject({ createdBy: USER_B.id, status: 'waiting', version: 1 });
 	expect((await request(`/api/competitions/${roundId}/accept`, { method: 'POST', cookie: cookieB })).status).toBe(403);
 	expect(await (await request('/api/competitions/current', { cookie: cookieA })).json()).toEqual(waiting);
@@ -71,7 +72,7 @@ it('starts only after the invited learner accepts', async () => {
 
 it('serializes acceptance and cancellation', async () => {
 	const cookieA = await login(USER_A.id), cookieB = await login(USER_B.id);
-	expect((await request('/api/competitions', { method: 'POST', cookie: cookieA, body: { id: roundId } })).status).toBe(200);
+	expect((await request('/api/competitions', { method: 'POST', cookie: cookieA, body: { id: roundId, direction: 'ru-pl' } })).status).toBe(200);
 	const responses = await Promise.all([
 		request(`/api/competitions/${roundId}/accept`, { method: 'POST', cookie: cookieB }),
 		request(`/api/competitions/${roundId}/cancel`, { method: 'POST', cookie: cookieA }),
@@ -88,7 +89,7 @@ it.each([
 	{ name: 'invitee', userId: USER_B.id },
 ])('cancels from either account: $name', async ({ userId }) => {
 	const cookieA = await login(USER_A.id), cookieB = await login(USER_B.id);
-	expect((await request('/api/competitions', { method: 'POST', cookie: cookieA, body: { id: roundId } })).status).toBe(200);
+	expect((await request('/api/competitions', { method: 'POST', cookie: cookieA, body: { id: roundId, direction: 'ru-pl' } })).status).toBe(200);
 	const cookie = userId === USER_A.id ? cookieA : cookieB;
 	const response = await request(`/api/competitions/${roundId}/cancel`, { method: 'POST', cookie });
 	expect(response.status).toBe(200);
@@ -105,7 +106,7 @@ it.each([
 
 it('rejects cancellation after acceptance', async () => {
 	const cookieA = await login(USER_A.id), cookieB = await login(USER_B.id);
-	expect((await request('/api/competitions', { method: 'POST', cookie: cookieA, body: { id: roundId } })).status).toBe(200);
+	expect((await request('/api/competitions', { method: 'POST', cookie: cookieA, body: { id: roundId, direction: 'ru-pl' } })).status).toBe(200);
 	expect((await request(`/api/competitions/${roundId}/accept`, { method: 'POST', cookie: cookieB })).status).toBe(200);
 	const before = await env.DB.prepare('SELECT * FROM competitions WHERE id = ?').bind(roundId).first();
 	const response = await request(`/api/competitions/${roundId}/cancel`, { method: 'POST', cookie: cookieA });
@@ -148,7 +149,7 @@ it('starts a rematch without changing the finished round', async () => {
 		VALUES (?, ?, ?, 20, 7, 20, ?, 'finished', ?, 50, 100, 200, 29)`)
 		.bind(previousId, USER_A.id, USER_B.id, USER_A.id, USER_A.id).run();
 	const previous = await env.DB.prepare('SELECT * FROM competitions WHERE id = ?').bind(previousId).first();
-	expect((await request('/api/competitions', { method: 'POST', cookie: cookieB, body: { id: roundId } })).status).toBe(200);
+	expect((await request('/api/competitions', { method: 'POST', cookie: cookieB, body: { id: roundId, direction: 'ru-pl' } })).status).toBe(200);
 	const response = await request(`/api/competitions/${roundId}/accept`, { method: 'POST', cookie: cookieA });
 	expect(response.status).toBe(200);
 	const rematch = await response.json<Competition>();
@@ -159,7 +160,7 @@ it('starts a rematch without changing the finished round', async () => {
 
 it('requires the other account to sign in', async () => {
 	const cookie = await login(USER_A.id);
-	const response = await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId } });
+	const response = await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId, direction: 'ru-pl' } });
 	expect(response.status).toBe(409);
 	expect(await response.json()).toEqual({ code: 'opponent_not_ready', error: 'Druga osoba musi najpierw zalogować się do aplikacji.' });
 	expect(await env.DB.prepare('SELECT count(*) FROM competitions').first('count(*)')).toBe(0);
@@ -172,7 +173,7 @@ it.each([
 	const cookie = await login(USER_A.id);
 	const accounts = JSON.parse(testAccountSecret);
 	env.ACCOUNTS = JSON.stringify(count === 1 ? accounts.slice(0, 1) : [...accounts, { ...accounts[0], id: previousId, username: 'other-test' }]);
-	const response = await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId } });
+	const response = await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId, direction: 'ru-pl' } });
 	expect(response.status).toBe(503);
 	expect(await response.json()).toMatchObject({ code: 'competition_unavailable' });
 	expect(await env.DB.prepare('SELECT count(*) FROM competitions').first('count(*)')).toBe(0);
@@ -180,20 +181,27 @@ it.each([
 
 it.each([
 	{ name: 'missing read session', path: '/api/competitions/current', method: 'GET', anonymous: true, status: 401 },
-	{ name: 'missing invitation session', path: '/api/competitions', method: 'POST', anonymous: true, body: { id: roundId }, status: 401 },
+	{ name: 'missing invitation session', path: '/api/competitions', method: 'POST', anonymous: true, body: { id: roundId, direction: 'ru-pl' }, status: 401 },
 	{ name: 'missing acceptance session', path: `/api/competitions/${roundId}/accept`, method: 'POST', anonymous: true, status: 401 },
 	{ name: 'missing cancellation session', path: `/api/competitions/${roundId}/cancel`, method: 'POST', anonymous: true, status: 401 },
-	{ name: 'wrong origin', path: '/api/competitions', method: 'POST', origin: 'https://other.example', body: { id: roundId }, status: 403 },
-	{ name: 'account mismatch', path: '/api/competitions', method: 'POST', accountId: USER_B.id, body: { id: roundId }, status: 409 },
-	{ name: 'wrong invitation method', path: '/api/competitions', method: 'GET', status: 405 },
+	{ name: 'wrong origin', path: '/api/competitions', method: 'POST', origin: 'https://other.example', body: { id: roundId, direction: 'ru-pl' }, status: 403 },
+	{ name: 'account mismatch', path: '/api/competitions', method: 'POST', accountId: USER_B.id, body: { id: roundId, direction: 'ru-pl' }, status: 409 },
+	{ name: 'wrong invitation method', path: '/api/competitions', method: 'PUT', status: 405 },
+	{ name: 'missing list session', path: '/api/competitions', method: 'GET', anonymous: true, status: 401 },
+	{ name: 'invalid list cursor', path: '/api/competitions?cursor=bad', method: 'GET', status: 400 },
+	{ name: 'missing attempts session', path: `/api/competitions/${roundId}/attempts`, method: 'GET', anonymous: true, status: 401 },
+	{ name: 'wrong attempts method', path: `/api/competitions/${roundId}/attempts`, method: 'POST', status: 405 },
+	{ name: 'invalid attempts UUID', path: '/api/competitions/invalid/attempts', method: 'GET', status: 400 },
 	{ name: 'wrong current method', path: '/api/competitions/current', method: 'POST', status: 405 },
 	{ name: 'wrong acceptance method', path: `/api/competitions/${roundId}/accept`, method: 'GET', status: 405 },
 	{ name: 'wrong cancellation method', path: `/api/competitions/${roundId}/cancel`, method: 'GET', status: 405 },
-	{ name: 'invalid invitation UUID', path: '/api/competitions', method: 'POST', body: { id: 'invalid' }, status: 400 },
+	{ name: 'invalid invitation UUID', path: '/api/competitions', method: 'POST', body: { id: 'invalid', direction: 'ru-pl' }, status: 400 },
 	{ name: 'invalid acceptance UUID', path: '/api/competitions/invalid/accept', method: 'POST', status: 400 },
 	{ name: 'invalid cancellation UUID', path: '/api/competitions/invalid/cancel', method: 'POST', status: 400 },
-	{ name: 'client-supplied score', path: '/api/competitions', method: 'POST', body: { id: roundId, score: 20 }, status: 400 },
-	{ name: 'client-supplied participants', path: '/api/competitions', method: 'POST', body: { id: roundId, participants: [USER_A.id, USER_B.id] }, status: 400 },
+	{ name: 'client-supplied score', path: '/api/competitions', method: 'POST', body: { id: roundId, direction: 'ru-pl', score: 20 }, status: 400 },
+	{ name: 'client-supplied participants', path: '/api/competitions', method: 'POST', body: { id: roundId, direction: 'ru-pl', participants: [USER_A.id, USER_B.id] }, status: 400 },
+	{ name: 'missing direction', path: '/api/competitions', method: 'POST', body: { id: roundId }, status: 400 },
+	{ name: 'unknown direction', path: '/api/competitions', method: 'POST', body: { id: roundId, direction: 'pl-en' }, status: 400 },
 	{ name: 'client-supplied acceptance score', path: `/api/competitions/${roundId}/accept`, method: 'POST', body: { score: 20 }, status: 400 },
 	{ name: 'client-supplied cancellation winner', path: `/api/competitions/${roundId}/cancel`, method: 'POST', body: { winnerId: USER_A.id }, status: 400 },
 ])('protects competition endpoints: $name', async ({ path, method, anonymous, origin, accountId, body, status }) => {
@@ -221,17 +229,59 @@ it.each([
 	const current = await request('/api/competitions/current', { cookie });
 	expect(current.status).toBe(200);
 	expect(await current.json()).toBeNull();
+	expect(await (await request('/api/competitions', { cookie })).json()).toEqual({ competitions: [], nextCursor: null });
+	expect((await request(`/api/competitions/${roundId}/attempts`, { cookie })).status).toBe(404);
 	expect((await request(`/api/competitions/${roundId}/accept`, { method: 'POST', cookie })).status).toBe(404);
 	expect((await request(`/api/competitions/${roundId}/cancel`, { method: 'POST', cookie })).status).toBe(404);
 	expect(await env.DB.prepare('SELECT * FROM competitions WHERE id = ?').bind(roundId).first()).toEqual(before);
 });
 
 it.each([
-	{ name: 'acceptance', action: 'accept' },
-	{ name: 'cancellation', action: 'cancel' },
-])('returns 404 for $name of a missing round', async ({ action }) => {
+	{ name: 'acceptance', action: 'accept', method: 'POST' },
+	{ name: 'cancellation', action: 'cancel', method: 'POST' },
+	{ name: 'attempts', action: 'attempts', method: 'GET' },
+])('returns 404 for $name of a missing round', async ({ action, method }) => {
 	const cookie = await login(USER_A.id);
-	expect((await request(`/api/competitions/${roundId}/${action}`, { method: 'POST', cookie })).status).toBe(404);
+	expect((await request(`/api/competitions/${roundId}/${action}`, { method, cookie })).status).toBe(404);
+});
+
+const insertRace = `INSERT INTO competitions
+	(id, participant_a_id, participant_b_id, target, created_by, status, direction, created_at, finished_at)
+	VALUES (?, ?, ?, 20, ?, ?, ?, ?, ?)`;
+
+it('lists races newest first without cancelled invitations', async () => {
+	const cookie = await login(USER_A.id);
+	await login(USER_B.id);
+	const ids = ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000003'];
+	const rows = [[ids[0], 'finished', 'ru-pl', 100, 150], [ids[1], 'cancelled', 'ru-pl', 200, 250], [ids[2], 'active', 'pl-ru', 300, null]];
+	for (const [id, status, direction, createdAt, finishedAt] of rows) {
+		await env.DB.prepare(insertRace).bind(id, USER_A.id, USER_B.id, USER_A.id, status, direction, createdAt, finishedAt).run();
+	}
+	const response = await request('/api/competitions', { cookie });
+	expect(response.status).toBe(200);
+	expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+	const page = await response.json<CompetitionPage>();
+	expect(page.competitions.map(race => race.id)).toEqual([ids[2], ids[0]]);
+	expect(page.competitions.map(race => race.direction)).toEqual(['pl-ru', 'ru-pl']);
+	expect(page.nextCursor).toBeNull();
+});
+
+it.each([
+	{ name: 'first page', after: false, times: [12, 11, 10, 9, 8, 7, 6, 5, 4, 3], more: true },
+	{ name: 'second page', after: true, times: [2, 1], more: false },
+])('pages the race list: $name', async ({ after, times, more }) => {
+	const cookie = await login(USER_A.id);
+	await login(USER_B.id);
+	const ids = new Map<number, string>();
+	for (let time = 1; time <= 12; time++) {
+		const id = `00000000-0000-4000-8000-0000000000${String(time).padStart(2, '0')}`;
+		ids.set(time, id);
+		await env.DB.prepare(insertRace).bind(id, USER_A.id, USER_B.id, USER_A.id, 'finished', 'ru-pl', time, time).run();
+	}
+	const query = after ? `?cursor=3:${ids.get(3)}` : '';
+	const page = await (await request(`/api/competitions${query}`, { cookie })).json<CompetitionPage>();
+	expect(page.competitions.map(race => race.createdAt)).toEqual(times);
+	expect(page.nextCursor).toBe(more ? `3:${ids.get(3)}` : null);
 });
 
 it.each([
@@ -245,11 +295,12 @@ it.each([
 	{ name: 'negative second score', assignment: 'score_b = -1' },
 	{ name: 'first score above the target', assignment: 'score_a = 21' },
 	{ name: 'second score above the target', assignment: 'score_b = 21' },
+	{ name: 'an unknown direction', assignment: "direction = 'pl-en'" },
 ])('rejects stored rounds with $name', async ({ assignment }) => {
 	const cookie = await login(USER_A.id);
 	await login(USER_B.id);
 	await env.DB.prepare("INSERT INTO users (id, username, display_name, created_at) VALUES (?, 'other', 'Other', 1)").bind(previousId).run();
-	expect((await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId } })).status).toBe(200);
+	expect((await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId, direction: 'ru-pl' } })).status).toBe(200);
 	const before = await env.DB.prepare('SELECT * FROM competitions WHERE id = ?').bind(roundId).first();
 	await expect(env.DB.prepare(`UPDATE competitions SET ${assignment} WHERE id = ?`).bind(roundId).run()).rejects.toThrow('CHECK constraint failed');
 	expect(await env.DB.prepare('SELECT * FROM competitions WHERE id = ?').bind(roundId).first()).toEqual(before);
@@ -258,7 +309,7 @@ it.each([
 it('links each competition event to one saved review', async () => {
 	const cookie = await login(USER_A.id);
 	await login(USER_B.id);
-	expect((await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId } })).status).toBe(200);
+	expect((await request('/api/competitions', { method: 'POST', cookie, body: { id: roundId, direction: 'ru-pl' } })).status).toBe(200);
 	const attemptId = crypto.randomUUID();
 	await env.DB.prepare("INSERT INTO reviews (user_id, attempt_id, input_json, result_json) VALUES (?, ?, '{}', '{}'), (?, ?, '{}', '{}')")
 		.bind(USER_A.id, attemptId, USER_B.id, attemptId).run();

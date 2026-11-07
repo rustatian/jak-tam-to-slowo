@@ -71,6 +71,7 @@ for (const scenario of [
 
 for (const scenario of [
 	{ name: 'Cancel', action: 'Odrzuć zmiany', expired: false },
+	{ name: 'Back', action: 'Wróć do listy słówek', expired: false },
 	{ name: 'deliberate logout', action: 'Wyloguj', expired: false },
 	{ name: 'deliberate logout after session loss', action: 'Wyloguj', expired: true },
 ]) test(`clears Words recovery after ${scenario.name}`, async ({ page, baseURL }) => {
@@ -87,6 +88,7 @@ for (const scenario of [
 	if (scenario.expired) await page.context().clearCookies();
 	await page.getByRole('button', { name: scenario.action, exact: true }).click();
 	if (scenario.action === 'Wyloguj') await login(page);
+	else await expect(page.getByLabel('Szukaj słówek')).toBeVisible();
 	await page.reload();
 	await page.getByRole('button', { name: 'Słówka', exact: true }).click();
 	await expect(page.getByLabel('Przykład po polsku')).toHaveCount(0);

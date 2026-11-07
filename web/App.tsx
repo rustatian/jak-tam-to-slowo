@@ -7,8 +7,8 @@ import { AddWord } from './AddWord';
 import { Study } from './Study';
 import { Icon } from './Icon';
 import { useCompetition } from './useCompetition';
-import { Competition } from './Competition';
-import { CompetitionSummary } from './CompetitionSummary';
+import { Competition, type ZawodyView } from './Competition';
+import { dropStaleRaceDrafts } from './useStudy';
 
 export function App() {
 	const [user, setUser] = useState<User | null>(null);
@@ -17,6 +17,7 @@ export function App() {
 	const [error, setError] = useState('');
 	const [screen, setScreen] = useState<'study' | 'words' | 'add' | 'competitions'>('study');
 	const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+	const [raceView, setRaceView] = useState<ZawodyView>({ kind: 'list' });
 	const competition = useCompetition(user);
 	const locked = busy || competition.busy;
 	const reviewSaved = useCallback(() => { void competition.refresh(); }, [competition.refresh]);
@@ -27,6 +28,7 @@ export function App() {
 		setError('');
 		setScreen('study');
 		setSelectedCard(null);
+		setRaceView({ kind: 'list' });
 	}, []);
 	function signedIn(user: User) {
 		setApiAccount(user.id);
@@ -50,7 +52,12 @@ export function App() {
 		void load();
 		return () => window.removeEventListener('session-ended', expired);
 	}, [expired]);
-	useEffect(() => { window.scrollTo(0, 0); }, [screen]);
+	useEffect(() => { window.scrollTo(0, 0); }, [screen, raceView]);
+	const activeRaceId = competition.round?.status === 'active' ? competition.round.id : null;
+	const raceState = competition.round?.status === 'waiting' || competition.round?.status === 'active' ? competition.round.status : null;
+	useEffect(() => {
+		if (user && !competition.loading && !competition.readError) dropStaleRaceDrafts(user.id, activeRaceId);
+	}, [user?.id, competition.loading, competition.readError, activeRaceId]);
 	useEffect(() => {
 		const viewport = window.visualViewport;
 		if (!viewport) return;
@@ -104,14 +111,14 @@ export function App() {
 	return <main className={`app${user ? ' signed-in' : ''}`}>
 		<header className="brand"><span className="app-icon" aria-hidden="true">Ł</span><span className="brand-name" lang="pl">Jak tam to słowo?</span>{user && <div className="account"><span className="avatar" aria-hidden="true">{user.displayName.slice(0, 1)}</span><span className="name">{user.displayName}</span><button className="quiet" aria-label="Wyloguj" onClick={logout} disabled={locked}><Icon name="exit" /></button></div>}</header>
 		{loading ? <p role="status">Wczytywanie…</p> : user ? <>
-			{screen !== 'competitions' && competition.round && <CompetitionSummary userId={user.id} round={competition.round} stale={!!competition.readError} busy={locked} onOpen={() => setScreen('competitions')} />}
 			<nav className="tabs" aria-label="Sekcje">
 				<button aria-pressed={screen === 'study'} disabled={locked} onClick={() => setScreen('study')}><Icon name="study" />Nauka</button>
 				<button aria-pressed={screen === 'words'} disabled={locked} onClick={() => { setSelectedCard(null); setScreen('words'); }}><Icon name="words" />Słówka</button>
 				<button aria-pressed={screen === 'add'} disabled={locked} onClick={() => setScreen('add')}><Icon name="add" />Dodaj</button>
-				<button aria-pressed={screen === 'competitions'} disabled={locked} onClick={() => setScreen('competitions')}><Icon name="trophy" />Zawody</button>
+				<button aria-pressed={screen === 'competitions'} aria-describedby={raceState ? 'race-state' : undefined} disabled={locked} onClick={() => { setRaceView({ kind: 'list' }); setScreen('competitions'); }}><Icon name="trophy" />Zawody{raceState && <span className="tab-dot" data-state={raceState} aria-hidden="true" />}</button>
+				{raceState && <span id="race-state" hidden>{raceState === 'waiting' ? 'Zaproszenie czeka na odpowiedź.' : 'Wyścig trwa.'}</span>}
 			</nav>
-			{screen === 'competitions' ? <Competition user={user} competition={competition} onStudy={() => setScreen('study')} /> : screen === 'add' ? <AddWord key={user.id} userId={user.id} busy={busy} onBusy={setBusy} onOpen={card => { setSelectedCard(card); setScreen('words'); }} /> : screen === 'words' ? <Words key={user.id} userId={user.id} initialCard={selectedCard} onBusy={setBusy} /> : <Study key={user.id} user={user} competition={competition.round} onReview={reviewSaved} onDirection={directionSaved} onBusy={setBusy} />}
+			{screen === 'competitions' ? <Competition user={user} competition={competition} locked={locked} view={raceView} onView={setRaceView} onReview={reviewSaved} onDirection={directionSaved} onBusy={setBusy} /> : screen === 'add' ? <AddWord key={user.id} userId={user.id} busy={busy} onBusy={setBusy} onOpen={card => { setSelectedCard(card); setScreen('words'); }} /> : screen === 'words' ? <Words key={user.id} userId={user.id} initialCard={selectedCard} onBusy={setBusy} /> : <Study key={user.id} user={user} onDirection={directionSaved} onBusy={setBusy} />}
 		</> : !error && <Login onLogin={signedIn} />}
 		{error && <div className="notice"><p className="error" role="alert">{error}</p>{!user && <button onClick={load}>Ponów</button>}</div>}
 	</main>;

@@ -1,40 +1,50 @@
-import { COMPETITION_TARGET, type User } from '../shared/types';
+import { useEffect } from 'react';
+import type { Competition as Race, Direction, ReviewResult, User } from '../shared/types';
 import type { CompetitionState } from './useCompetition';
-import { competitionStatus } from './CompetitionSummary';
-import { CompetitionLadder } from './CompetitionLadder';
+import { useRaceList } from './useRaceList';
+import { RaceList } from './RaceList';
+import { NewRace } from './NewRace';
+import { RaceView } from './RaceView';
+import { RaceTraining } from './RaceTraining';
 
-export function Competition({ user, competition, onStudy }: {
-	user: User; competition: CompetitionState; onStudy(): void;
+export type ZawodyView = { kind: 'list' } | { kind: 'new' } | { kind: 'race'; id: string } | { kind: 'training'; id: string };
+
+export function Competition({ user, competition, locked, view, onView, onReview, onDirection, onBusy }: {
+	user: User; competition: CompetitionState; locked: boolean; view: ZawodyView; onView(view: ZawodyView): void;
+	onReview(result: ReviewResult): void; onDirection(direction: Direction): void; onBusy(busy: boolean): void;
 }): React.JSX.Element {
 	const { round, loading, readError, actionError, retryAction, busy, actions } = competition;
-	return <section className="page competition" aria-labelledby="competition-title">
-		<h1 id="competition-title">Wyścig do {round?.target ?? COMPETITION_TARGET}</h1>
-		<p className="intro">Dobra odpowiedź: +1. Błąd lub pokazanie odpowiedzi: -1. Wynik nie spada poniżej zera.</p>
-		{!round && loading && <p role="status">Wczytywanie wyzwania…</p>}
-		<div className="competition-scores" data-testid={round ? 'competition-scores' : undefined} role="status" aria-atomic="true">
-			{round && <div className="competition-score-row">{round.participants.map(person => <p key={person.id}><span>{person.displayName}{person.id === user.id && ' (Ty)'}: </span><strong>{person.score} <small>/ {round.target}</small></strong></p>)}</div>}
-			<CompetitionLadder round={round} />
-			{round && <p className="competition-lead">{competitionStatus(round)}</p>}
-		</div>
-		<div className="competition-actions">
-			{actions.includes('invite') && <button className="primary" disabled={busy} onClick={competition.invite}>{round ? 'Zaproś na rewanż' : 'Zaproś do wyścigu'}</button>}
-			{actions.includes('accept') && <button className="primary" disabled={busy} onClick={competition.accept}>Przyjmij wyzwanie</button>}
-			{actions.includes('cancel') && <button disabled={busy} onClick={competition.cancel}>Anuluj zaproszenie</button>}
-			{round?.status === 'active' && <button className="primary" disabled={busy} onClick={onStudy}>Trenuj słówka</button>}
-		</div>
+	const list = useRaceList(round);
+	const race = view.kind === 'race' || view.kind === 'training' ? list.races.find(item => item.id === view.id) : undefined;
+	const missing = (view.kind === 'race' || view.kind === 'training') && !race;
+	// A race leaves the list when the other learner cancels it.
+	useEffect(() => { if (missing && !list.loading) onView({ kind: 'list' }); }, [missing, list.loading, onView]);
+	const inviteDisabled = locked || !actions.includes('invite');
+
+	async function show(action: Promise<Race | null>) {
+		const next = await action;
+		if (next) onView({ kind: 'race', id: next.id });
+	}
+	function restart(race: Race) {
+		if (race.direction) void show(competition.invite(race.direction));
+		else onView({ kind: 'new' });
+	}
+
+	if (view.kind === 'training' && race) return <RaceTraining user={user} round={race} finished={race.status === 'finished' || round?.id !== race.id} stale={!!readError} busy={locked}
+		onReview={onReview} onDirection={onDirection} onBusy={onBusy} onBack={() => onView({ kind: 'race', id: race.id })} onRestart={() => restart(race)} restartDisabled={inviteDisabled} />;
+	const status = <>
 		{busy && <p className="delayed" role="status">Zapisywanie wyzwania…</p>}
 		{actionError && <div className="notice"><p className="error" role="alert">{actionError}</p>
-			{retryAction && <button disabled={busy} onClick={competition.retry}>{retryAction === 'invite' ? 'Ponów zaproszenie' : retryAction === 'accept' ? 'Ponów przyjęcie' : 'Ponów anulowanie'}</button>}
+			{retryAction && <button disabled={busy} onClick={() => void (retryAction === 'invite' ? show(competition.retry()) : competition.retry())}>{retryAction === 'invite' ? 'Ponów zaproszenie' : retryAction === 'accept' ? 'Ponów przyjęcie' : 'Ponów anulowanie'}</button>}
 		</div>}
 		{readError && <div className="notice">
 			{round && <p>Wynik może być nieaktualny</p>}
 			<p className="error" role="alert">{readError}</p>
 			<button disabled={busy || loading} onClick={competition.refresh}>{round ? 'Odśwież' : 'Ponów'}</button>
 		</div>}
-		<details className="competition-rules"><summary>Zasady wyścigu</summary>
-			<p>Wyścig zaczyna się po przyjęciu zaproszenia. Wygrywa osoba, która pierwsza zdobędzie {round?.target ?? COMPETITION_TARGET} punktów.</p>
-			<p>Wynik zmienia się po zapisaniu odpowiedzi w Nauce. „Prawie dobrze”, „Powtórz” i „Pokaż odpowiedź” odejmują punkt. Przy zerze wynik pozostaje bez zmian.</p>
-			<p>Oba kierunki tłumaczenia liczą się do tego samego wyniku. Po zakończeniu możecie rozpocząć rewanż od zera.</p>
-		</details>
-	</section>;
+	</>;
+	if (view.kind === 'new') return <NewRace user={user} locked={locked} onBack={() => onView({ kind: 'list' })} onInvite={direction => void show(competition.invite(direction))}>{status}</NewRace>;
+	if (race) return <RaceView user={user} race={race} competition={competition} locked={locked} restartDisabled={inviteDisabled}
+		onBack={() => onView({ kind: 'list' })} onTrain={() => onView({ kind: 'training', id: race.id })} onRestart={() => restart(race)}>{status}</RaceView>;
+	return <RaceList list={list} locked={locked} inviteDisabled={inviteDisabled} onNew={() => onView({ kind: 'new' })} onOpen={id => onView({ kind: 'race', id })} onRestart={restart}>{status}</RaceList>;
 }

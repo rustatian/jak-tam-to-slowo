@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef } from 'react';
-import { COMPETITION_TARGET, type Competition } from '../shared/types';
+import type { Competition } from '../shared/types';
 import { updateLadder } from './competition-ladder';
 
 const shirts = ['#2d6a78', '#874b78'];
@@ -29,10 +29,10 @@ function Person({ index, initial }: { index: number; initial: string }): React.J
 	</g>;
 }
 
-export function CompetitionLadder({ round, compact = false }: { round: Competition | null; compact?: boolean }): React.JSX.Element {
+export function CompetitionLadder({ round, compact = false }: { round: Competition; compact?: boolean }): React.JSX.Element {
 	const id = useId();
 	const svg = useRef<SVGSVGElement>(null);
-	const target = round?.target ?? COMPETITION_TARGET;
+	const { target } = round;
 	const bottom = 150 + target * 23;
 	const rungY = (score: number) => bottom - score * 23 + 2;
 	useLayoutEffect(() => updateLadder(svg.current!, round), [round]);
@@ -59,7 +59,7 @@ export function CompetitionLadder({ round, compact = false }: { round: Competiti
 			<path d="M24 51h8v14H24Z" fill="#ba8c32" /><rect x="12" y="65" width="32" height="8" rx="3" fill={`url(#gold-${id})`} /><rect x="9" y="73" width="38" height="6" rx="2" fill="#6e553b" />
 		</g></g>
 		{Array.from({ length: target + 1 }, (_, score) => <text key={score} className="tick" x="411" y={rungY(score) + 10} textAnchor="middle">{score}</text>)}
-		<Person index={0} initial={round?.participants[0].displayName.slice(0, 1) ?? 'M'} /><Person index={1} initial={round?.participants[1].displayName.slice(0, 1) ?? 'Ż'} />
+		<Person index={0} initial={round.participants[0].displayName.slice(0, 1)} /><Person index={1} initial={round.participants[1].displayName.slice(0, 1)} />
 		<text className="ladder-score" data-score-label="0" x="43" textAnchor="middle" /><text className="ladder-score" data-score-label="1" x="450" textAnchor="middle" />
 	</svg>;
 }

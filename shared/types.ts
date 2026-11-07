@@ -18,10 +18,27 @@ export interface Competition {
 	createdBy: string;
 	target: number;
 	status: CompetitionStatus;
+	direction: Direction | null;
 	winnerId: string | null;
 	createdAt: number;
 	startedAt: number | null;
 	finishedAt: number | null;
+	version: number;
+}
+export interface CompetitionPage { competitions: Competition[]; nextCursor: string | null }
+export interface CompetitionAttempt {
+	userId: string;
+	attemptId: string;
+	cardId: string;
+	pl: string;
+	ru: string;
+	direction: Direction;
+	answer: string | null;
+	grade: Grade;
+	correction: string;
+	explanation: string;
+	delta: number;
+	scoreAfter: number;
 	version: number;
 }
 

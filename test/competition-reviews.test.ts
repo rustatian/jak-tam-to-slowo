@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { beforeEach, expect, it, vi } from 'vitest';
-import type { Competition, GradeResult, ReviewInput, ReviewResult } from '../shared/types';
+import type { Competition, CompetitionAttempt, GradeResult, ReviewInput, ReviewResult } from '../shared/types';
 import { commitReview } from '../src/reviews';
 import { login, request } from './client';
 import { CARD_A, CARD_B, USER_A, USER_B } from './fixtures';
@@ -24,7 +24,7 @@ beforeEach(async () => {
 });
 
 async function invite(id = roundId) {
-	const response = await request('/api/competitions', { method: 'POST', cookie: cookieA, body: { id } });
+	const response = await request('/api/competitions', { method: 'POST', cookie: cookieA, body: { id, direction: 'ru-pl' } });
 	expect(response.status).toBe(200);
 	expect(await response.json()).toMatchObject({ id, status: 'waiting', version: 1 });
 }
@@ -173,16 +173,16 @@ it('keeps an old attempt out of a rematch', async () => {
 	expect(saved.events[0]).toMatchObject({ competition_id: roundId, user_id: USER_B.id });
 });
 
-it('counts repeated cards and both directions', async () => {
+it('counts only the race direction', async () => {
 	await startRound();
 	const first = await commitReview(env, USER_A.id, input, undefined, correct, 'exact', now);
 	const reverse: ReviewInput = { ...input, attemptId: crypto.randomUUID(), progressVersion: 1, direction: 'pl-ru', answer: 'Слово' };
 	const second = await commitReview(env, USER_A.id, reverse, first.progress, { ...correct, correction: 'Слово' }, 'exact', now + 1000);
 	expect(first.competition).toEqual({ competitionId: roundId, delta: 1, scoreAfter: 1, version: 3 });
-	expect(second.competition).toEqual({ competitionId: roundId, delta: 1, scoreAfter: 2, version: 4 });
+	expect(second.competition).toBeNull();
 	expect(second.progress).toMatchObject({ correct: 2, incorrect: 0, version: 2 });
-	expect((await currentRound()).participants[0].score).toBe(2);
-	expect((await tables()).events.map(event => event.score_after)).toEqual([1, 2]);
+	expect((await currentRound()).participants[0].score).toBe(1);
+	expect((await tables()).events.map(event => event.score_after)).toEqual([1]);
 });
 
 it.each([
@@ -192,6 +192,7 @@ it.each([
 	{ name: 'cancelled round', competitionId: roundId, state: 'cancelled' },
 	{ name: 'finished round', competitionId: roundId, state: 'finished' },
 	{ name: 'a round for other IDs', competitionId: roundId, state: 'other' },
+	{ name: 'other direction', competitionId: roundId, state: 'reversed' },
 ])('saves study without a contribution: $name', async ({ competitionId, state }) => {
 	if (state === 'waiting' || state === 'cancelled') await invite();
 	else await startRound();
@@ -203,7 +204,7 @@ it.each([
 		await env.DB.prepare("INSERT INTO users (id, username, display_name, created_at) VALUES (?, 'other-a', 'Other A', 1), (?, 'other-b', 'Other B', 1)").bind(otherA, otherB).run();
 		await env.DB.prepare('UPDATE competitions SET participant_a_id = ?1, participant_b_id = ?2, created_by = ?1 WHERE id = ?3').bind(otherA, otherB, roundId).run();
 	}
-	const before = await tables(), attempt = { ...input, competitionId };
+	const before = await tables(), attempt: ReviewInput = { ...input, competitionId, ...(state === 'reversed' ? { direction: 'pl-ru' as const } : {}) };
 	const result = await commitReview(env, USER_A.id, attempt, undefined, correct, 'exact', now);
 	expect(result.competition).toBeNull();
 	expect(await commitReview(env, USER_A.id, attempt, undefined, correct, 'exact', now + 1000)).toEqual(result);
@@ -245,4 +246,39 @@ it('rolls back all writes on a database failure', async () => {
 	]));
 	await expect(commitReview(env, USER_A.id, { ...input, progressVersion: 3 }, current, correct, 'exact', now)).rejects.toThrow('CHECK constraint failed');
 	expect(await tables()).toEqual(before);
+});
+
+async function attempts() {
+	const response = await request(`/api/competitions/${roundId}/attempts`, { cookie: cookieA });
+	expect(response.status).toBe(200);
+	return response.json<CompetitionAttempt[]>();
+}
+
+it('returns the attempts of a race in race order', async () => {
+	await startRound();
+	await commitReview(env, USER_A.id, input, undefined, correct, 'exact', now);
+	const reveal: ReviewInput = {
+		attemptId: crypto.randomUUID(), cardId: CARD_B.id, cardVersion: 1, progressVersion: 0, direction: 'ru-pl', action: 'reveal', competitionId: roundId,
+	};
+	await commitReview(env, USER_B.id, reveal, undefined, { ...correct, grade: 'again', correction: 'Dom', explanation: 'Pokazano.' }, 'reveal', now + 1000);
+	await commitReview(env, USER_A.id, { ...input, attemptId: crypto.randomUUID(), cardId: CARD_B.id, answer: 'Dom', competitionId: undefined }, undefined, correct, 'exact', now + 2000);
+	await commitReview(env, USER_A.id, { ...input, attemptId: crypto.randomUUID(), direction: 'pl-ru', progressVersion: 1, answer: 'Слово' }, undefined, correct, 'exact', now + 3000);
+	const list = await attempts();
+	expect(list).toHaveLength(2);
+	expect(list[0]).toMatchObject({
+		userId: USER_A.id, attemptId: input.attemptId, cardId: CARD_A.id, pl: CARD_A.pl, ru: CARD_A.ru, direction: 'ru-pl', answer: 'Słowo',
+		grade: 'correct', correction: 'Słowo', explanation: 'Dobrze.', delta: 1, scoreAfter: 1, version: 3,
+	});
+	expect(list[1]).toMatchObject({
+		userId: USER_B.id, attemptId: reveal.attemptId, cardId: CARD_B.id, direction: 'ru-pl', answer: null, grade: 'again', delta: 0, scoreAfter: 0, version: 4,
+	});
+});
+
+it('keeps the attempt direction for an old race', async () => {
+	await startRound();
+	await commitReview(env, USER_A.id, input, undefined, correct, 'exact', now);
+	await env.DB.prepare("UPDATE competitions SET direction = 'pl-ru' WHERE id = ?").bind(roundId).run();
+	await commitReview(env, USER_A.id, { ...input, attemptId: crypto.randomUUID(), direction: 'pl-ru', progressVersion: 1, answer: 'Слово' }, undefined, { ...correct, correction: 'Слово' }, 'exact', now + 1000);
+	await env.DB.prepare('UPDATE competitions SET direction = NULL WHERE id = ?').bind(roundId).run();
+	expect((await attempts()).map(attempt => attempt.direction)).toEqual(['ru-pl', 'pl-ru']);
 });
