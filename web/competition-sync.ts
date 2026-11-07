@@ -1,4 +1,4 @@
-import type { Competition } from '../shared/types';
+import type { Competition, Direction } from '../shared/types';
 import { api, ApiError } from './api';
 
 export type LifecycleAction = 'invite' | 'accept' | 'cancel';
@@ -19,10 +19,10 @@ export interface CompetitionSync {
 	subscribe(listener: () => void): () => void;
 	refresh(): Promise<void>;
 	poll(): Promise<void>;
-	invite(): Promise<void>;
+	invite(direction: Direction): Promise<Competition | null>;
 	accept(): Promise<void>;
 	cancel(): Promise<void>;
-	retry(): Promise<void>;
+	retry(): Promise<Competition | null>;
 	dispose(): void;
 }
 
@@ -32,7 +32,7 @@ export const idle: CompetitionSnapshot = { round: null, loading: false, readErro
 export function createCompetitionSync(userId: string): CompetitionSync {
 	let active = true, generation = 0, queued = false, busy = false;
 	let round: Competition | null = null;
-	let pending: { action: LifecycleAction; id: string } | null = null;
+	let pending: { action: LifecycleAction; id: string; direction?: Direction } | null = null;
 	let flight: Promise<void> | null = null;
 	let state = idle;
 	const listeners = new Set<() => void>();
@@ -84,19 +84,21 @@ export function createCompetitionSync(userId: string): CompetitionSync {
 		update({ loading: true });
 		return read();
 	}
-	async function mutate(action: LifecycleAction, id = action === 'invite' ? crypto.randomUUID() : round?.id): Promise<void> {
-		if (busy || !active || !id) return;
+	async function mutate(action: LifecycleAction, id = action === 'invite' ? crypto.randomUUID() : round?.id, direction?: Direction): Promise<Competition | null> {
+		if (busy || !active || !id) return null;
+		let failed = false;
 		busy = true;
 		generation++;
 		pending = null;
 		update({ busy: true, actionError: '', retryAction: null });
 		try {
 			await api<Competition>(action === 'invite' ? '/competitions' : `/competitions/${id}/${action}`, {
-				method: 'POST', body: JSON.stringify(action === 'invite' ? { id } : {}),
+				method: 'POST', body: JSON.stringify(action === 'invite' ? { id, direction } : {}),
 			});
 		} catch (error) {
-			if (!active) return;
-			if (!(error instanceof ApiError) || error.status >= 500) pending = { action, id };
+			if (!active) return null;
+			failed = true;
+			if (!(error instanceof ApiError) || error.status >= 500) pending = { action, id, direction };
 			update({ retryAction: pending?.action ?? null, actionError: error instanceof ApiError ? error.message : 'Nie udało się zapisać wyzwania. Sprawdź połączenie i ponów próbę.' });
 		} finally {
 			if (active) {
@@ -105,6 +107,7 @@ export function createCompetitionSync(userId: string): CompetitionSync {
 				update({ busy: false });
 			}
 		}
+		return failed ? null : state.round;
 	}
 
 	return {
@@ -116,10 +119,10 @@ export function createCompetitionSync(userId: string): CompetitionSync {
 		refresh,
 		// A timer read starts only when no read is in flight and no action is in progress.
 		poll: () => flight || busy ? Promise.resolve() : read(),
-		invite: () => mutate('invite'),
-		accept: () => mutate('accept'),
-		cancel: () => mutate('cancel'),
-		retry: async () => { if (pending) await mutate(pending.action, pending.id); },
+		invite: direction => mutate('invite', undefined, direction),
+		accept: async () => { await mutate('accept'); },
+		cancel: async () => { await mutate('cancel'); },
+		retry: async () => pending ? mutate(pending.action, pending.id, pending.direction) : null,
 		dispose() { active = false; },
 	};
 }

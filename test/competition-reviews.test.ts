@@ -24,7 +24,7 @@ beforeEach(async () => {
 });
 
 async function invite(id = roundId) {
-	const response = await request('/api/competitions', { method: 'POST', cookie: cookieA, body: { id } });
+	const response = await request('/api/competitions', { method: 'POST', cookie: cookieA, body: { id, direction: 'ru-pl' } });
 	expect(response.status).toBe(200);
 	expect(await response.json()).toMatchObject({ id, status: 'waiting', version: 1 });
 }
@@ -173,16 +173,16 @@ it('keeps an old attempt out of a rematch', async () => {
 	expect(saved.events[0]).toMatchObject({ competition_id: roundId, user_id: USER_B.id });
 });
 
-it('counts repeated cards and both directions', async () => {
+it('counts only the race direction', async () => {
 	await startRound();
 	const first = await commitReview(env, USER_A.id, input, undefined, correct, 'exact', now);
 	const reverse: ReviewInput = { ...input, attemptId: crypto.randomUUID(), progressVersion: 1, direction: 'pl-ru', answer: 'Слово' };
 	const second = await commitReview(env, USER_A.id, reverse, first.progress, { ...correct, correction: 'Слово' }, 'exact', now + 1000);
 	expect(first.competition).toEqual({ competitionId: roundId, delta: 1, scoreAfter: 1, version: 3 });
-	expect(second.competition).toEqual({ competitionId: roundId, delta: 1, scoreAfter: 2, version: 4 });
+	expect(second.competition).toBeNull();
 	expect(second.progress).toMatchObject({ correct: 2, incorrect: 0, version: 2 });
-	expect((await currentRound()).participants[0].score).toBe(2);
-	expect((await tables()).events.map(event => event.score_after)).toEqual([1, 2]);
+	expect((await currentRound()).participants[0].score).toBe(1);
+	expect((await tables()).events.map(event => event.score_after)).toEqual([1]);
 });
 
 it.each([
@@ -192,6 +192,7 @@ it.each([
 	{ name: 'cancelled round', competitionId: roundId, state: 'cancelled' },
 	{ name: 'finished round', competitionId: roundId, state: 'finished' },
 	{ name: 'a round for other IDs', competitionId: roundId, state: 'other' },
+	{ name: 'other direction', competitionId: roundId, state: 'reversed' },
 ])('saves study without a contribution: $name', async ({ competitionId, state }) => {
 	if (state === 'waiting' || state === 'cancelled') await invite();
 	else await startRound();
@@ -203,7 +204,7 @@ it.each([
 		await env.DB.prepare("INSERT INTO users (id, username, display_name, created_at) VALUES (?, 'other-a', 'Other A', 1), (?, 'other-b', 'Other B', 1)").bind(otherA, otherB).run();
 		await env.DB.prepare('UPDATE competitions SET participant_a_id = ?1, participant_b_id = ?2, created_by = ?1 WHERE id = ?3').bind(otherA, otherB, roundId).run();
 	}
-	const before = await tables(), attempt = { ...input, competitionId };
+	const before = await tables(), attempt: ReviewInput = { ...input, competitionId, ...(state === 'reversed' ? { direction: 'pl-ru' as const } : {}) };
 	const result = await commitReview(env, USER_A.id, attempt, undefined, correct, 'exact', now);
 	expect(result.competition).toBeNull();
 	expect(await commitReview(env, USER_A.id, attempt, undefined, correct, 'exact', now + 1000)).toEqual(result);

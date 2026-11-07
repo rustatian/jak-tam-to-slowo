@@ -18,6 +18,7 @@ export interface Competition {
 	createdBy: string;
 	target: number;
 	status: CompetitionStatus;
+	direction: Direction | null;
 	winnerId: string | null;
 	createdAt: number;
 	startedAt: number | null;

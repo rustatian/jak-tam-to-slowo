@@ -5,7 +5,7 @@ import { HttpError, methods, object, readJson, uuidPattern } from './http';
 
 type CompetitionRow = Omit<Competition, 'participants'> & { idA: string; nameA: string; scoreA: number; idB: string; nameB: string; scoreB: number };
 
-const select = `SELECT c.id, c.created_by AS createdBy, c.target, c.status, c.winner_id AS winnerId,
+const select = `SELECT c.id, c.created_by AS createdBy, c.target, c.status, c.direction, c.winner_id AS winnerId,
 	c.created_at AS createdAt, c.started_at AS startedAt, c.finished_at AS finishedAt, c.version,
 	c.participant_a_id AS idA, a.display_name AS nameA, c.score_a AS scoreA,
 	c.participant_b_id AS idB, b.display_name AS nameB, c.score_b AS scoreB
@@ -30,16 +30,17 @@ export async function handleCompetitions(request: Request, env: Env, user: User)
 	}
 	if (pathname === '/api/competitions') {
 		methods(request, ['POST']);
-		const { id } = object(await readJson(request), ['id']);
+		const { id, direction } = object(await readJson(request), ['id', 'direction']);
 		if (typeof id !== 'string' || !uuidPattern.test(id)) throw new HttpError(400, 'invalid_input', 'Nieprawidłowy identyfikator wyzwania.');
+		if (direction !== 'ru-pl' && direction !== 'pl-ru') throw new HttpError(400, 'invalid_input', 'Wybierz kierunek wyścigu.');
 		const accounts = competitionAccounts(env).sort((a, b) => a.id.localeCompare(b.id));
 		if (accounts.length !== 2) throw new HttpError(503, 'competition_unavailable', 'Wyzwanie wymaga dwóch skonfigurowanych kont.');
 		const [a, b] = accounts;
 		const registered = await env.DB.prepare('SELECT count(*) AS count FROM users WHERE id IN (?, ?)').bind(a.id, b.id).first<number>('count');
 		if (registered !== 2) throw new HttpError(409, 'opponent_not_ready', 'Druga osoba musi najpierw zalogować się do aplikacji.');
 		const [, saved] = await env.DB.batch<CompetitionRow>([
-			env.DB.prepare(`INSERT INTO competitions (id, participant_a_id, participant_b_id, target, created_by, created_at)
-				VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`).bind(id, a.id, b.id, COMPETITION_TARGET, user.id, Date.now()),
+			env.DB.prepare(`INSERT INTO competitions (id, participant_a_id, participant_b_id, target, created_by, direction, created_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`).bind(id, a.id, b.id, COMPETITION_TARGET, user.id, direction, Date.now()),
 			env.DB.prepare(`${select} WHERE ?2 IN (c.participant_a_id, c.participant_b_id) AND (c.id = ?1 OR c.status IN ('waiting', 'active'))
 				ORDER BY (c.id = ?1) DESC LIMIT 1`).bind(id, user.id),
 		]);

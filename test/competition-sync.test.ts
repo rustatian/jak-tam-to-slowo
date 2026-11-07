@@ -43,7 +43,7 @@ async function signIn(): Promise<[string, string]> {
 	return [cookieA, cookieB];
 }
 
-const invite = (from: string, id: string) => request('/api/competitions', { method: 'POST', cookie: from, body: { id } });
+const invite = (from: string, id: string) => request('/api/competitions', { method: 'POST', cookie: from, body: { id, direction: 'ru-pl' } });
 const act = (from: string, id: string, action: 'accept' | 'cancel') => request(`/api/competitions/${id}/${action}`, { method: 'POST', cookie: from });
 const finish = (id: string) => env.DB.prepare(`UPDATE competitions SET score_a = 20, status = 'finished', winner_id = ?, finished_at = ?, version = version + 1 WHERE id = ?`)
 	.bind(USER_A.id, Date.now(), id).run();
@@ -108,11 +108,12 @@ it('retries an unconfirmed invitation with its first ID', async () => {
 	const sync = createCompetitionSync(USER_A.id);
 	await sync.refresh();
 	overrides.push({ method: 'POST', path: '/api/competitions', respond: lost }, { method: 'GET', path: current, respond: unavailable('Brak wyniku.') });
-	await sync.invite();
+	await sync.invite('ru-pl');
 	expect(sync.snapshot()).toMatchObject({ round: null, actionError: saveError, readError: 'Brak wyniku.', retryAction: 'invite', busy: false, actions: [] });
 	await sync.retry();
 	const [first, retry] = posts();
 	expect(retry.body).toBe(first.body);
+	expect(JSON.parse(first.body!).direction).toBe('ru-pl');
 	expect(await env.DB.prepare('SELECT count(*) FROM competitions').first('count(*)')).toBe(1);
 	expect(sync.snapshot()).toMatchObject({
 		round: { id: JSON.parse(first.body!).id, status: 'waiting' }, actionError: '', readError: '', retryAction: null, actions: ['cancel'],
@@ -124,16 +125,18 @@ it('confirms an unconfirmed invitation from the current round and invites a rema
 	const sync = createCompetitionSync(USER_A.id);
 	await sync.refresh();
 	overrides.push({ method: 'POST', path: '/api/competitions', respond: lost });
-	await sync.invite();
+	await sync.invite('ru-pl');
 	const lostId = JSON.parse(posts()[0].body!).id;
 	expect(sync.snapshot()).toMatchObject({ round: { id: lostId, status: 'waiting' }, actionError: '', retryAction: null, actions: ['cancel'] });
 	await act(cookieB, lostId, 'accept');
 	await finish(lostId);
 	await sync.refresh();
 	expect(sync.snapshot()).toMatchObject({ round: { id: lostId, status: 'finished' }, actions: ['invite'] });
-	await sync.invite();
+	const rematch = await sync.invite('pl-ru');
 	const rematchId = JSON.parse(posts()[1].body!).id;
 	expect(rematchId).not.toBe(lostId);
+	expect(JSON.parse(posts()[1].body!).direction).toBe('pl-ru');
+	expect(rematch).toMatchObject({ id: rematchId, status: 'waiting' });
 	expect(sync.snapshot()).toMatchObject({ round: { id: rematchId, status: 'waiting' }, actions: ['cancel'] });
 });
 
@@ -204,7 +207,7 @@ it('confirms an unconfirmed invitation when the other learner invites at the sam
 		await invite(cookieB, roundId);
 		return offline();
 	} });
-	await sync.invite();
+	await sync.invite('ru-pl');
 	expect(sync.snapshot()).toMatchObject({ round: { id: roundId, status: 'waiting' }, actionError: '', retryAction: null, actions: ['accept', 'cancel'] });
 });
 

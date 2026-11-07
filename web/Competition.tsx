@@ -17,7 +17,7 @@ export function Competition({ user, competition, onStudy }: {
 			{round && <p className="competition-lead">{competitionStatus(round)}</p>}
 		</div>
 		<div className="competition-actions">
-			{actions.includes('invite') && <button className="primary" disabled={busy} onClick={competition.invite}>{round ? 'Zaproś na rewanż' : 'Zaproś do wyścigu'}</button>}
+			{actions.includes('invite') && <button className="primary" disabled={busy} onClick={() => void competition.invite(user.direction)}>{round ? 'Zaproś na rewanż' : 'Zaproś do wyścigu'}</button>}
 			{actions.includes('accept') && <button className="primary" disabled={busy} onClick={competition.accept}>Przyjmij wyzwanie</button>}
 			{actions.includes('cancel') && <button disabled={busy} onClick={competition.cancel}>Anuluj zaproszenie</button>}
 			{round?.status === 'active' && <button className="primary" disabled={busy} onClick={onStudy}>Trenuj słówka</button>}

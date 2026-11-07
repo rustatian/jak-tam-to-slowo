@@ -5,7 +5,7 @@ import { sql } from './cards';
 
 const snapshot: Competition = {
 	id: '33333333-3333-4333-8333-333333333333', createdBy: USER_A.id, target: 20,
-	status: 'active', winnerId: null, createdAt: 1, startedAt: 2, finishedAt: null, version: 1,
+	status: 'active', direction: 'ru-pl', winnerId: null, createdAt: 1, startedAt: 2, finishedAt: null, version: 1,
 	participants: [{ id: USER_A.id, displayName: USER_A.displayName, score: 8 }, { id: USER_B.id, displayName: USER_B.displayName, score: 8 }],
 };
 let other: Page;
@@ -94,7 +94,7 @@ async function evidence(page: Page, name: string) {
 
 async function start(page: Page, score: number): Promise<Competition> {
 	realRound = true;
-	const response = await page.request.post('/api/competitions', { data: { id: crypto.randomUUID() } });
+	const response = await page.request.post('/api/competitions', { data: { id: crypto.randomUUID(), direction: 'ru-pl' } });
 	expect(response.status()).toBe(200);
 	const round: Competition = await response.json();
 	expect(round.target).toBe(20);

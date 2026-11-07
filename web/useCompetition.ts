@@ -7,6 +7,7 @@ export type CompetitionState = CompetitionSnapshot & Pick<CompetitionSync, 'refr
 const starting: CompetitionSnapshot = { ...idle, loading: true };
 const unsubscribed = () => () => {};
 const nothing = async () => {};
+const nobody = async () => null;
 
 export function useCompetition(user: User | null): CompetitionState {
 	const userId = user?.id ?? null;
@@ -33,7 +34,7 @@ export function useCompetition(user: User | null): CompetitionState {
 	const snapshot = useSyncExternalStore(sync?.subscribe ?? unsubscribed, sync?.snapshot ?? (() => userId ? starting : idle));
 	return {
 		...snapshot,
-		refresh: sync?.refresh ?? nothing, invite: sync?.invite ?? nothing, accept: sync?.accept ?? nothing,
-		cancel: sync?.cancel ?? nothing, retry: sync?.retry ?? nothing,
+		refresh: sync?.refresh ?? nothing, invite: sync?.invite ?? nobody, accept: sync?.accept ?? nothing,
+		cancel: sync?.cancel ?? nothing, retry: sync?.retry ?? nobody,
 	};
 }

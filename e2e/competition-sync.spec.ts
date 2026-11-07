@@ -20,7 +20,7 @@ async function seed(page: Page): Promise<Card> {
 }
 
 async function invite(page: Page): Promise<Competition> {
-	const response = await page.request.post('/api/competitions', { data: { id: crypto.randomUUID() } });
+	const response = await page.request.post('/api/competitions', { data: { id: crypto.randomUUID(), direction: 'ru-pl' } });
 	expect(response.status()).toBe(200);
 	return response.json();
 }
