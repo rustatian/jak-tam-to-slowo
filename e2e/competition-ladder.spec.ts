@@ -28,6 +28,7 @@ async function refresh(page: Page) {
 async function fixedRound(page: Page, initial: Competition | null) {
 	let round = initial;
 	await page.route('**/api/competitions/current', route => route.fulfill({ json: round }));
+	await page.route('**/api/competitions/*/attempts', route => route.fulfill({ json: [] }));
 	await page.route('**/api/competitions', route => route.fulfill({ json: { competitions: round ? [round] : [], nextCursor: null } }));
 	return async (next: Competition | null, poll = false) => {
 		round = next;

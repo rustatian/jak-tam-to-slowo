@@ -723,3 +723,55 @@ test('retries a failed race list read', async ({ page }) => {
 	await expect(page.locator(`[data-race-id="${old.id}"]`)).toContainText('Zakończony');
 	await expect(page.getByRole('alert')).toHaveCount(0);
 });
+
+async function review(page: Page, card: Card, round: Competition, input: object) {
+	const response = await page.request.post('/api/reviews', { data: { attemptId: crypto.randomUUID(), cardId: card.id, cardVersion: card.version, competitionId: round.id, ...input } });
+	expect(response.status()).toBe(200);
+}
+
+test('shows the answer, the correction and the explanation of an attempt', async ({ page }) => {
+	const card = await seed(page);
+	const round = await start(page);
+	await page.goto('/');
+	await train(page, round.id);
+	await answer(page);
+	await review(other, card, round, { progressVersion: 0, direction: 'ru-pl', action: 'reveal' });
+	await page.getByTestId('competition-summary').click();
+	await expect(page.getByRole('heading', { name: 'Próby' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Dom / Дом' })).toBeVisible();
+	const first = page.getByText(`${USER_A.displayName}: Dobrze`, { exact: true });
+	await expect(page.getByText(`${USER_B.displayName}: Pokazano odpowiedź`, { exact: true })).toBeVisible();
+	await expect(page.getByText('Poprawna odpowiedź: Dom').first()).toBeHidden();
+	await first.click();
+	await expect(page.getByText('Odpowiedź: Dom', { exact: true })).toBeVisible();
+	await expect(page.getByText('Poprawna odpowiedź: Dom', { exact: true }).first()).toBeVisible();
+	await expect(page.getByText('Dobrze.', { exact: true })).toBeVisible();
+});
+
+test('keeps the language of each attempt in an old race', async ({ page }) => {
+	const card = await seed(page);
+	const round = await start(page);
+	await review(page, card, round, { progressVersion: 0, direction: 'ru-pl', action: 'answer', answer: 'Dom' });
+	sql(`UPDATE competitions SET direction = 'pl-ru' WHERE id = '${round.id}'`);
+	await review(page, card, round, { progressVersion: 1, direction: 'pl-ru', action: 'answer', answer: 'Дом' });
+	sql(`UPDATE competitions SET direction = NULL, version = version + 1 WHERE id = '${round.id}'`);
+	await page.goto('/');
+	await openRace(page, round.id);
+	for (const summary of await page.locator('.race-history summary').all()) await summary.click();
+	await expect(page.getByText(/^Odpowiedź:/).locator('[lang="pl"]')).toHaveText('Dom');
+	await expect(page.getByText(/^Odpowiedź:/).locator('[lang="ru"]')).toHaveText('Дом');
+});
+
+test('retries a failed history read', async ({ page }) => {
+	const card = await seed(page);
+	const round = await start(page);
+	await review(page, card, round, { progressVersion: 0, direction: 'ru-pl', action: 'answer', answer: 'Dom' });
+	let reads = 0;
+	await page.route(`**/api/competitions/${round.id}/attempts`, route => ++reads === 1 ? route.abort() : route.continue());
+	await page.goto('/');
+	await openRace(page, round.id);
+	await expect(page.locator('.race-history').getByRole('alert')).toBeVisible();
+	await page.locator('.race-history').getByRole('button', { name: 'Ponów', exact: true }).click();
+	await expect(page.getByText(`${USER_A.displayName}: Dobrze`, { exact: true })).toBeVisible();
+	await expect(page.locator('.race-history').getByRole('alert')).toHaveCount(0);
+});

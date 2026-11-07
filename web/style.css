@@ -297,3 +297,8 @@ a.word { color: var(--accent-text); padding: 12px 44px 2px 16px; text-decoration
 button:active:not(:disabled) { background-color: var(--fill); }
 .primary:active:not(:disabled) { background-color: color-mix(in srgb, var(--primary) 85%, var(--bg)); }
 .mic:active:not(:disabled) { background-color: color-mix(in srgb, var(--accent) 85%, #000); }
+.race-history { margin-top: 28px; }
+.race-history h3 { margin: 16px 0 4px; font-size: 1rem; }
+.race-history details { padding: 8px 0; border-top: 1px solid var(--line); }
+.race-history summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
+.race-history details p { margin: 4px 0; }

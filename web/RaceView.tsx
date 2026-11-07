@@ -3,6 +3,7 @@ import type { Competition, User } from '../shared/types';
 import type { CompetitionState } from './useCompetition';
 import { competitionStatus } from './CompetitionSummary';
 import { CompetitionLadder } from './CompetitionLadder';
+import { RaceHistory } from './RaceHistory';
 import { Icon } from './Icon';
 import { directionNames } from './race-text';
 
@@ -28,5 +29,6 @@ export function RaceView({ user, race, competition, locked, restartDisabled, onB
 			{race.status === 'finished' && <button className="primary restart" disabled={restartDisabled} onClick={onRestart}><Icon name="again" />Zagraj jeszcze raz</button>}
 		</div>
 		{children}
+		<RaceHistory key={race.id} race={race} />
 	</section>;
 }
