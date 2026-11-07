@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { beforeEach, expect, it, vi } from 'vitest';
-import type { Competition, GradeResult, ReviewInput, ReviewResult } from '../shared/types';
+import type { Competition, CompetitionAttempt, GradeResult, ReviewInput, ReviewResult } from '../shared/types';
 import { commitReview } from '../src/reviews';
 import { login, request } from './client';
 import { CARD_A, CARD_B, USER_A, USER_B } from './fixtures';
@@ -246,4 +246,39 @@ it('rolls back all writes on a database failure', async () => {
 	]));
 	await expect(commitReview(env, USER_A.id, { ...input, progressVersion: 3 }, current, correct, 'exact', now)).rejects.toThrow('CHECK constraint failed');
 	expect(await tables()).toEqual(before);
+});
+
+async function attempts() {
+	const response = await request(`/api/competitions/${roundId}/attempts`, { cookie: cookieA });
+	expect(response.status).toBe(200);
+	return response.json<CompetitionAttempt[]>();
+}
+
+it('returns the attempts of a race in race order', async () => {
+	await startRound();
+	await commitReview(env, USER_A.id, input, undefined, correct, 'exact', now);
+	const reveal: ReviewInput = {
+		attemptId: crypto.randomUUID(), cardId: CARD_B.id, cardVersion: 1, progressVersion: 0, direction: 'ru-pl', action: 'reveal', competitionId: roundId,
+	};
+	await commitReview(env, USER_B.id, reveal, undefined, { ...correct, grade: 'again', correction: 'Dom', explanation: 'Pokazano.' }, 'reveal', now + 1000);
+	await commitReview(env, USER_A.id, { ...input, attemptId: crypto.randomUUID(), cardId: CARD_B.id, answer: 'Dom', competitionId: undefined }, undefined, correct, 'exact', now + 2000);
+	await commitReview(env, USER_A.id, { ...input, attemptId: crypto.randomUUID(), direction: 'pl-ru', progressVersion: 1, answer: 'Слово' }, undefined, correct, 'exact', now + 3000);
+	const list = await attempts();
+	expect(list).toHaveLength(2);
+	expect(list[0]).toMatchObject({
+		userId: USER_A.id, attemptId: input.attemptId, cardId: CARD_A.id, pl: CARD_A.pl, ru: CARD_A.ru, direction: 'ru-pl', answer: 'Słowo',
+		grade: 'correct', correction: 'Słowo', explanation: 'Dobrze.', delta: 1, scoreAfter: 1, version: 3,
+	});
+	expect(list[1]).toMatchObject({
+		userId: USER_B.id, attemptId: reveal.attemptId, cardId: CARD_B.id, direction: 'ru-pl', answer: null, grade: 'again', delta: 0, scoreAfter: 0, version: 4,
+	});
+});
+
+it('keeps the attempt direction for an old race', async () => {
+	await startRound();
+	await commitReview(env, USER_A.id, input, undefined, correct, 'exact', now);
+	await env.DB.prepare("UPDATE competitions SET direction = 'pl-ru' WHERE id = ?").bind(roundId).run();
+	await commitReview(env, USER_A.id, { ...input, attemptId: crypto.randomUUID(), direction: 'pl-ru', progressVersion: 1, answer: 'Слово' }, undefined, { ...correct, correction: 'Слово' }, 'exact', now + 1000);
+	await env.DB.prepare('UPDATE competitions SET direction = NULL WHERE id = ?').bind(roundId).run();
+	expect((await attempts()).map(attempt => attempt.direction)).toEqual(['ru-pl', 'pl-ru']);
 });

@@ -1,4 +1,4 @@
-import { COMPETITION_TARGET, type Competition, type User } from '../shared/types';
+import { COMPETITION_TARGET, type Competition, type CompetitionAttempt, type CompetitionPage, type User } from '../shared/types';
 import type { Env } from './index';
 import { competitionAccounts } from './auth';
 import { HttpError, methods, object, readJson, uuidPattern } from './http';
@@ -16,6 +16,44 @@ function fromRow(row: CompetitionRow): Competition {
 	return { ...round, participants: [{ id: idA, displayName: nameA, score: scoreA }, { id: idB, displayName: nameB, score: scoreB }] };
 }
 
+const pageSize = 10;
+
+async function listCompetitions(url: URL, env: Env, userId: string): Promise<CompetitionPage> {
+	let time: number | null = null;
+	let id: string | null = null;
+	const cursor = url.searchParams.get('cursor');
+	if (cursor !== null) {
+		const parts = cursor.split(':');
+		if (parts.length !== 2 || !/^\d{1,16}$/.test(parts[0]) || !Number.isSafeInteger(Number(parts[0])) || !uuidPattern.test(parts[1])) {
+			throw new HttpError(400, 'invalid_input', 'Nieprawidłowy wskaźnik strony. Odśwież listę.');
+		}
+		time = Number(parts[0]);
+		id = parts[1];
+	}
+	const { results } = await env.DB.prepare(`${select} WHERE ?1 IN (c.participant_a_id, c.participant_b_id) AND c.status <> 'cancelled'
+		AND (?2 IS NULL OR (c.created_at, c.id) < (?2, ?3)) ORDER BY c.created_at DESC, c.id DESC LIMIT ${pageSize + 1}`)
+		.bind(userId, time, id).all<CompetitionRow>();
+	const competitions = results.slice(0, pageSize).map(fromRow);
+	const last = competitions.at(-1);
+	return { competitions, nextCursor: results.length > pageSize && last ? `${last.createdAt}:${last.id}` : null };
+}
+
+interface AttemptRow extends Omit<CompetitionAttempt, 'grade' | 'correction' | 'explanation'> { result: string }
+
+async function listAttempts(env: Env, id: string, userId: string): Promise<CompetitionAttempt[]> {
+	const member = await env.DB.prepare('SELECT 1 FROM competitions WHERE id = ? AND ? IN (participant_a_id, participant_b_id)').bind(id, userId).first();
+	if (!member) throw new HttpError(404, 'not_found', 'Nie znaleziono wyzwania.');
+	const { results } = await env.DB.prepare(`SELECT e.user_id AS userId, e.attempt_id AS attemptId, cards.id AS cardId, cards.pl, cards.ru,
+		json_extract(r.input_json, '$.direction') AS direction, json_extract(r.input_json, '$.answer') AS answer,
+		r.result_json AS result, e.delta, e.score_after AS scoreAfter, e.version
+		FROM competition_events e JOIN reviews r ON r.user_id = e.user_id AND r.attempt_id = e.attempt_id
+		JOIN cards ON cards.id = json_extract(r.input_json, '$.cardId') WHERE e.competition_id = ? ORDER BY e.version`).bind(id).all<AttemptRow>();
+	return results.map(({ result, ...row }) => {
+		const { grade, correction, explanation } = JSON.parse(result);
+		return { ...row, grade, correction, explanation };
+	});
+}
+
 export async function handleCompetitions(request: Request, env: Env, user: User): Promise<Response | null> {
 	const { pathname } = new URL(request.url);
 	if (pathname === '/api/competitions/current') {
@@ -29,7 +67,8 @@ export async function handleCompetitions(request: Request, env: Env, user: User)
 		return Response.json(row ? fromRow(row) : null);
 	}
 	if (pathname === '/api/competitions') {
-		methods(request, ['POST']);
+		methods(request, ['GET', 'POST']);
+		if (request.method === 'GET') return Response.json(await listCompetitions(new URL(request.url), env, user.id));
 		const { id, direction } = object(await readJson(request), ['id', 'direction']);
 		if (typeof id !== 'string' || !uuidPattern.test(id)) throw new HttpError(400, 'invalid_input', 'Nieprawidłowy identyfikator wyzwania.');
 		if (direction !== 'ru-pl' && direction !== 'pl-ru') throw new HttpError(400, 'invalid_input', 'Wybierz kierunek wyścigu.');
@@ -48,11 +87,12 @@ export async function handleCompetitions(request: Request, env: Env, user: User)
 		if (!row) throw new HttpError(404, 'not_found', 'Nie znaleziono wyzwania.');
 		return Response.json(fromRow(row));
 	}
-	const match = /^\/api\/competitions\/([^/]+)\/(accept|cancel)$/.exec(pathname);
+	const match = /^\/api\/competitions\/([^/]+)\/(accept|cancel|attempts)$/.exec(pathname);
 	if (!match) return null;
-	methods(request, ['POST']);
 	const [, id, action] = match;
+	methods(request, [action === 'attempts' ? 'GET' : 'POST']);
 	if (!uuidPattern.test(id)) throw new HttpError(400, 'invalid_input', 'Nieprawidłowy identyfikator wyzwania.');
+	if (action === 'attempts') return Response.json(await listAttempts(env, id, user.id));
 	if (request.body !== null) object(await readJson(request), []);
 	const update = action === 'accept'
 		? env.DB.prepare(`UPDATE competitions SET status = 'active', started_at = ?1, version = version + 1

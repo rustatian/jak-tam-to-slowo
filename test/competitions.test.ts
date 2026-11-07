@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { expect, it } from 'vitest';
-import type { Competition } from '../shared/types';
+import type { Competition, CompetitionPage } from '../shared/types';
 import { login, request } from './client';
 import { USER_A, USER_B, testAccountSecret } from './fixtures';
 
@@ -186,7 +186,12 @@ it.each([
 	{ name: 'missing cancellation session', path: `/api/competitions/${roundId}/cancel`, method: 'POST', anonymous: true, status: 401 },
 	{ name: 'wrong origin', path: '/api/competitions', method: 'POST', origin: 'https://other.example', body: { id: roundId, direction: 'ru-pl' }, status: 403 },
 	{ name: 'account mismatch', path: '/api/competitions', method: 'POST', accountId: USER_B.id, body: { id: roundId, direction: 'ru-pl' }, status: 409 },
-	{ name: 'wrong invitation method', path: '/api/competitions', method: 'GET', status: 405 },
+	{ name: 'wrong invitation method', path: '/api/competitions', method: 'PUT', status: 405 },
+	{ name: 'missing list session', path: '/api/competitions', method: 'GET', anonymous: true, status: 401 },
+	{ name: 'invalid list cursor', path: '/api/competitions?cursor=bad', method: 'GET', status: 400 },
+	{ name: 'missing attempts session', path: `/api/competitions/${roundId}/attempts`, method: 'GET', anonymous: true, status: 401 },
+	{ name: 'wrong attempts method', path: `/api/competitions/${roundId}/attempts`, method: 'POST', status: 405 },
+	{ name: 'invalid attempts UUID', path: '/api/competitions/invalid/attempts', method: 'GET', status: 400 },
 	{ name: 'wrong current method', path: '/api/competitions/current', method: 'POST', status: 405 },
 	{ name: 'wrong acceptance method', path: `/api/competitions/${roundId}/accept`, method: 'GET', status: 405 },
 	{ name: 'wrong cancellation method', path: `/api/competitions/${roundId}/cancel`, method: 'GET', status: 405 },
@@ -224,17 +229,59 @@ it.each([
 	const current = await request('/api/competitions/current', { cookie });
 	expect(current.status).toBe(200);
 	expect(await current.json()).toBeNull();
+	expect(await (await request('/api/competitions', { cookie })).json()).toEqual({ competitions: [], nextCursor: null });
+	expect((await request(`/api/competitions/${roundId}/attempts`, { cookie })).status).toBe(404);
 	expect((await request(`/api/competitions/${roundId}/accept`, { method: 'POST', cookie })).status).toBe(404);
 	expect((await request(`/api/competitions/${roundId}/cancel`, { method: 'POST', cookie })).status).toBe(404);
 	expect(await env.DB.prepare('SELECT * FROM competitions WHERE id = ?').bind(roundId).first()).toEqual(before);
 });
 
 it.each([
-	{ name: 'acceptance', action: 'accept' },
-	{ name: 'cancellation', action: 'cancel' },
-])('returns 404 for $name of a missing round', async ({ action }) => {
+	{ name: 'acceptance', action: 'accept', method: 'POST' },
+	{ name: 'cancellation', action: 'cancel', method: 'POST' },
+	{ name: 'attempts', action: 'attempts', method: 'GET' },
+])('returns 404 for $name of a missing round', async ({ action, method }) => {
 	const cookie = await login(USER_A.id);
-	expect((await request(`/api/competitions/${roundId}/${action}`, { method: 'POST', cookie })).status).toBe(404);
+	expect((await request(`/api/competitions/${roundId}/${action}`, { method, cookie })).status).toBe(404);
+});
+
+const insertRace = `INSERT INTO competitions
+	(id, participant_a_id, participant_b_id, target, created_by, status, direction, created_at, finished_at)
+	VALUES (?, ?, ?, 20, ?, ?, ?, ?, ?)`;
+
+it('lists races newest first without cancelled invitations', async () => {
+	const cookie = await login(USER_A.id);
+	await login(USER_B.id);
+	const ids = ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000003'];
+	const rows = [[ids[0], 'finished', 'ru-pl', 100, 150], [ids[1], 'cancelled', 'ru-pl', 200, 250], [ids[2], 'active', 'pl-ru', 300, null]];
+	for (const [id, status, direction, createdAt, finishedAt] of rows) {
+		await env.DB.prepare(insertRace).bind(id, USER_A.id, USER_B.id, USER_A.id, status, direction, createdAt, finishedAt).run();
+	}
+	const response = await request('/api/competitions', { cookie });
+	expect(response.status).toBe(200);
+	expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+	const page = await response.json<CompetitionPage>();
+	expect(page.competitions.map(race => race.id)).toEqual([ids[2], ids[0]]);
+	expect(page.competitions.map(race => race.direction)).toEqual(['pl-ru', 'ru-pl']);
+	expect(page.nextCursor).toBeNull();
+});
+
+it.each([
+	{ name: 'first page', after: false, times: [12, 11, 10, 9, 8, 7, 6, 5, 4, 3], more: true },
+	{ name: 'second page', after: true, times: [2, 1], more: false },
+])('pages the race list: $name', async ({ after, times, more }) => {
+	const cookie = await login(USER_A.id);
+	await login(USER_B.id);
+	const ids = new Map<number, string>();
+	for (let time = 1; time <= 12; time++) {
+		const id = `00000000-0000-4000-8000-0000000000${String(time).padStart(2, '0')}`;
+		ids.set(time, id);
+		await env.DB.prepare(insertRace).bind(id, USER_A.id, USER_B.id, USER_A.id, 'finished', 'ru-pl', time, time).run();
+	}
+	const query = after ? `?cursor=3:${ids.get(3)}` : '';
+	const page = await (await request(`/api/competitions${query}`, { cookie })).json<CompetitionPage>();
+	expect(page.competitions.map(race => race.createdAt)).toEqual(times);
+	expect(page.nextCursor).toBe(more ? `3:${ids.get(3)}` : null);
 });
 
 it.each([
