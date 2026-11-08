@@ -75,7 +75,7 @@ export function AddWord({ userId, onOpen, busy, onBusy: setBusy }: { userId: str
 		setSaved(null);
 		change({ meaningRu });
 		try {
-			const result = await api<DraftResult>('/cards/draft', { method: 'POST', body: JSON.stringify({ text: draft.text, meaningRu }) });
+			const result = await api<Exclude<DraftResult, { kind: 'grammar' }>>('/cards/draft', { method: 'POST', body: JSON.stringify({ text: draft.text, meaningRu }) });
 			reveal.current = true;
 			change(result.kind === 'draft' ? { card: result.card, choices: [] } : { choices: result.choices, card: undefined });
 		} catch (error) {

@@ -64,7 +64,7 @@ it('orders ready cards by misses per correct answer without creating progress', 
 	expect(ids(batch)).toEqual([CARD_A.id, d, c, CARD_B.id]);
 	expect(batch).toEqual({ cards: expect.any(Array), dueCount: 4, serverTime: now, nextDueAt: null });
 	expect(batch.cards[0]).toEqual({
-		card: { ...CARD_A, version: 1, archived: false, createdBy: USER_A.id, createdAt: now - 100, updatedAt: now - 100 },
+		card: { ...CARD_A, kind: 'translation', grammar: null, version: 1, archived: false, createdBy: USER_A.id, createdAt: now - 100, updatedAt: now - 100 },
 		progress: { correct: 1, incorrect: 3, lastCorrectAt: now - 2 * day, lastIncorrectAt: now - hour, version: 3 },
 	});
 	expect(batch.cards[1].progress).toBeNull();

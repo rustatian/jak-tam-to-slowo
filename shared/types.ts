@@ -30,6 +30,7 @@ export interface CompetitionAttempt {
 	userId: string;
 	attemptId: string;
 	cardId: string;
+	kind: CardKind;
 	pl: string;
 	ru: string;
 	direction: Direction;
@@ -41,6 +42,13 @@ export interface CompetitionAttempt {
 	scoreAfter: number;
 	version: number;
 }
+
+export type CardKind = 'translation' | 'grammar';
+export interface GrammarRow { names: string[]; endings: string; examples: string[]; hit: boolean }
+export interface GrammarGroup { title: string | null; rows: GrammarRow[] }
+export interface GrammarTable { title: string; columns: [string, string, string]; groups: GrammarGroup[] }
+export interface Grammar { used: string; right: string; answer: string; facts: string[]; slot: string[]; mistake: string | null; table: GrammarTable; explanation: string }
+export interface GrammarContent { pl: string; examplePl: string; alternativesPl: string[]; grammar: Grammar }
 
 export interface CardContent {
 	pl: string;
@@ -54,6 +62,8 @@ export interface CardContent {
 
 export interface Card extends CardContent {
 	id: string;
+	kind: CardKind;
+	grammar: Grammar | null;
 	version: number;
 	archived: boolean;
 	createdBy: string;
@@ -91,4 +101,4 @@ export interface ReviewResult extends GradeResult {
 	competition: CompetitionContribution | null;
 }
 
-export type DraftResult = { kind: 'choices'; choices: string[] } | { kind: 'draft'; card: CardContent };
+export type DraftResult = { kind: 'choices'; choices: string[] } | { kind: 'draft'; card: CardContent } | { kind: 'grammar'; card: GrammarContent };

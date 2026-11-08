@@ -13,7 +13,7 @@ it('shares cards and rejects a stale edit without losing the other learner’s t
 	const b = await login(USER_B.id);
 	const created = await request('/api/cards', { method: 'POST', cookie: a, body: CARD_A });
 	expect(created.status).toBe(201);
-	expect(await created.json()).toEqual({ ...CARD_A, version: 1, archived: false, createdBy: USER_A.id, createdAt: now, updatedAt: now });
+	expect(await created.json()).toEqual({ ...CARD_A, kind: 'translation', grammar: null, version: 1, archived: false, createdBy: USER_A.id, createdAt: now, updatedAt: now });
 	const list = await request('/api/cards', { cookie: b });
 	expect(await list.json()).toMatchObject({ cards: [{ ...CARD_A, version: 1 }] });
 	vi.spyOn(Date, 'now').mockReturnValue(now + 1000);

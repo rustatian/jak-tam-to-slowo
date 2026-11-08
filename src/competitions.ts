@@ -43,7 +43,7 @@ interface AttemptRow extends Omit<CompetitionAttempt, 'grade' | 'correction' | '
 async function listAttempts(env: Env, id: string, userId: string): Promise<CompetitionAttempt[]> {
 	const member = await env.DB.prepare('SELECT 1 FROM competitions WHERE id = ? AND ? IN (participant_a_id, participant_b_id)').bind(id, userId).first();
 	if (!member) throw new HttpError(404, 'not_found', 'Nie znaleziono wyzwania.');
-	const { results } = await env.DB.prepare(`SELECT e.user_id AS userId, e.attempt_id AS attemptId, cards.id AS cardId, cards.pl, cards.ru,
+	const { results } = await env.DB.prepare(`SELECT e.user_id AS userId, e.attempt_id AS attemptId, cards.id AS cardId, cards.kind, cards.pl, cards.ru,
 		json_extract(r.input_json, '$.direction') AS direction, json_extract(r.input_json, '$.answer') AS answer,
 		r.result_json AS result, e.delta, e.score_after AS scoreAfter, e.version
 		FROM competition_events e JOIN reviews r ON r.user_id = e.user_id AND r.attempt_id = e.attempt_id

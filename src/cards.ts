@@ -4,12 +4,13 @@ import { HttpError, methods, object, readJson, text, uuidPattern } from './http'
 
 const contentKeys: (keyof CardContent)[] = ['pl', 'ru', 'examplePl', 'exampleRu', 'meaningRu', 'alternativesPl', 'alternativesRu'];
 export const columns = `cards.id, cards.pl, cards.ru, cards.example_pl AS examplePl, cards.example_ru AS exampleRu, cards.meaning_ru AS meaningRu,
-	cards.alternatives_pl AS alternativesPl, cards.alternatives_ru AS alternativesRu, cards.version, cards.archived,
+	cards.alternatives_pl AS alternativesPl, cards.alternatives_ru AS alternativesRu, cards.kind, cards.grammar, cards.version, cards.archived,
 	cards.created_by AS createdBy, cards.created_at AS createdAt, cards.updated_at AS updatedAt`;
-export type CardRow = Omit<Card, 'archived' | 'alternativesPl' | 'alternativesRu'> & { archived: number; alternativesPl: string; alternativesRu: string };
+export type CardRow = Omit<Card, 'archived' | 'alternativesPl' | 'alternativesRu' | 'grammar'> & { archived: number; alternativesPl: string; alternativesRu: string; grammar: string | null };
 
 export function fromRow(row: CardRow): Card {
-	return { ...row, archived: row.archived === 1, alternativesPl: JSON.parse(row.alternativesPl), alternativesRu: JSON.parse(row.alternativesRu) };
+	return { ...row, archived: row.archived === 1, alternativesPl: JSON.parse(row.alternativesPl), alternativesRu: JSON.parse(row.alternativesRu),
+		grammar: row.grammar === null ? null : JSON.parse(row.grammar) };
 }
 
 function alternatives(value: unknown): string[] {
