@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { GrammarContent } from '../shared/types.ts';
 
 export const USER_A = {
 	id: '11111111-1111-4111-8111-111111111111',
@@ -45,3 +46,22 @@ export const ONION_DRAFT = {
 	examplePl: 'Kroję cebulę.', exampleRu: 'Я режу лук.',
 	alternativesPl: [], alternativesRu: [],
 };
+
+export const GRAMMAR_DRAFT = {
+	pl: 'pies', examplePl: 'Na podwórku biegają dwa ___.', alternativesPl: [] as string[],
+	grammar: {
+		used: 'dwa piesy', right: 'dwa psy', answer: 'psy',
+		facts: ['rzeczownik', 'rodzaj męski żywotny'],
+		slot: ['Mianownik', 'liczba mnoga', 'niemęskoosobowy', 'końcówka -y'],
+		mistake: 'e ruchome',
+		table: { title: 'Mianownik, liczba mnoga: końcówki według rodzaju', columns: ['Rodzaj', 'Końcówka', 'Przykład'], groups: [
+			{ title: 'W liczbie mnogiej: męskoosobowy', rows: [{ names: ['męski osobowy'], endings: '-i, -y, -owie, -e', examples: ['student → studenci'], hit: false }] },
+			{ title: 'W liczbie mnogiej: niemęskoosobowy', rows: [
+				{ names: ['męski żywotny', 'męski nieżywotny', 'żeński'], endings: '-y, -i, -e', examples: ['pies → psy', 'dom → domy', 'kobieta → kobiety'], hit: true },
+				{ names: ['nijaki'], endings: '-a', examples: ['okno → okna'], hit: false },
+			] },
+		] },
+		explanation: 'W liczbie mnogiej „pies” traci „e”: psy. Tak samo: sen – sny, dzień – dni.',
+	},
+} satisfies GrammarContent;
+export const GRAMMAR_CARD = { id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', kind: 'grammar' as const, ...GRAMMAR_DRAFT };

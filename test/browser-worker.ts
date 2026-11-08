@@ -1,5 +1,5 @@
 import worker from '../src/index';
-import { ONION_DRAFT, testBindings, WORD_DRAFT } from './fixtures';
+import { GRAMMAR_DRAFT, ONION_DRAFT, testBindings, WORD_DRAFT } from './fixtures';
 import { apiError, createProvider, message } from './provider';
 
 const provider = createProvider();
@@ -19,6 +19,8 @@ provider.messages = async request => {
 	const input = JSON.parse(body.messages[0].content);
 	if (input.text === 'ошибка подключения' || input.answer === 'ошибка подключения') return apiError(401, 'authentication_error');
 	if (input.answer === 'лимит') return apiError(429, 'rate_limit_error');
+	if (input.kind === 'grammar' && 'used' in input) return message(GRAMMAR_DRAFT);
+	if (input.kind === 'grammar' && 'answer' in input) return message({ grade: 'again', explanation: 'To nie jest poprawna forma.' });
 	if ('answer' in input) return message({ grade: input.answer === 'domu' ? 'almost' : 'again', explanation: 'Użyj formy słownikowej.' });
 	if (input.text === 'лук' && !input.meaningRu) return message({ result: { kind: 'choices', choices: ['Овощ', 'Оружие для стрельбы стрелами'] } });
 	return message({ result: { kind: 'draft', card: input.text === 'лук' ? ONION_DRAFT : WORD_DRAFT } });

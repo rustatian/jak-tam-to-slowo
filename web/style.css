@@ -223,6 +223,9 @@ h1 + .competition-actions { margin-top: 20px; }
 .word { display: block; width: 100%; min-height: 48px; text-align: left; font-weight: 600; overflow-wrap: anywhere; }
 button.word { border: 0; border-radius: 0; background: transparent; color: var(--ink); font-size: 1.0625rem; padding: 12px 44px 2px 16px; }
 .word [lang='ru'] { color: var(--secondary); font-weight: 400; }
+.word .arrow { color: var(--tertiary); font-weight: 400; padding: 0 6px; }
+.word .form { color: var(--green); }
+.word .tag { margin-left: 8px; vertical-align: 2px; }
 a.word { color: var(--accent-text); padding: 12px 44px 2px 16px; text-decoration: none; }
 .page > a.word { padding-inline: 2px; text-decoration: underline; text-underline-offset: 3px; }
 /* Similar words: one row of fixed height under the field. The row scrolls sideways, so the page keeps its height while the matches change. */
@@ -249,6 +252,36 @@ a.word { color: var(--accent-text); padding: 12px 44px 2px 16px; text-decoration
 .add > form:first-of-type { margin-top: 24px; }
 .add > form + form { margin-top: 12px; }
 .discard { margin-top: 24px; border-color: transparent; background: transparent; color: var(--accent-text); }
+.result { padding: 18px 20px 20px; margin: 4px 0 24px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+.kicker { margin: 0 0 2px; color: var(--tertiary); font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.form-line { margin: 0 0 14px; font-family: var(--serif); font-size: 1.625rem; line-height: 1.25; font-weight: 500; }
+.wrong { color: var(--accent-text); text-decoration: line-through; text-decoration-thickness: 2px; }
+.right { color: var(--green); font-weight: 600; }
+.sentence { margin: 0 0 16px; color: var(--secondary); font-size: 1.0625rem; }
+.labels { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 18px; }
+.lab, .tag { display: inline-block; padding: 1px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--fill); color: var(--secondary); font-size: .75rem; font-weight: 600; line-height: 1.7; }
+.lab.hit { border-color: var(--green-edge); background: var(--green-tint); color: var(--green); }
+.lab.err { border-color: var(--amber-edge); background: var(--amber-tint); color: var(--amber); }
+.decl { width: 100%; margin: 6px 0 0; border-collapse: separate; border-spacing: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-size: .875rem; line-height: 1.4; }
+.decl th, .decl td { padding: 6px 10px; text-align: left; font-weight: 400; vertical-align: baseline; }
+.decl thead th { background: var(--bg); color: var(--tertiary); font-size: .6875rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+.decl tbody th, .decl tbody td { border-top: 1px solid var(--line); }
+.decl tbody th { color: var(--secondary); font-weight: 500; }
+.decl .hit th, .decl .hit td { background: var(--green-tint); }
+.decl .kindrow { display: block; }
+.decl .group th { padding: 4px 10px; background: var(--fill); color: var(--secondary); font-size: .6875rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+.decl .wrong { font-size: .8125rem; }
+.tag { font-size: .8125rem; }
+.study-prompt .tag { align-self: center; margin-bottom: 10px; }
+/* Two classes, so the short-screen size of .study-term does not apply to the gap sentence. */
+.study-term.study-gap { font-size: 1.75rem; line-height: 1.3; }
+.gap { display: inline-block; min-width: 2.5em; border-bottom: 2px solid var(--ink); color: transparent; }
+.base { color: var(--secondary); font-weight: 400; }
+.yours { margin: 12px 0 0; color: var(--secondary); font-size: .9375rem; }
+.study-feedback .decl { background: var(--card); }
+/* Wins over the centered .study > div[role='status'] rule. */
+.study > .study-feedback.grammar { text-align: left; }
+.why { margin: 14px 0 0; }
 @media (min-width: 600px) {
 	.app { padding-top: max(24px, env(safe-area-inset-top)); }
 	.brand { margin-bottom: 36px; }

@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import type { Competition, CompetitionAttempt, GradeResult, ReviewInput, ReviewResult } from '../shared/types';
 import { commitReview } from '../src/reviews';
 import { login, request } from './client';
-import { CARD_A, CARD_B, USER_A, USER_B } from './fixtures';
+import { CARD_A, CARD_B, GRAMMAR_CARD, USER_A, USER_B } from './fixtures';
 
 const now = Date.parse('2026-10-26T10:00:00.000Z');
 const roundId = '33333333-3333-4333-8333-333333333333';
@@ -281,4 +281,19 @@ it('keeps the attempt direction for an old race', async () => {
 	await commitReview(env, USER_A.id, { ...input, attemptId: crypto.randomUUID(), direction: 'pl-ru', progressVersion: 1, answer: 'Слово' }, undefined, { ...correct, correction: 'Слово' }, 'exact', now + 1000);
 	await env.DB.prepare('UPDATE competitions SET direction = NULL WHERE id = ?').bind(roundId).run();
 	expect((await attempts()).map(attempt => attempt.direction)).toEqual(['ru-pl', 'pl-ru']);
+});
+
+it('returns the kind and the gap answer of a grammar attempt', async () => {
+	await startRound();
+	expect((await request('/api/cards', { method: 'POST', cookie: cookieA, body: GRAMMAR_CARD })).status).toBe(201);
+	for (const [cardId, answer] of [[GRAMMAR_CARD.id, 'psy'], [CARD_A.id, 'Słowo']]) {
+		const response = await request('/api/reviews', { method: 'POST', cookie: cookieA, body: {
+			attemptId: crypto.randomUUID(), cardId, cardVersion: 1, progressVersion: 0, direction: 'ru-pl', action: 'answer', answer, competitionId: roundId,
+		} });
+		expect(response.status).toBe(200);
+	}
+	expect(await attempts()).toEqual([
+		expect.objectContaining({ cardId: GRAMMAR_CARD.id, kind: 'grammar', pl: 'pies', ru: '', answer: 'psy', correction: 'psy', grade: 'correct' }),
+		expect.objectContaining({ cardId: CARD_A.id, kind: 'translation', pl: 'Słowo', ru: 'Слово' }),
+	]);
 });

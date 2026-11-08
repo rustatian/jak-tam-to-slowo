@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { Direction, ReviewResult, User } from '../shared/types';
 import { useStudy, type RaceMode } from './useStudy';
 import { Dictation, dictatedValue } from './Dictation';
+import { FilledSentence, GrammarDetails } from './Grammar';
 import { Icon } from './Icon';
 import { directionNames } from './race-text';
 
@@ -12,8 +13,10 @@ export function Study({ user, race, onReview, onDirection, onBusy, onEnded }: {
 	const input = useRef<HTMLInputElement>(null);
 	const nextButton = useRef<HTMLButtonElement>(null);
 	const polish = study.direction === 'ru-pl';
-	const target = polish ? 'pl' : 'ru';
 	const current = study.card;
+	const grammar = current?.kind === 'grammar' ? current.grammar : null;
+	const target = polish || grammar ? 'pl' : 'ru';
+	const [before, after] = current?.examplePl.split('___') ?? [];
 	const grade = study.feedback && { correct: 'Dobrze', almost: 'Prawie dobrze', again: 'Powtórz' }[study.feedback.grade];
 	const contribution = study.feedback?.competition;
 
@@ -36,11 +39,16 @@ export function Study({ user, race, onReview, onDirection, onBusy, onEnded }: {
 			</div>}
 		{study.state === 'loading' && <p role="status">Wczytywanie fiszek…</p>}
 		{current && <div className="study-prompt">
-			<h2 className="study-term" data-testid="study-term" lang={polish ? 'ru' : 'pl'}>{polish ? current.ru : current.pl}</h2>
-			<p className="study-example" lang={polish ? 'ru' : 'pl'}>{polish ? current.exampleRu : current.examplePl}</p>
+			{grammar ? <>
+				<span className="tag">Gramatyka</span>
+				<h2 className="study-term study-gap" data-testid="study-term" lang="pl">{before}<span className="gap">___</span> <span className="base">({current.pl})</span>{after}</h2>
+			</> : <>
+				<h2 className="study-term" data-testid="study-term" lang={polish ? 'ru' : 'pl'}>{polish ? current.ru : current.pl}</h2>
+				<p className="study-example" lang={polish ? 'ru' : 'pl'}>{polish ? current.exampleRu : current.examplePl}</p>
+			</>}
 		</div>}
 		{study.state !== 'feedback' && (current || study.locked) && <form onSubmit={event => { event.preventDefault(); void study.check(); }}>
-			<label htmlFor="study-answer">{polish ? 'Odpowiedź po polsku' : 'Odpowiedź po rosyjsku'}</label>
+			<label htmlFor="study-answer">{target === 'pl' ? 'Odpowiedź po polsku' : 'Odpowiedź po rosyjsku'}</label>
 			<div className="dictation">
 				<input ref={input} id="study-answer" lang={target} maxLength={500} autoComplete="off" value={study.answer} disabled={study.locked} onChange={event => study.setAnswer(event.target.value)} />
 				<Dictation key={`${current?.id}:${current?.version}`} language={target} disabled={!study.editable} onText={text => { if (input.current) study.setAnswer(dictatedValue(input.current, text)); }} />
@@ -52,11 +60,19 @@ export function Study({ user, race, onReview, onDirection, onBusy, onEnded }: {
 		</form>}
 		{study.state === 'checking' && <p role="status">Sprawdzanie odpowiedzi…</p>}
 		{study.feedback && <>
-			<div className={`study-feedback ${study.feedback.grade}`} role="status" aria-atomic="true">
+			<div className={`study-feedback ${study.feedback.grade}${grammar ? ' grammar' : ''}`} role="status" aria-atomic="true">
 				<h2><span className="grade-icon" aria-hidden="true"><Icon name={study.feedback.grade} /></span>{grade}</h2>
-				<p className="study-correction" data-testid="study-correction" lang={target}>{study.feedback.correction}</p>
-				{current && <p className="study-example" lang={target}>{polish ? current.examplePl : current.exampleRu}</p>}
-				<p>{study.feedback.explanation}</p>
+				{current && grammar ? <>
+					{study.submittedAnswer !== null && study.feedback.grade !== 'correct' && <p className="yours">Twoja odpowiedź: <s className="wrong">{study.submittedAnswer}</s></p>}
+					<p className="study-correction right" data-testid="study-correction" lang="pl">{study.feedback.correction}</p>
+					<p>{study.feedback.explanation}</p>
+					<GrammarDetails card={{ grammar }} sentence={<p className="study-example sentence"><FilledSentence sentence={current.examplePl} answer={grammar.answer} /></p>} />
+					<p className="why">{grammar.explanation}</p>
+				</> : <>
+					<p className="study-correction" data-testid="study-correction" lang={target}>{study.feedback.correction}</p>
+					{current && <p className="study-example" lang={target}>{polish ? current.examplePl : current.exampleRu}</p>}
+					<p>{study.feedback.explanation}</p>
+				</>}
 				{race && (contribution ? <p>{contribution.delta > 0 ? 'Idziesz w górę o 1.' : contribution.delta < 0 ? 'Cofasz się o 1.' : 'Zostajesz na starcie.'} Wynik: {contribution.scoreAfter}.</p>
 					: <p>Wyścig już się zakończył. Ta odpowiedź nie liczy się do wyniku.</p>)}
 			</div>

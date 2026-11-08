@@ -8,7 +8,7 @@ interface Recovery {
 	cardId: string | null;
 	answer: string;
 	pending: string | null;
-	reviewedCard: Pick<Card, 'id' | 'version' | 'pl' | 'ru' | 'examplePl' | 'exampleRu'> | null;
+	reviewedCard: Pick<Card, 'id' | 'version' | 'pl' | 'ru' | 'examplePl' | 'exampleRu' | 'kind' | 'grammar'> | null;
 	retainedAnswer: string;
 }
 interface Session extends Recovery {
@@ -16,6 +16,7 @@ interface Session extends Recovery {
 	dueCount: number;
 	state: State;
 	feedback: ReviewResult | null;
+	submittedAnswer: string | null;
 	nextDueAt: number | null;
 	error: string;
 	savedDirection: Direction;
@@ -29,7 +30,7 @@ function initial(user: User, key: string, race: RaceMode | null): Session {
 	return {
 		// The race direction comes after the draft, so a stored draft cannot change it.
 		direction: user.direction, cardId: null, answer: '', pending: null, reviewedCard: null, retainedAnswer: '', ...recovery, ...(race && { direction: race.direction }),
-		queue: [], dueCount: 0, state: recovery?.pending ? 'error' : 'loading', feedback: null, nextDueAt: null,
+		queue: [], dueCount: 0, state: recovery?.pending ? 'error' : 'loading', feedback: null, submittedAnswer: null, nextDueAt: null,
 		error: recovery?.pending ? 'Zapis odpowiedzi nie został potwierdzony. Ponów żądanie.' : '',
 		savedDirection: user.direction, savingDirection: false,
 	};
@@ -147,7 +148,7 @@ export function useStudy(user: User, race: RaceMode | null, onReview?: (result: 
 			if (version !== generation.current) return;
 			// Both directions share the progress, so the same queue continues in the new direction.
 			const queue = live.current.queue.filter(item => item.card.id !== live.current.feedback?.cardId);
-			update({ direction: saved.direction, savedDirection: saved.direction, queue, state: queue.length ? 'answering' : 'loading', feedback: null, reviewedCard: null,
+			update({ direction: saved.direction, savedDirection: saved.direction, queue, state: queue.length ? 'answering' : 'loading', feedback: null, submittedAnswer: null, reviewedCard: null,
 				answer: '', cardId: null, retainedAnswer: '', savingDirection: false });
 			retryAction.current = null;
 			persist();
@@ -175,6 +176,7 @@ export function useStudy(user: User, race: RaceMode | null, onReview?: (result: 
 		const pending = current.pending ?? JSON.stringify(input);
 		const reviewedCard = current.pending ? current.reviewedCard : {
 			id: item.card.id, version: item.card.version, pl: item.card.pl, ru: item.card.ru, examplePl: item.card.examplePl, exampleRu: item.card.exampleRu,
+			kind: item.card.kind, grammar: item.card.grammar,
 		};
 		retryAction.current = action;
 		if (!persist({ ...current, pending, reviewedCard })) return;
@@ -183,7 +185,8 @@ export function useStudy(user: User, race: RaceMode | null, onReview?: (result: 
 		try {
 			const feedback = await api<ReviewResult>('/reviews', { method: 'POST', body: pending });
 			if (version !== generation.current) return;
-			update({ feedback, state: 'feedback', pending: null, answer: '', cardId: null, retainedAnswer: '', error: '' });
+			const sent: ReviewInput = JSON.parse(pending);
+			update({ feedback, submittedAnswer: sent.action === 'answer' ? sent.answer : null, state: 'feedback', pending: null, answer: '', cardId: null, retainedAnswer: '', error: '' });
 			retryAction.current = null;
 			persist();
 			onReview?.(feedback);
@@ -213,7 +216,7 @@ export function useStudy(user: User, race: RaceMode | null, onReview?: (result: 
 		const current = live.current;
 		if (current.state !== 'feedback') return;
 		const queue = current.queue.filter(item => item.card.id !== current.feedback?.cardId);
-		update({ queue, feedback: null, reviewedCard: null, state: queue.length ? 'answering' : 'empty' });
+		update({ queue, feedback: null, submittedAnswer: null, reviewedCard: null, state: queue.length ? 'answering' : 'empty' });
 	}
 
 	const locked = !!session.pending || session.savingDirection;
@@ -221,7 +224,7 @@ export function useStudy(user: User, race: RaceMode | null, onReview?: (result: 
 		// The reviewed card stays on screen while its review is pending or its feedback shows. load() can already put the next card first.
 		card: session.reviewedCard ?? session.queue[0]?.card ?? null,
 		dueCount: session.dueCount,
-		state: session.state, answer: session.answer, feedback: session.feedback, nextDueAt: session.nextDueAt, error: session.error,
+		state: session.state, answer: session.answer, feedback: session.feedback, submittedAnswer: session.submittedAnswer, nextDueAt: session.nextDueAt, error: session.error,
 		direction: session.direction, savedDirection: session.savedDirection, retainedAnswer: session.retainedAnswer,
 		busy: session.state === 'checking' || session.savingDirection, locked, editable: session.state === 'answering' && !locked,
 		setAnswer, setDirection, check: () => submit('answer'), reveal: () => submit('reveal'), next,
