@@ -1,8 +1,11 @@
-import type { Card, CardContent, CardPage, User } from '../shared/types';
+import type { Card, CardContent, CardKind, CardPage, Grammar, User } from '../shared/types';
 import type { Env } from './index';
+import { parseGrammarContent } from './grammar';
 import { HttpError, methods, object, readJson, text, uuidPattern } from './http';
 
 const contentKeys: (keyof CardContent)[] = ['pl', 'ru', 'examplePl', 'exampleRu', 'meaningRu', 'alternativesPl', 'alternativesRu'];
+const cardKeys = ['kind', 'grammar', ...contentKeys];
+export type StoredContent = CardContent & { kind: CardKind; grammar: Grammar | null };
 export const columns = `cards.id, cards.pl, cards.ru, cards.example_pl AS examplePl, cards.example_ru AS exampleRu, cards.meaning_ru AS meaningRu,
 	cards.alternatives_pl AS alternativesPl, cards.alternatives_ru AS alternativesRu, cards.kind, cards.grammar, cards.version, cards.archived,
 	cards.created_by AS createdBy, cards.created_at AS createdAt, cards.updated_at AS updatedAt`;
@@ -18,7 +21,7 @@ function alternatives(value: unknown): string[] {
 	return value.map(item => text(item, 200).trim());
 }
 
-export function parseCard(value: unknown): CardContent {
+export function parseTranslation(value: unknown): CardContent {
 	const data = object(value, contentKeys);
 	return {
 		pl: text(data.pl, 200).trim(), ru: text(data.ru, 200).trim(),
@@ -28,7 +31,16 @@ export function parseCard(value: unknown): CardContent {
 	};
 }
 
+export function parseCard(value: unknown): StoredContent {
+	const { kind = 'translation', ...content } = object(value, cardKeys);
+	if (kind === 'translation') return { ...parseTranslation(content), kind, grammar: null };
+	if (kind !== 'grammar') throw new HttpError(400, 'invalid_input', 'Sprawdź pola żądania.');
+	const { grammar, ...rest } = parseGrammarContent(content);
+	return { ...rest, ru: '', exampleRu: '', meaningRu: '', alternativesRu: [], kind, grammar };
+}
+
 function searchKey(value: string): string { return value.trim().normalize('NFC').toLowerCase(); }
+const searchPl = (content: StoredContent) => searchKey(content.grammar ? `${content.pl} ${content.grammar.right}` : content.pl);
 
 export async function readCard(env: Env, id: string): Promise<Card> {
 	const row = await env.DB.prepare(`SELECT ${columns} FROM cards WHERE id = ?`).bind(id).first<CardRow>();
@@ -64,15 +76,16 @@ export async function handleCards(request: Request, env: Env, user: User): Promi
 	if (url.pathname === '/api/cards') {
 		methods(request, ['GET', 'POST']);
 		if (request.method === 'GET') return Response.json(await listCards(url, env));
-		const { id, ...value } = object(await readJson(request, 32_768), ['id', ...contentKeys]);
+		const { id, ...value } = object(await readJson(request, 32_768), ['id', ...cardKeys]);
 		if (typeof id !== 'string' || !uuidPattern.test(id)) throw new HttpError(400, 'invalid_input', 'Nieprawidłowy identyfikator fiszki.');
 		const content = parseCard(value);
 		const now = Date.now();
 		const row = await env.DB.prepare(`INSERT INTO cards
-			(id, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru, search_pl, search_ru, create_content, created_by, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING RETURNING ${columns}`)
+			(id, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru, kind, grammar, search_pl, search_ru, create_content, created_by, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING RETURNING ${columns}`)
 			.bind(id, content.pl, content.ru, content.examplePl, content.exampleRu, content.meaningRu,
-				JSON.stringify(content.alternativesPl), JSON.stringify(content.alternativesRu), searchKey(content.pl), searchKey(content.ru), JSON.stringify(content), user.id, now, now).first<CardRow>();
+				JSON.stringify(content.alternativesPl), JSON.stringify(content.alternativesRu), content.kind, content.grammar && JSON.stringify(content.grammar),
+				searchPl(content), searchKey(content.ru), JSON.stringify(content), user.id, now, now).first<CardRow>();
 		if (row) return Response.json(fromRow(row), { status: 201 });
 		const original = await env.DB.prepare('SELECT create_content FROM cards WHERE id = ?').bind(id).first<string>('create_content');
 		if (original !== JSON.stringify(content)) {
@@ -84,7 +97,7 @@ export async function handleCards(request: Request, env: Env, user: User): Promi
 	if (!match || !uuidPattern.test(match[1])) return null;
 	methods(request, ['PATCH']);
 	const id = match[1];
-	const data = object(await readJson(request, 32_768), ['version', 'archived', ...contentKeys]);
+	const data = object(await readJson(request, 32_768), ['version', 'archived', ...cardKeys]);
 	const { version, ...value } = data;
 	if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1) throw new HttpError(400, 'invalid_input', 'Podaj wersję fiszki.');
 	let row: CardRow | null;
@@ -96,12 +109,13 @@ export async function handleCards(request: Request, env: Env, user: User): Promi
 			WHERE id = ? AND version = ? AND archived = 0 RETURNING ${columns}`).bind(Date.now(), id, version).first<CardRow>();
 	} else {
 		const content = parseCard(value);
-		await readCard(env, id);
+		if ((await readCard(env, id)).kind !== content.kind) throw new HttpError(400, 'invalid_input', 'Rodzaj fiszki nie może się zmienić.');
 		row = await env.DB.prepare(`UPDATE cards SET pl = ?, ru = ?, example_pl = ?, example_ru = ?, meaning_ru = ?,
-			alternatives_pl = ?, alternatives_ru = ?, search_pl = ?, search_ru = ?, version = version + 1, updated_at = ?
+			alternatives_pl = ?, alternatives_ru = ?, grammar = ?, search_pl = ?, search_ru = ?, version = version + 1, updated_at = ?
 			WHERE id = ? AND version = ? AND archived = 0 RETURNING ${columns}`)
 			.bind(content.pl, content.ru, content.examplePl, content.exampleRu, content.meaningRu,
-				JSON.stringify(content.alternativesPl), JSON.stringify(content.alternativesRu), searchKey(content.pl), searchKey(content.ru), Date.now(), id, version).first<CardRow>();
+				JSON.stringify(content.alternativesPl), JSON.stringify(content.alternativesRu), content.grammar && JSON.stringify(content.grammar),
+				searchPl(content), searchKey(content.ru), Date.now(), id, version).first<CardRow>();
 	}
 	if (!row) throw new HttpError(409, 'version_conflict', 'Fiszka została już zmieniona, być może przez Twój poprzedni zapis. Skopiuj tekst, otwórz fiszkę ponownie i sprawdź ją.');
 	return Response.json(fromRow(row));

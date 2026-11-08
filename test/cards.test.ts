@@ -1,8 +1,9 @@
 import { env } from 'cloudflare:workers';
 import { expect, it, vi } from 'vitest';
+import type { Card } from '../shared/types';
 import { readCard } from '../src/cards';
 import { login, request } from './client';
-import { CARD_A, CARD_B, USER_A, USER_B } from './fixtures';
+import { CARD_A, CARD_B, GRAMMAR_CARD, GRAMMAR_DRAFT, USER_A, USER_B } from './fixtures';
 
 const { id: cardId, ...content } = CARD_A;
 const now = Date.parse('2026-10-21T10:00:00.000Z');
@@ -192,4 +193,52 @@ it('requires a session and a same-origin write for shared cards', async () => {
 	const response = await request('/api/cards', { method: 'POST', cookie: await login(USER_A.id), origin: 'https://other.example', body: CARD_A });
 	expect(response.status).toBe(403);
 	expect(await env.DB.prepare('SELECT count(*) AS n FROM cards').first('n')).toBe(0);
+});
+
+it('creates a grammar card with empty Russian fields and lists it beside a translation card', async () => {
+	vi.spyOn(Date, 'now').mockReturnValue(now);
+	const cookie = await login(USER_A.id);
+	const created = await request('/api/cards', { method: 'POST', cookie, body: GRAMMAR_CARD });
+	expect(created.status).toBe(201);
+	expect(await created.json()).toEqual({ ...GRAMMAR_CARD, ru: '', exampleRu: '', meaningRu: '', alternativesRu: [], version: 1, archived: false, createdBy: USER_A.id, createdAt: now, updatedAt: now });
+	expect((await request('/api/cards', { method: 'POST', cookie, body: CARD_A })).status).toBe(201);
+	// Same created_at, so the list sorts by id: 'eeee…' before 'aaaa…'.
+	const list = await (await request('/api/cards', { cookie })).json<{ cards: Card[] }>();
+	expect(list.cards.map(card => [card.kind, card.grammar === null])).toEqual([['grammar', false], ['translation', true]]);
+});
+
+it.each([
+	{ name: 'the word', query: 'pies', ids: [GRAMMAR_CARD.id] },
+	{ name: 'the right form', query: 'dwa psy', ids: [GRAMMAR_CARD.id] },
+	{ name: 'the used form', query: 'piesy', ids: [] },
+])('finds a grammar card by $name', async ({ query, ids }) => {
+	const cookie = await login(USER_A.id);
+	expect((await request('/api/cards', { method: 'POST', cookie, body: GRAMMAR_CARD })).status).toBe(201);
+	const response = await request(`/api/cards?q=${encodeURIComponent(query)}`, { cookie });
+	expect((await response.json() as { cards: { id: string }[] }).cards.map(card => card.id)).toEqual(ids);
+});
+
+it.each([
+	{ name: 'a grammar payload with a Russian term', body: { ...GRAMMAR_CARD, ru: 'Собака' } },
+	{ name: 'a translation payload with grammar details', body: { ...CARD_A, grammar: GRAMMAR_DRAFT.grammar } },
+	{ name: 'a grammar kind without details', body: { id: GRAMMAR_CARD.id, kind: 'grammar', pl: 'pies', examplePl: 'Na podwórku biegają dwa ___.', alternativesPl: [] } },
+	{ name: 'a grammar sentence without a gap', body: { ...GRAMMAR_CARD, examplePl: 'Na podwórku biegają dwa psy.' } },
+	{ name: 'an unknown kind', body: { ...CARD_A, kind: 'other' } },
+])('rejects $name before a write', async ({ body }) => {
+	const cookie = await login(USER_A.id);
+	expect((await request('/api/cards', { method: 'POST', cookie, body })).status).toBe(400);
+	expect(await env.DB.prepare('SELECT count(*) AS n FROM cards').first('n')).toBe(0);
+});
+
+it('edits the answer and the sentence of a grammar card and keeps its kind', async () => {
+	const cookie = await login(USER_A.id);
+	expect((await request('/api/cards', { method: 'POST', cookie, body: GRAMMAR_CARD })).status).toBe(201);
+	const { id, ...card } = GRAMMAR_CARD;
+	const edited = { ...card, examplePl: 'Przed domem biegają dwa ___.', grammar: { ...card.grammar, answer: 'pieski' }, version: 1 };
+	const updated = await request(`/api/cards/${id}`, { method: 'PATCH', cookie, body: edited });
+	expect(updated.status).toBe(200);
+	expect(await updated.json()).toMatchObject({ kind: 'grammar', examplePl: 'Przed domem biegają dwa ___.', grammar: edited.grammar, version: 2 });
+	const changedKind = await request(`/api/cards/${id}`, { method: 'PATCH', cookie, body: { ...content, version: 2 } });
+	expect(changedKind.status).toBe(400);
+	expect(await readCard(env, id)).toMatchObject({ kind: 'grammar', version: 2 });
 });

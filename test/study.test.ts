@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import type { StudyBatch } from '../shared/types';
 import { getStudyBatch } from '../src/study';
 import { login, request } from './client';
-import { CARD_A, CARD_B, USER_A, USER_B } from './fixtures';
+import { CARD_A, CARD_B, GRAMMAR_CARD, GRAMMAR_DRAFT, USER_A, USER_B } from './fixtures';
 
 const now = Date.parse('2026-10-21T10:00:00.000Z');
 const minute = 60_000, hour = 60 * minute, day = 24 * hour;
@@ -70,6 +70,14 @@ it('orders ready cards by misses per correct answer without creating progress', 
 	expect(batch.cards[1].progress).toBeNull();
 	expect(await env.DB.prepare('SELECT count(*) AS n FROM card_progress').first('n')).toBe(2);
 	expect(await env.DB.prepare('SELECT count(*) AS n FROM reviews').first('n')).toBe(0);
+});
+
+it('returns grammar cards in the same queue with their details', async () => {
+	expect((await request('/api/cards', { method: 'POST', cookie, body: GRAMMAR_CARD })).status).toBe(201);
+	const batch = await getStudyBatch(env, USER_A.id, now);
+	expect(ids(batch)).toContain(GRAMMAR_CARD.id);
+	expect(batch.cards.find(item => item.card.id === GRAMMAR_CARD.id)!.card).toMatchObject({ kind: 'grammar', grammar: GRAMMAR_DRAFT.grammar, ru: '' });
+	expect(batch.cards.find(item => item.card.id === CARD_A.id)!.card).toMatchObject({ kind: 'translation', grammar: null });
 });
 
 it('breaks equal weights by ready time and then by ID', async () => {
