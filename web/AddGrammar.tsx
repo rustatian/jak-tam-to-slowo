@@ -126,7 +126,7 @@ export function AddGrammar({ userId, onOpen, busy, onBusy: setBusy }: { userId: 
 				: !matches ? <p className="hint">Szukanie podobnych słówek…</p>
 				: !matches.length ? <p className="hint">Brak podobnych słówek.</p>
 				: <><span className="hint">Już w kolekcji:</span><ul>{matches.map(card => <li key={card.id}>
-					<a href="#words" aria-disabled={busy} onClick={event => { event.preventDefault(); if (!busy) onOpen(card); }}><span lang="pl">{card.pl}</span> / <span lang="ru">{card.ru}</span></a>
+					<a href="#words" aria-disabled={busy} onClick={event => { event.preventDefault(); if (!busy) onOpen(card); }}><span lang="pl">{card.pl}</span>{card.grammar ? <> → <span lang="pl">{card.grammar.right}</span></> : <> / <span lang="ru">{card.ru}</span></>}</a>
 				</li>)}</ul></>}</aside>
 			<button className="primary" disabled={locked || !query || !draft?.used.trim()}>Sprawdź gramatykę</button>
 		</form>
