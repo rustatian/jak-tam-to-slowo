@@ -86,6 +86,25 @@ test('restores the grammar draft and the mode after a reload', async ({ page }) 
 	await expect(page.getByLabel('Poprawna forma')).toHaveValue('psy');
 });
 
+test('lists a grammar card with its slot labels and edits its answer and sentence', async ({ page, baseURL }) => {
+	const id = crypto.randomUUID();
+	expect((await page.request.post('/api/cards', { headers: { Origin: baseURL! }, data: { ...GRAMMAR_CARD, id } })).status()).toBe(201);
+	createdIds.push(id);
+	await page.getByRole('button', { name: 'Słówka', exact: true }).click();
+	const row = page.getByRole('button', { name: 'pies → dwa psy Gramatyka', exact: true });
+	await expect(row).toBeVisible();
+	await expect(row.locator('..').locator('.hint')).toHaveText('Mianownik, liczba mnoga, niemęskoosobowy, końcówka -y');
+	await row.click();
+	await expect(page.getByRole('table', { name: 'Mianownik, liczba mnoga: końcówki według rodzaju' })).toBeVisible();
+	await expect(page.getByLabel('Po polsku', { exact: true })).toHaveCount(0);
+	await page.getByLabel('Zdanie z luką').fill('Przed domem biegają dwa ___.');
+	const saved = page.waitForResponse(response => response.url().endsWith(`/api/cards/${id}`) && response.request().method() === 'PATCH');
+	await page.getByRole('button', { name: 'Zapisz', exact: true }).click();
+	expect((await saved).request().postDataJSON()).toEqual({ kind: 'grammar', pl: 'pies', examplePl: 'Przed domem biegają dwa ___.', alternativesPl: [], grammar: GRAMMAR_DRAFT.grammar, version: 1 });
+	expect((await saved).status()).toBe(200);
+	await expect(page.getByRole('button', { name: 'pies → dwa psy Gramatyka', exact: true })).toBeVisible();
+});
+
 test.describe('study', () => {
 	async function archive(page: Page) {
 		for (const card of await allCards(page.request)) {

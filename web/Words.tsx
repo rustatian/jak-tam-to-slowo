@@ -1,9 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import type { Card, CardContent, CardPage } from '../shared/types';
+import type { Card, CardContent, CardPage, GrammarContent } from '../shared/types';
 import { api, ApiError } from './api';
 import { CardFields } from './CardFields';
+import { FilledSentence, FormPair, GrammarDetails } from './Grammar';
 
-interface Edit { card: Pick<Card, 'id' | 'version'>; value: CardContent }
+type Edit = { card: Pick<Card, 'id' | 'version'> } & ({ kind: 'translation'; value: CardContent } | { kind: 'grammar'; value: GrammarContent });
 
 export function Words({ userId, onBusy, initialCard = null }: { userId: string; onBusy(busy: boolean): void; initialCard?: Card | null }) {
 	const key = `word-edit:${userId}`;
@@ -11,7 +12,8 @@ export function Words({ userId, onBusy, initialCard = null }: { userId: string; 
 	const [query, setQuery] = useState('');
 	const [search, setSearch] = useState('');
 	const [edit, setEdit] = useState<Edit | null>(() => {
-		try { return JSON.parse(sessionStorage.getItem(key) ?? 'null'); } catch { return null; }
+		// A stored edit without a kind is a translation edit.
+		try { const stored = JSON.parse(sessionStorage.getItem(key) ?? 'null'); return stored && { kind: 'translation', ...stored }; } catch { return null; }
 	});
 	const [busy, setBusy] = useState(true);
 	const [error, setError] = useState('');
@@ -45,8 +47,10 @@ export function Words({ userId, onBusy, initialCard = null }: { userId: string; 
 	useEffect(() => { void load(''); if (initialCard && !edit) select(initialCard); }, [initialCard]);
 
 	function select(card: Card) {
-		const { pl, ru, meaningRu, examplePl, exampleRu, alternativesPl, alternativesRu } = card;
-		setEdit({ card: { id: card.id, version: card.version }, value: { pl, ru, meaningRu, examplePl, exampleRu, alternativesPl, alternativesRu } });
+		const { pl, ru, meaningRu, examplePl, exampleRu, alternativesPl, alternativesRu, grammar } = card;
+		const ref = { id: card.id, version: card.version };
+		setEdit(grammar ? { card: ref, kind: 'grammar', value: { pl, examplePl, alternativesPl, grammar } }
+			: { card: ref, kind: 'translation', value: { pl, ru, meaningRu, examplePl, exampleRu, alternativesPl, alternativesRu } });
 		setError('');
 	}
 
@@ -56,7 +60,7 @@ export function Words({ userId, onBusy, initialCard = null }: { userId: string; 
 		onBusy(true);
 		setError('');
 		try {
-			const body = archive ? { version: edit.card.version, archived: true } : {
+			const body = archive ? { version: edit.card.version, archived: true } : edit.kind === 'grammar' ? { kind: 'grammar', ...edit.value, version: edit.card.version } : {
 				...edit.value, version: edit.card.version,
 				alternativesPl: edit.value.alternativesPl.filter(value => value.trim()),
 				alternativesRu: edit.value.alternativesRu.filter(value => value.trim()),
@@ -77,9 +81,21 @@ export function Words({ userId, onBusy, initialCard = null }: { userId: string; 
 		{edit ? <>
 			<button type="button" className="quiet back" aria-label="Wróć do listy słówek" disabled={busy} onClick={close}>‹ Wróć</button>
 			<p>Zmiany będą widoczne dla obu osób.</p>
-			<p className="hint">Zachowaj znaczenie fiszki. Dla innego znaczenia użyj „Dodaj”.</p>
+			{edit.kind === 'translation' && <p className="hint">Zachowaj znaczenie fiszki. Dla innego znaczenia użyj „Dodaj”.</p>}
 			<form onSubmit={submit}>
-				<fieldset disabled={busy}><CardFields value={edit.value} onChange={value => changeEdit({ ...edit, value })} /></fieldset>
+				{edit.kind === 'grammar' ? <>
+					<div className="result">
+						<FormPair grammar={edit.value.grammar} />
+						<p className="sentence"><FilledSentence sentence={edit.value.examplePl} answer={edit.value.grammar.answer} /></p>
+						<GrammarDetails card={edit.value} />
+					</div>
+					<fieldset disabled={busy}>
+						<label htmlFor="word-answer">Poprawna forma</label>
+						<input id="word-answer" lang="pl" maxLength={200} required value={edit.value.grammar.answer} onChange={event => changeEdit({ ...edit, value: { ...edit.value, alternativesPl: [], grammar: { ...edit.value.grammar, answer: event.target.value } } })} />
+						<label htmlFor="word-example">Zdanie z luką</label>
+						<textarea id="word-example" lang="pl" maxLength={500} required rows={2} value={edit.value.examplePl} onChange={event => changeEdit({ ...edit, value: { ...edit.value, examplePl: event.target.value } })} />
+					</fieldset>
+				</> : <fieldset disabled={busy}><CardFields value={edit.value} onChange={value => changeEdit({ ...edit, value })} /></fieldset>}
 				{error && <p className="error" role="alert">{error}</p>}
 				<button className="primary" disabled={busy} type="submit">Zapisz</button>
 				<div className="edit-actions">
@@ -97,10 +113,13 @@ export function Words({ userId, onBusy, initialCard = null }: { userId: string; 
 			</form>
 			{error && <p className="error" role="alert">{error}</p>}
 			{!busy && !error && !page.cards.length && <p role="status">{search ? 'Nic nie znaleziono.' : 'Nie ma jeszcze słówek.'}</p>}
-			<ul className="words-list">{page.cards.map(card => <li key={card.id}>
+			<ul className="words-list">{page.cards.map(card => <li key={card.id}>{card.grammar ? <>
+				<button className="word" disabled={busy} onClick={() => select(card)}><span lang="pl">{card.pl}</span>{' '}<span className="arrow">→</span>{' '}<span className="form" lang="pl">{card.grammar.right}</span>{' '}<span className="tag">Gramatyka</span></button>
+				<p className="hint">{card.grammar.slot.join(', ')}</p>
+			</> : <>
 				<button className="word" disabled={busy} onClick={() => select(card)}><span lang="pl">{card.pl}</span> / <span lang="ru">{card.ru}</span></button>
 				<p className="hint" lang="ru">{card.meaningRu}</p>
-			</li>)}</ul>
+			</>}</li>)}</ul>
 			{page.nextCursor && <button disabled={busy} onClick={() => void load(search, page.nextCursor!)}>Więcej słówek</button>}
 		</>}
 		{storageError && <p className="error" role="alert">{storageError}</p>}

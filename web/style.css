@@ -223,6 +223,9 @@ h1 + .competition-actions { margin-top: 20px; }
 .word { display: block; width: 100%; min-height: 48px; text-align: left; font-weight: 600; overflow-wrap: anywhere; }
 button.word { border: 0; border-radius: 0; background: transparent; color: var(--ink); font-size: 1.0625rem; padding: 12px 44px 2px 16px; }
 .word [lang='ru'] { color: var(--secondary); font-weight: 400; }
+.word .arrow { color: var(--tertiary); font-weight: 400; padding: 0 6px; }
+.word .form { color: var(--green); }
+.word .tag { margin-left: 8px; vertical-align: 2px; }
 a.word { color: var(--accent-text); padding: 12px 44px 2px 16px; text-decoration: none; }
 .page > a.word { padding-inline: 2px; text-decoration: underline; text-underline-offset: 3px; }
 /* Similar words: one row of fixed height under the field. The row scrolls sideways, so the page keeps its height while the matches change. */
