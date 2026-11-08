@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { Card, CardContent, Direction, Grade, ReviewResult } from '../shared/types';
 import { login, request } from './client';
-import { CARD_A, USER_A, WORD_DRAFT } from './fixtures';
+import { CARD_A, GRAMMAR_CARD, USER_A, WORD_DRAFT } from './fixtures';
 import { createProvider, message } from './provider';
 
 const turtle: CardContent = { pl: 'Żółw', ru: 'Черепаха', meaningRu: 'Животное', examplePl: 'Żółw ma skorupę.', exampleRu: 'У черепахи есть панцирь.', alternativesPl: [], alternativesRu: [] };
@@ -51,4 +51,45 @@ it.each([
 		} } });
 		expect(JSON.parse(sent.messages[0].content)).toEqual({ card: { pl, ru, examplePl, exampleRu, meaningRu, alternativesPl, alternativesRu }, direction, answer });
 	}
+});
+
+const grammarGrade = { grade: 'again', explanation: 'To forma słownikowa. W liczbie mnogiej: psy.' };
+const withAnswer = (answer: string, right = answer) => ({ ...GRAMMAR_CARD, grammar: { ...GRAMMAR_CARD.grammar, answer, right } });
+
+it.each([
+	{ name: 'the exact form', card: GRAMMAR_CARD, direction: 'ru-pl', answer: 'psy', grade: 'correct', correction: 'psy', explanation: 'Dobrze.', source: 'exact' },
+	{ name: 'case and spaces', card: GRAMMAR_CARD, direction: 'ru-pl', answer: ' PSY ', grade: 'correct', correction: 'psy', explanation: 'Dobrze.', source: 'exact' },
+	{ name: 'the Russian direction', card: GRAMMAR_CARD, direction: 'pl-ru', answer: 'psy', grade: 'correct', correction: 'psy', explanation: 'Dobrze.', source: 'exact' },
+	{ name: 'an accepted variant', card: { ...GRAMMAR_CARD, alternativesPl: ['pieski'] }, direction: 'ru-pl', answer: 'pieski', grade: 'correct', correction: 'psy', explanation: 'Dobrze.', source: 'exact' },
+	{ name: 'missing diacritics', card: withAnswer('psów', 'pięciu psów'), direction: 'ru-pl', answer: 'psow', grade: 'almost', correction: 'psów', explanation: 'Prawie dobrze. Sprawdź polskie litery: psów.', source: 'exact' },
+	{ name: 'the dictionary form when the answer differs from the word', card: GRAMMAR_CARD, direction: 'ru-pl', answer: 'pies', correction: 'psy', source: 'ai' },
+	{ name: 'the dictionary form when it is the answer', card: { ...withAnswer('iść', 'chcę iść'), pl: 'iść', examplePl: 'Chcę ___ do domu.' }, direction: 'ru-pl', answer: 'iść', grade: 'correct', correction: 'iść', explanation: 'Dobrze.', source: 'exact' },
+	{ name: 'an empty answer', card: GRAMMAR_CARD, direction: 'ru-pl', answer: '', grade: 'again', correction: 'psy', explanation: 'Brak odpowiedzi. Powtórz słowo.', source: 'exact' },
+] satisfies { name: string; card: typeof GRAMMAR_CARD; direction: Direction; answer: string; grade?: Grade; correction: string; explanation?: string; source: 'exact' | 'ai' }[])
+('grades a grammar card with $name', async ({ card, direction, answer, grade, correction, explanation, source }) => {
+	provider.messages = () => message(grammarGrade);
+	expect((await request('/api/cards', { method: 'POST', cookie, body: card })).status).toBe(201);
+	const response = await request('/api/reviews', { method: 'POST', cookie, body: {
+		attemptId: crypto.randomUUID(), cardId: card.id, cardVersion: 1, progressVersion: 0, direction, action: 'answer', answer,
+	} });
+	expect(response.status).toBe(200);
+	expect(await response.json<ReviewResult>()).toMatchObject({ ...(source === 'ai' ? grammarGrade : { grade, explanation }), correction, source, direction });
+	expect(provider.calls).toHaveLength(source === 'ai' ? 1 : 0);
+	if (source === 'ai') {
+		const sent = await provider.calls[0].json<{ model: string; thinking?: unknown; output_config: { effort: string }; messages: { content: string }[] }>();
+		expect(sent.model).toBe('claude-sonnet-5-5');
+		expect(sent.thinking).toBeUndefined();
+		expect(sent.output_config.effort).toBe('high');
+		const { pl, examplePl, alternativesPl, grammar: { answer: expected, facts, slot } } = card;
+		expect(JSON.parse(sent.messages[0].content)).toEqual({ kind: 'grammar', card: { pl, examplePl, answer: expected, alternativesPl, facts, slot }, answer });
+	}
+});
+
+it('reveals the gap answer of a grammar card', async () => {
+	expect((await request('/api/cards', { method: 'POST', cookie, body: GRAMMAR_CARD })).status).toBe(201);
+	const response = await request('/api/reviews', { method: 'POST', cookie, body: {
+		attemptId: crypto.randomUUID(), cardId: GRAMMAR_CARD.id, cardVersion: 1, progressVersion: 0, direction: 'pl-ru', action: 'reveal',
+	} });
+	expect(await response.json()).toMatchObject({ grade: 'again', correction: 'psy', explanation: 'Powtórz słowo.', source: 'reveal' });
+	expect(provider.calls).toHaveLength(0);
 });

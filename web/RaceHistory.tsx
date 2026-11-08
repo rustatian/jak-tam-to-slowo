@@ -29,9 +29,9 @@ export function RaceHistory({ race }: { race: Competition }): React.JSX.Element 
 		{error && <div className="notice"><p className="error" role="alert">{error}</p><button onClick={() => void load()}>Ponów</button></div>}
 		{attempts?.length === 0 && <p className="hint">Nie ma jeszcze prób.</p>}
 		{[...groups.values()].map(group => <div key={group[0].cardId}>
-			<h3>{group[0].pl} / {group[0].ru}</h3>
+			<h3>{group[0].pl} {group[0].kind === 'grammar' ? `→ ${group[0].correction}` : `/ ${group[0].ru}`}</h3>
 			{group.map(attempt => {
-				const lang = attempt.direction === 'ru-pl' ? 'pl' : 'ru';
+				const lang = attempt.kind === 'grammar' || attempt.direction === 'ru-pl' ? 'pl' : 'ru';
 				const name = race.participants.find(person => person.id === attempt.userId)?.displayName;
 				return <details key={attempt.attemptId}>
 					<summary>{name}: {attempt.answer === null ? 'Pokazano odpowiedź' : gradeNames[attempt.grade]}</summary>

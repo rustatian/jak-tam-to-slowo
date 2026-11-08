@@ -48,7 +48,7 @@ export const ONION_DRAFT = {
 };
 
 export const GRAMMAR_DRAFT = {
-	pl: 'pies', examplePl: 'Na podwórku biegają dwa ___.', alternativesPl: [],
+	pl: 'pies', examplePl: 'Na podwórku biegają dwa ___.', alternativesPl: [] as string[],
 	grammar: {
 		used: 'dwa piesy', right: 'dwa psy', answer: 'psy',
 		facts: ['rzeczownik', 'rodzaj męski żywotny'],

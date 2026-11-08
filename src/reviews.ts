@@ -1,7 +1,7 @@
 import type { CompetitionContribution, GradeResult, Progress, ReviewInput, ReviewResult, User } from '../shared/types';
 import type { Env } from './index';
 import { type CardRow, columns, fromRow } from './cards';
-import { gradeAnswer } from './grade';
+import { correctionOf, gradeAnswer } from './grade';
 import { HttpError, methods, object, readJson, uuidPattern } from './http';
 
 type ReviewRow = { input_json: string; result_json: string } & (CompetitionContribution | { competitionId: null });
@@ -101,7 +101,7 @@ export async function handleReview(request: Request, env: Env, user: User): Prom
 	let graded: { result: GradeResult; source: ReviewResult['source'] };
 	try {
 		graded = input.action === 'answer' ? await gradeAnswer(env, card, direction, input.answer) : {
-			result: { grade: 'again', correction: direction === 'ru-pl' ? card.pl : card.ru, explanation: 'Powtórz słowo.' }, source: 'reveal',
+			result: { grade: 'again', correction: correctionOf(card, direction), explanation: 'Powtórz słowo.' }, source: 'reveal',
 		};
 	} catch (error) {
 		if (!(error instanceof HttpError)) throw error;
