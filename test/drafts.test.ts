@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { login, request } from './client';
-import { ONION_DRAFT, USER_A, USER_B, WORD_DRAFT } from './fixtures';
+import { GRAMMAR_DRAFT, ONION_DRAFT, USER_A, USER_B, WORD_DRAFT } from './fixtures';
 import { createProvider, message } from './provider';
 
 const string = { type: 'string' }, strings = { type: 'array', items: string };
@@ -107,4 +107,45 @@ it('requires an authenticated same-origin POST', async () => {
 	expect((await request('/api/cards/draft', { method: 'POST', cookie, origin: 'https://elsewhere.test', body: { text: 'słowo' } })).status).toBe(403);
 	expect((await request('/api/cards/draft', { cookie })).status).toBe(405);
 	expect(provider.calls).toHaveLength(0);
+});
+
+const grammar = (body: unknown = { kind: 'grammar', word: 'pies', used: 'dwa piesy' }) => request('/api/cards/draft', { method: 'POST', cookie, body });
+
+it('prepares a grammar card on Opus with adaptive thinking and xhigh effort and writes no card', async () => {
+	provider.messages = () => message(GRAMMAR_DRAFT);
+	const response = await grammar();
+	expect(response.status).toBe(200);
+	expect(await response.json()).toEqual({ kind: 'grammar', card: GRAMMAR_DRAFT });
+	expect(await env.DB.prepare('SELECT count(*) AS n FROM cards').first('n')).toBe(0);
+	const sent = await provider.calls[0].json<{ model: string; thinking: unknown; output_config: { effort: string; format: { type: string; schema: { required: string[] } } }; messages: unknown }>();
+	expect(sent.model).toBe('claude-opus-5-5');
+	expect(sent.thinking).toEqual({ type: 'adaptive' });
+	expect(sent.output_config.effort).toBe('xhigh');
+	expect(sent.output_config.format.type).toBe('json_schema');
+	expect(sent.output_config.format.schema.required).toEqual(['pl', 'examplePl', 'alternativesPl', 'grammar']);
+	expect(sent.messages).toEqual([{ role: 'user', content: '{"kind":"grammar","word":"pies","used":"dwa piesy"}' }]);
+});
+
+it.each([
+	{ name: 'a missing used form', body: { kind: 'grammar', word: 'pies' } },
+	{ name: 'a blank word', body: { kind: 'grammar', word: ' ', used: 'dwa piesy' } },
+	{ name: 'an oversized used form', body: { kind: 'grammar', word: 'pies', used: 'a'.repeat(201) } },
+	{ name: 'a translation field', body: { kind: 'grammar', word: 'pies', used: 'dwa piesy', text: 'pies' } },
+	{ name: 'an unknown kind', body: { kind: 'other', text: 'pies' } },
+])('rejects a grammar draft with $name before inference', async ({ body }) => {
+	const response = await grammar(body);
+	expect(response.status).toBe(400);
+	expect(await response.json()).toMatchObject({ code: 'invalid_input' });
+	expect(provider.calls).toHaveLength(0);
+});
+
+it.each([
+	{ name: 'a sentence without a gap', change: (c: typeof GRAMMAR_DRAFT) => ({ ...c, examplePl: 'Na podwórku biegają dwa psy.' }) },
+	{ name: 'two hit rows', change: (c: typeof GRAMMAR_DRAFT) => { c.grammar.table.groups[0].rows[0].hit = true; return c; } },
+	{ name: 'a translation card', change: () => ({ result: { kind: 'draft', card: WORD_DRAFT } }) },
+])('returns a service error for a grammar reply with $name', async ({ change }) => {
+	provider.messages = () => message(change(structuredClone(GRAMMAR_DRAFT)));
+	const response = await grammar();
+	expect(response.status).toBe(503);
+	expect(await response.json()).toEqual({ code: 'ai_invalid_response', error: 'Model AI zwrócił nieprawidłową fiszkę. Spróbuj ponownie.' });
 });

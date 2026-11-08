@@ -2,6 +2,7 @@ import type { DraftResult } from '../shared/types';
 import type { Env } from './index';
 import { requestAiJson } from './ai';
 import { parseCard } from './cards';
+import { draftGrammar } from './grammar';
 import { HttpError, methods, object, readJson, text } from './http';
 import instructions from './prompts/card.txt';
 
@@ -17,7 +18,14 @@ const schema = { type: 'object', properties: { result: { anyOf: [
 
 export async function handleDraft(request: Request, env: Env): Promise<Response> {
 	methods(request, ['POST']);
-	const data = object(await readJson(request), ['text', 'meaningRu']);
+	const data = object(await readJson(request), ['kind', 'word', 'used', 'text', 'meaningRu']);
+	if ('kind' in data) {
+		object(data, ['kind', 'word', 'used']);
+		if (data.kind !== 'grammar') throw new HttpError(400, 'invalid_input', 'Sprawdź pola żądania.');
+		const card = await draftGrammar(env, { word: text(data.word, 200).trim(), used: text(data.used, 200).trim() });
+		return Response.json({ kind: 'grammar', card } satisfies DraftResult);
+	}
+	object(data, ['text', 'meaningRu']);
 	const input = { text: text(data.text, 200).trim(), ...('meaningRu' in data ? { meaningRu: text(data.meaningRu, 200).trim() } : {}) };
 	const value = await requestAiJson(env, instructions, input, schema);
 	let result: DraftResult;

@@ -1,5 +1,8 @@
 import type { GrammarContent, GrammarGroup, GrammarRow } from '../shared/types';
+import type { Env } from './index';
+import { grammarAi, requestAiJson } from './ai';
 import { HttpError, object, text } from './http';
+import instructions from './prompts/grammar.txt';
 
 export const GAP = '___';
 
@@ -55,4 +58,10 @@ function parse(value: unknown): GrammarContent {
 export function parseGrammarContent(value: unknown): GrammarContent {
 	try { return parse(value); }
 	catch { throw new HttpError(400, 'invalid_input', 'Sprawdź pola fiszki gramatycznej.'); }
+}
+
+export async function draftGrammar(env: Env, { word, used }: { word: string; used: string }): Promise<GrammarContent> {
+	const value = await requestAiJson(env, instructions, { kind: 'grammar', word, used }, grammarSchema, grammarAi);
+	try { return parseGrammarContent(value); }
+	catch { throw new HttpError(503, 'ai_invalid_response', 'Model AI zwrócił nieprawidłową fiszkę. Spróbuj ponownie.'); }
 }
