@@ -31,7 +31,7 @@ export function FilledSentence({ sentence, answer }: { sentence: string; answer:
 	return <>{before}<b className="right">{answer}</b>{after}</>;
 }
 
-export function GrammarDetails({ card }: { card: GrammarContent }): React.JSX.Element {
+export function GrammarDetails({ card, sentence }: { card: Pick<GrammarContent, 'grammar'>; sentence?: ReactNode }): React.JSX.Element {
 	const { used, right, answer, facts, slot, mistake, table } = card.grammar;
 	const tokens = markDifferences(used, right)[0];
 	const struck = tokens.every(token => token.marked) ? used : tokens.find(token => token.marked)?.text ?? used;
@@ -46,6 +46,7 @@ export function GrammarDetails({ card }: { card: GrammarContent }): React.JSX.El
 			{slot.map((label, index) => <span key={`slot-${index}`} className="lab hit">{label}</span>)}
 			{mistake === null ? <span className="lab hit">forma poprawna</span> : <span className="lab err">błąd: {mistake}</span>}
 		</div>
+		{sentence}
 		<p className="kicker">{table.title}</p>
 		<table className="decl" aria-label={table.title}>
 			<thead><tr>{table.columns.map((column, index) => <th key={index} scope="col">{column}</th>)}</tr></thead>

@@ -1,11 +1,13 @@
-import { expect, test } from '@playwright/test';
-import { GRAMMAR_DRAFT, USER_A } from '../test/fixtures';
+import { expect, test, type Page } from '@playwright/test';
+import type { GrammarContent } from '../shared/types';
+import { GRAMMAR_CARD, GRAMMAR_DRAFT, USER_A } from '../test/fixtures';
 import { allCards } from './cards';
 
 let createdIds: string[];
+let headers: Record<string, string>;
 test.beforeEach(async ({ page, baseURL }) => {
 	createdIds = [];
-	const headers = { Origin: baseURL!, 'CF-Connecting-IP': `grammar-${crypto.randomUUID()}` };
+	headers = { Origin: baseURL!, 'CF-Connecting-IP': `grammar-${crypto.randomUUID()}` };
 	await page.setExtraHTTPHeaders(headers);
 	expect((await page.request.post('/api/session', { headers, data: { username: USER_A.username, password: USER_A.password } })).status()).toBe(200);
 	await page.goto('/');
@@ -82,4 +84,67 @@ test('restores the grammar draft and the mode after a reload', async ({ page }) 
 	await expect(page.getByLabel('Słowo lub wyrażenie')).toBeVisible();
 	await page.getByRole('group', { name: 'Rodzaj fiszki' }).getByRole('button', { name: 'Gramatyka', exact: true }).click();
 	await expect(page.getByLabel('Poprawna forma')).toHaveValue('psy');
+});
+
+test.describe('study', () => {
+	async function archive(page: Page) {
+		for (const card of await allCards(page.request)) {
+			expect((await page.request.patch(`/api/cards/${card.id}`, { headers, data: { version: card.version, archived: true } })).status()).toBe(200);
+		}
+	}
+
+	async function seedGrammar(page: Page, change: Partial<GrammarContent> = {}) {
+		const response = await page.request.post('/api/cards', { headers, data: { ...GRAMMAR_CARD, id: crypto.randomUUID(), ...change } });
+		expect(response.status()).toBe(201);
+		createdIds.push((await response.json()).id);
+	}
+
+	test.beforeEach(async ({ page }) => {
+		expect((await page.request.patch('/api/me', { headers, data: { direction: 'ru-pl' } })).status()).toBe(200);
+		await archive(page);
+	});
+
+	test('asks for the gap form, shows the mistake, the table and the rule, then accepts the form', async ({ page }) => {
+		await seedGrammar(page);
+		await seedGrammar(page, { pl: 'kot', examplePl: 'Na płocie siedzą dwa ___.', grammar: { ...GRAMMAR_DRAFT.grammar, used: 'dwa koty', right: 'dwa koty', answer: 'koty', mistake: null } });
+		await page.goto('/');
+		await expect(page.getByTestId('study-remaining')).toHaveText('W kolejce: 2');
+		await expect(page.getByText('Gramatyka', { exact: true })).toBeVisible();
+		await expect(page.getByTestId('study-term')).toHaveText('Na podwórku biegają dwa ___ (pies).');
+		await expect(page.getByLabel('Odpowiedź po polsku')).toHaveAttribute('lang', 'pl');
+		await page.getByLabel('Odpowiedź po polsku').fill('piesy');
+		await page.getByRole('button', { name: 'Sprawdź', exact: true }).click();
+		const feedback = page.getByRole('status').filter({ hasText: 'Powtórz' });
+		await expect(feedback).toBeVisible();
+		await expect(feedback.locator('s.wrong').first()).toHaveText('piesy');
+		await expect(page.getByTestId('study-correction')).toHaveText('psy');
+		await expect(feedback.getByText('To nie jest poprawna forma.', { exact: true })).toBeVisible();
+		await expect(feedback.locator('.study-example')).toHaveText('Na podwórku biegają dwa psy.');
+		await expect(feedback.getByRole('table', { name: 'Mianownik, liczba mnoga: końcówki według rodzaju' })).toBeVisible();
+		await expect(feedback.getByText('W liczbie mnogiej „pies” traci „e”: psy. Tak samo: sen – sny, dzień – dni.', { exact: true })).toBeVisible();
+		await page.getByRole('button', { name: 'Dalej', exact: true }).click();
+		await expect(page.getByTestId('study-term')).toHaveText('Na płocie siedzą dwa ___ (kot).');
+		await page.getByLabel('Odpowiedź po polsku').fill('koty');
+		await page.getByLabel('Odpowiedź po polsku').press('Enter');
+		await expect(page.getByRole('status').filter({ hasText: 'Dobrze' })).toBeVisible();
+		await expect(page.locator('.study-feedback .yours')).toHaveCount(0);
+	});
+
+	test('keeps asking for Polish in the PL -> RU direction', async ({ page }) => {
+		await seedGrammar(page);
+		await page.goto('/');
+		await page.getByRole('button', { name: 'PL -> RU', exact: true }).click();
+		await expect(page.getByLabel('Odpowiedź po polsku')).toBeEnabled();
+		await page.getByLabel('Odpowiedź po polsku').fill('psy');
+		await page.getByLabel('Odpowiedź po polsku').press('Enter');
+		await expect(page.getByRole('status').filter({ hasText: 'Dobrze' })).toBeVisible();
+	});
+
+	test('renders a gap at the end of the sentence', async ({ page }) => {
+		await seedGrammar(page, { examplePl: 'Widzę dwa ___' });
+		await page.goto('/');
+		await expect(page.getByTestId('study-term')).toHaveText('Widzę dwa ___ (pies)');
+		await page.getByRole('button', { name: 'Pokaż odpowiedź', exact: true }).click();
+		await expect(page.locator('.study-feedback .study-example')).toHaveText('Widzę dwa psy');
+	});
 });
