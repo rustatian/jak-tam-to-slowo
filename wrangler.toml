@@ -3,11 +3,8 @@ account_id = "d89bca31204306ee78e165e9f8ebd3be"
 main = "src/index.ts"
 compatibility_date = "2026-10-21"
 compatibility_flags = ["nodejs_compat"]
-workers_dev = false
+workers_dev = true
 preview_urls = false
-routes = [
-	{ pattern = "learn.rustatian.me", custom_domain = true },
-]
 
 [[d1_databases]]
 binding = "DB"
@@ -32,7 +29,6 @@ watch_dir = ["src", "web", "shared", "public"]
 
 [dev]
 ip = "127.0.0.1"
-host = "127.0.0.1:8787"
 port = 8787
 local_protocol = "http"
 
