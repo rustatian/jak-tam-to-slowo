@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: The slowo.rustatian.me zone of the vocabulary app.
+Description: The slowo.rustatian.me zone and SES identity of the vocabulary app.
 
 Resources:
   # Retain: the NS record set SlowoDelegation in the rustatian.me zone names the name servers of this zone, and a new zone gets other ones.
@@ -11,6 +11,55 @@ Resources:
     UpdateReplacePolicy: Retain
     Properties:
       Name: slowo.rustatian.me
+
+  # SES verifies the domain when it finds the three DKIM CNAME records. Easy DKIM uses a 2048-bit key by default.
+  # https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-dkim-easy.html
+  EmailIdentity:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: slowo.rustatian.me
+      MailFromAttributes:
+        MailFromDomain: mail.slowo.rustatian.me
+
+  # The MAIL FROM domain needs exactly one MX record and an SPF record.
+  # p=none asks receivers to take no action on a message that fails DMARC, so a setup error does not stop the invitations. The parent zone has no DMARC record.
+  # https://docs.aws.amazon.com/ses/latest/dg/mail-from.html
+  # https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-dmarc.html
+  EmailRecords:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      RecordSets:
+        - Name: !GetAtt EmailIdentity.DkimDNSTokenName1
+          Type: CNAME
+          TTL: '3600'
+          ResourceRecords:
+            - !GetAtt EmailIdentity.DkimDNSTokenValue1
+        - Name: !GetAtt EmailIdentity.DkimDNSTokenName2
+          Type: CNAME
+          TTL: '3600'
+          ResourceRecords:
+            - !GetAtt EmailIdentity.DkimDNSTokenValue2
+        - Name: !GetAtt EmailIdentity.DkimDNSTokenName3
+          Type: CNAME
+          TTL: '3600'
+          ResourceRecords:
+            - !GetAtt EmailIdentity.DkimDNSTokenValue3
+        - Name: mail.slowo.rustatian.me
+          Type: MX
+          TTL: '3600'
+          ResourceRecords:
+            - !Sub '10 feedback-smtp.${AWS::Region}.amazonses.com'
+        - Name: mail.slowo.rustatian.me
+          Type: TXT
+          TTL: '3600'
+          ResourceRecords:
+            - '"v=spf1 include:amazonses.com ~all"'
+        - Name: _dmarc.slowo.rustatian.me
+          Type: TXT
+          TTL: '3600'
+          ResourceRecords:
+            - '"v=DMARC1; p=none"'
 
 Outputs:
   HostedZoneId:
