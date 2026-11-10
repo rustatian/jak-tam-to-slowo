@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Backend of Jak tam to słowo (stacks slowo-dev and slowo-prod).
+
+Parameters:
+  Stage:
+    Type: String
+    AllowedValues: [dev, prod]
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+    Description: The zone slowo.rustatian.me (stack slowo-shared).
+
+Conditions:
+  IsProd: !Equals [!Ref Stage, prod]
+
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub slowo-${Stage}
+      UserPoolTier: ESSENTIALS
+      # Sign-up stays closed until the pre sign-up trigger checks invitation tokens.
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      UsernameConfiguration:
+        CaseSensitive: false
+      # A changed email takes effect only after its code is verified, because the email is the sign-in name.
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate: [email]
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      # DEVELOPER makes Cognito create its SES service-linked role; the identity needs no sending policy.
+      # https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pool-settings-message-customizations.html
+      EmailConfiguration:
+        EmailSendingAccount: DEVELOPER
+        SourceArn: !Sub arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/slowo.rustatian.me
+        From: noreply@slowo.rustatian.me
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: ios
+      GenerateSecret: false
+      ExplicitAuthFlows: [ALLOW_USER_PASSWORD_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+      PreventUserExistenceErrors: ENABLED
+
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !If [IsProd, api.slowo.rustatian.me, api-dev.slowo.rustatian.me]
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !If [IsProd, api.slowo.rustatian.me, api-dev.slowo.rustatian.me]
+          HostedZoneId: !Ref HostedZoneId
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Auth:
+        DefaultAuthorizer: Cognito
+        Authorizers:
+          # Cognito access tokens have no aud claim; API Gateway then checks client_id against the audience.
+          # https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-jwt-authorizer.html
+          Cognito:
+            IdentitySource: $request.header.Authorization
+            AuthorizationScopes: [aws.cognito.signin.user.admin]
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+              audience: [!Ref UserPoolClient]
+      Domain:
+        DomainName: !If [IsProd, api.slowo.rustatian.me, api-dev.slowo.rustatian.me]
+        CertificateArn: !Ref Certificate
+        Route53:
+          HostedZoneId: !Ref HostedZoneId
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 30
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: go1.x
+    Properties:
+      CodeUri: ../backend/cmd/api
+      Handler: bootstrap
+      Runtime: provided.al2023
+      Architectures: [arm64]
+      MemorySize: 128
+      Timeout: 10
+      LoggingConfig:
+        LogGroup: !Ref ApiLogGroup
+      Events:
+        GetMe:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /me
+            Method: GET
+
+Outputs:
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  ApiUrl:
+    Value: !Sub
+      - https://${Domain}
+      - Domain: !If [IsProd, api.slowo.rustatian.me, api-dev.slowo.rustatian.me]

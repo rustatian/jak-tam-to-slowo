@@ -1,5 +1,6 @@
 .wrangler/
 .superpowers/
+.aws-sam/
 .dev.vars*
 .env*
 .local/
