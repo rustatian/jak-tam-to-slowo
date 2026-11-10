@@ -1,47 +1,79 @@
 # Jak tam to słowo
 
-A vocabulary app for two learners of Polish and Russian. They share one collection of cards, study the cards in both directions and race each other in competitions.
+An iPhone app for learners of Polish and Russian. The members of a group share one collection of cards, study the cards in both directions and race each other.
 
 ## Language
 
+### People and groups
+
+**Learner**: A signed-in user of the app. Each learner has one direction and their own study progress. The code calls it `users`. _Avoid_: account, for the person.
+
+**Group**: The learners who share one collection of cards. A learner is in at most one group, and all members of a group are equal. The code calls it `groups`.
+
+**Member**: A learner in a group.
+
+**Invitation**: An email from a member with a single-use link that lets one person sign up or join the group. It is valid for 7 days. The code calls it `invitations`.
+
+**Invitation token**: The random secret in the invitation link. A sign-up needs a valid, unused and unexpired token. The database stores only the hash of the token.
+
 ### Cards
 
-**Translation card**: A card with a Polish term and a Russian term, each with an example. The code calls this card kind `translation`.
+**Card**: One item of the group's collection. Its kind is `translation` or `grammar`. The code calls it `cards`.
 
-**Grammar card**: A card that drills one form of one Polish word. It has one sentence with a gap, one answer and the grammar details. The code calls this card kind `grammar`.
+**Translation card**: A card with a Polish term and a Russian term, examples in both languages, a Russian meaning and alternative terms.
 
-**Word**: The dictionary form of the Polish word on a grammar card, as the learner typed it. The code stores it in the `pl` column.
+**Grammar card**: A card for one mistake from the learner's own text. The learner studies it as a gap sentence.
 
-**Used form**: The word or short phrase as the learner used it, for example "dwa piesy". The code calls it `used`.
+**Draft**: The AI's proposal for a new card. The learner checks it and can edit it before saving.
 
-**Right form**: The used form after the correction, for example "dwa psy". The check screen and Słówka show it. The code calls it `right`.
+**Topic**: One short Polish label for the grammar topic of a grammar card, for example "przypadek" or "aspekt". The code calls it `topic`. _Avoid_: mistake type.
 
-**Answer**: The text that fills the gap in the sentence, for example "psy". The learner types it in study. The code calls it `answer`.
+**Used form**: The wrong form exactly as the learner wrote it. The code calls it `used`.
 
-**Word facts**: Short labels about the word itself, for example its part of speech and its gender. The app shows them as grey chips. The code calls them `facts`.
+**Right form**: The correct form for the learner's sentence. The code calls it `right`.
 
-**Slot labels**: Short labels about the slot that was wrong, for example the case, the number and the ending. The app shows them as green chips and as the hint in Słówka. The code calls them `slot`.
+**Gap sentence**: A new short Polish sentence with ___ in place of the answer. It is never the learner's own sentence. The code calls it `sentence`.
 
-**Mistake type**: One short label that names the error, for example "końcówka" or "przypadek". It is null when the used form is already correct. The code calls it `mistake`.
+**Answer**: The words that fill the gap. The code calls it `answer`.
 
-**Endings table**: The table of endings for the case or form of the answer. Rows with equal endings merge into one row, and exactly one row is marked as the row for the word. The code calls it `table`.
+**Hint**: The text next to the gap sentence that makes the expected answer clear. When the mistake is about one word, it is the dictionary form in brackets, also when the learner wrote that form. The code calls it `hint`.
+
+**Chips**: Short word facts and slot labels, for example "rodzaj męski" or "dopełniacz". The code calls them `chips`.
+
+**Rule**: One or two sentences in simple Polish that explain the mistake. The code calls it `rule`.
+
+**Examples**: Two or three correct Polish sentences that use the rule. The code calls them `examples`.
+
+**Table**: An optional table, for example the endings of a case. Exactly one row is marked as the row for the card. The code calls it `table`.
 
 ### Study
 
-**Card on screen**: The card that the study screen shows. It is the reviewed card while its review is pending or its feedback shows, and otherwise the first card of the queue.
+**Direction**: Polish to Russian or Russian to Polish. Translation cards use the learner's direction. Grammar cards always ask for the Polish answer.
 
-### Competitions
+**Queue**: The group's cards that are due for the signed-in learner, in study order.
 
-**Competition**: One race of the two learners to the target score, from the invitation to the win or the cancellation. A rematch is a new competition. The code calls the current competition a round. _Avoid_: match, game.
+**Progress**: The correct and incorrect counts and times of one learner for one card. The code calls it `card_progress`.
 
-**Race direction**: The translation direction that the inviter picks for a competition. It stays the same until the competition ends. Only answers in this direction count.
+**Review**: One graded answer of a learner to a card. The attempt id makes a review idempotent. The code calls it `reviews`.
 
-**Race training**: Study inside the Zawody tab in the race direction. It is the only place where answers count for the competition.
+**Grade**: The result of a review: correct, almost or again.
 
-**Lifecycle action**: An invitation, an acceptance or a cancellation of a competition. An invitation carries the race direction.
+**Dictation**: An answer or a new word that the learner speaks. One clip holds one language, and the text goes into the answer field before grading.
 
-**Unconfirmed action**: A lifecycle action whose result did not reach the app. A later read of the current competition confirms it, or the learner retries it for the same competition. _Avoid_: lost write.
+### Races
 
-**Competition sync**: The app's copy of the current competition for the signed-in learner, kept up to date with the server, together with the lifecycle actions that the learner can start now.
+**Race**: A contest of group members to the target score in one direction. A group has at most one open race. The code calls it `races`. _Avoid_: competition, match, game.
 
-**Competition list**: All competitions of the two learners, newest first, without cancelled invitations.
+**Participant**: A member who is in a race. A score never goes below 0. The code calls it `race_participants`.
+
+**Target score**: The score that wins a race. The member who starts the race picks it.
+
+**Race direction**: The translation direction of a race. Only answers in this direction count.
+
+**Race training**: Study inside the Zawody tab in the race direction. It is the only place where answers count for the race.
+
+### Background work and consent
+
+**Job**: An AI call that runs in the background while the app polls it. The code calls it `jobs`.
+
+**AI consent**: The learner's permission to send text and audio to the AI services. The backend stores it as a time.
