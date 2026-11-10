@@ -1,0 +1,11 @@
+version = 0.1
+
+[dev.global.parameters]
+stack_name = "slowo-dev"
+region = "eu-central-1"
+
+[dev.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true
+s3_prefix = "slowo-dev"
+parameter_overrides = "Stage=dev HostedZoneId=Z04265433BT9IC08IEBW6"

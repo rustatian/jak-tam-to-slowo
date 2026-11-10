@@ -2,6 +2,7 @@ node_modules/
 dist/
 .wrangler/
 .superpowers/
+.aws-sam/
 .dev.vars*
 .env*
 .local/
