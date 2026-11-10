@@ -25,6 +25,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: The server could not read or make the user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   securitySchemes:
     cognito:
@@ -34,11 +40,21 @@ components:
   schemas:
     Me:
       type: object
-      required: [id]
+      required: [id, email, displayName, direction]
       properties:
         id:
           type: string
           description: The Cognito user ID (the sub claim of the access token).
+        email:
+          type: string
+          description: The email of the Cognito user.
+        displayName:
+          type: string
+          description: The name that the group sees. Empty until the learner sets it.
+        direction:
+          type: string
+          enum: [ru-pl, pl-ru]
+          description: The translation direction of the learner's study.
     Error:
       type: object
       required: [message]

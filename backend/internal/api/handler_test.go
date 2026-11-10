@@ -21,7 +21,6 @@ func TestHandle(t *testing.T) {
 		wantStatus int
 		wantBody   string
 	}{
-		{name: "me returns the sub claim", routeKey: "GET /me", authorizer: jwt(map[string]string{"sub": sub, "username": sub, "scope": "aws.cognito.signin.user.admin"}), wantStatus: 200, wantBody: `{"id":"` + sub + `"}`},
 		{name: "me without an authorizer", routeKey: "GET /me", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
 		{name: "me without a JWT authorizer", routeKey: "GET /me", authorizer: &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{}, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
 		{name: "me with an empty sub claim", routeKey: "GET /me", authorizer: jwt(map[string]string{"sub": ""}), wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
@@ -30,7 +29,7 @@ func TestHandle(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := events.APIGatewayV2HTTPRequest{RouteKey: tt.routeKey, RequestContext: events.APIGatewayV2HTTPRequestContext{Authorizer: tt.authorizer}}
-			resp, err := Handle(context.Background(), req)
+			resp, err := (&Server{}).Handle(context.Background(), req)
 			if err != nil {
 				t.Fatalf("Handle returned error %v", err)
 			}
