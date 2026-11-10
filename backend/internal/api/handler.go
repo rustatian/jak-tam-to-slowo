@@ -5,30 +5,86 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/rustatian/jak-tam-to-slowo/backend/internal/db"
 )
 
-// Handle serves the API Gateway HTTP API routes of the API Lambda.
-func Handle(_ context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+// Server serves the API Gateway HTTP API routes of the API Lambda.
+type Server struct {
+	DB *pgxpool.Pool
+	// EmailOf returns the email of a Cognito user; the access token has no email claim.
+	EmailOf func(ctx context.Context, sub string) (string, error)
+}
+
+// Handle picks the route by its route key.
+func (s *Server) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	switch req.RouteKey {
 	case "GET /me":
-		return getMe(req), nil
+		return s.getMe(ctx, req), nil
 	default:
 		return jsonResponse(http.StatusNotFound, Error{Message: "not found"}), nil
 	}
 }
 
-func getMe(req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
-	var sub string
+func subject(req events.APIGatewayV2HTTPRequest) string {
 	if a := req.RequestContext.Authorizer; a != nil && a.JWT != nil {
-		sub = a.JWT.Claims["sub"]
+		return a.JWT.Claims["sub"]
 	}
+	return ""
+}
+
+func (s *Server) getMe(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	sub := subject(req)
 	if sub == "" {
 		return jsonResponse(http.StatusUnauthorized, Error{Message: "unauthorized"})
 	}
-	return jsonResponse(http.StatusOK, Me{Id: sub})
+	me, err := s.me(ctx, sub)
+	if err != nil {
+		slog.ErrorContext(ctx, "GET /me", "sub", sub, "error", err)
+		return jsonResponse(http.StatusInternalServerError, Error{Message: "internal error"})
+	}
+	return jsonResponse(http.StatusOK, me)
+}
+
+// me reads the user, and makes the row on the first call.
+func (s *Server) me(ctx context.Context, sub string) (Me, error) {
+	me, found, err := readUser(ctx, s.DB, sub)
+	if err != nil || found {
+		return me, err
+	}
+	email, err := s.EmailOf(ctx, sub)
+	if err != nil {
+		return Me{}, fmt.Errorf("email: %w", err)
+	}
+	// A concurrent first call makes one transaction fail with 40001; its retry reads the other call's row.
+	err = db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, "INSERT INTO users (id, email) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING", sub, email); err != nil {
+			return err
+		}
+		me, _, err = readUser(ctx, tx, sub)
+		return err
+	})
+	return me, err
+}
+
+func readUser(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, sub string) (Me, bool, error) {
+	var me Me
+	err := q.QueryRow(ctx, "SELECT id, email, display_name, direction FROM users WHERE id = $1", sub).
+		Scan(&me.Id, &me.Email, &me.DisplayName, &me.Direction)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Me{}, false, nil
+	}
+	return me, err == nil, err
 }
 
 // jsonResponse marshals v; the generated contract types always marshal.

@@ -22,6 +22,19 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # The database tests run against PostgreSQL 16, the version that Aurora DSQL is compatible with.
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-go@v7.0.0
@@ -32,6 +45,8 @@ jobs:
         run: go generate ./... && git diff --exit-code
       - run: go vet ./...
       - run: go test ./...
+        env:
+          TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres?sslmode=disable
       - uses: golangci/golangci-lint-action@v9.3.0
         with:
           version: v2.15.0
