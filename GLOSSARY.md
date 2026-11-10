@@ -32,7 +32,7 @@ An iPhone app for learners of Polish and Russian. The members of a group share o
 
 **Right form**: The correct form for the learner's sentence. The code calls it `right`.
 
-**Gap sentence**: A new short Polish sentence with ___ in place of the answer. It is never the learner's own sentence. The code calls it `sentence`.
+**Gap sentence**: A short Polish sentence with ___ in place of the answer. The code calls it `sentence`.
 
 **Answer**: The words that fill the gap. The code calls it `answer`.
 
@@ -58,7 +58,7 @@ An iPhone app for learners of Polish and Russian. The members of a group share o
 
 **Grade**: The result of a review: correct, almost or again.
 
-**Dictation**: An answer or a new word that the learner speaks. One clip holds one language, and the text goes into the answer field before grading.
+**Dictation**: An answer or a new word that the learner speaks. One clip holds one language. The text goes into the editable field, and the learner sends it.
 
 ### Races
 
