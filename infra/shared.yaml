@@ -1,0 +1,19 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: The slowo.rustatian.me zone of the vocabulary app.
+
+Resources:
+  # Retain: the NS record set SlowoDelegation in the rustatian.me zone names the name servers of this zone, and a new zone gets other ones.
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-attribute-deletionpolicy.html
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-attribute-updatereplacepolicy.html
+  HostedZone:
+    Type: AWS::Route53::HostedZone
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: slowo.rustatian.me
+
+Outputs:
+  HostedZoneId:
+    Value: !Ref HostedZone
+  NameServers:
+    Value: !Join [',', !GetAtt HostedZone.NameServers]
