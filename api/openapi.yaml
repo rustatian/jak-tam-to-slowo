@@ -1,0 +1,47 @@
+openapi: 3.1.0
+info:
+  title: Jak tam to słowo API
+  version: 0.1.0
+servers:
+  - url: https://api.slowo.rustatian.me
+  - url: https://api-dev.slowo.rustatian.me
+security:
+  - cognito: []
+paths:
+  /me:
+    get:
+      operationId: getMe
+      summary: The signed-in user.
+      responses:
+        "200":
+          description: The signed-in user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Me"
+        "401":
+          description: The request has no valid access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  securitySchemes:
+    cognito:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Me:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          description: The Cognito user ID (the sub claim of the access token).
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
