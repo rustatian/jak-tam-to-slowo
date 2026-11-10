@@ -1,0 +1,38 @@
+name: Backend
+
+on:
+  push:
+    paths:
+      - backend/**
+      - api/**
+      - .github/workflows/backend.yml
+  pull_request:
+    paths:
+      - backend/**
+      - api/**
+      - .github/workflows/backend.yml
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Check that the generated code matches the contract
+        run: go generate ./... && git diff --exit-code
+      - run: go vet ./...
+      - run: go test ./...
+      - uses: golangci/golangci-lint-action@v9.3.0
+        with:
+          version: v2.15.0
+          working-directory: backend
