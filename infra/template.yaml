@@ -83,6 +83,11 @@ Resources:
     Properties:
       RetentionInDays: 30
 
+  Cluster:
+    Type: AWS::DSQL::Cluster
+    Properties:
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+
   ApiFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -96,6 +101,19 @@ Resources:
       Timeout: 10
       LoggingConfig:
         LogGroup: !Ref ApiLogGroup
+      Environment:
+        Variables:
+          DSQL_ENDPOINT: !GetAtt Cluster.Endpoint
+          USER_POOL_ID: !Ref UserPool
+      # The database role app maps to this role (cmd/migrate); dsql:DbConnect allows no admin connection.
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dsql:DbConnect
+              Resource: !GetAtt Cluster.ResourceArn
+            - Effect: Allow
+              Action: cognito-idp:AdminGetUser
+              Resource: !GetAtt UserPool.Arn
       Events:
         GetMe:
           Type: HttpApi
@@ -113,3 +131,7 @@ Outputs:
     Value: !Sub
       - https://${Domain}
       - Domain: !If [IsProd, api.slowo.rustatian.me, api-dev.slowo.rustatian.me]
+  ClusterEndpoint:
+    Value: !GetAtt Cluster.Endpoint
+  ApiFunctionRoleArn:
+    Value: !GetAtt ApiFunctionRole.Arn
