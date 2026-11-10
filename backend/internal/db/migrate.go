@@ -105,8 +105,9 @@ func SetupAppRole(ctx context.Context, pool *pgxpool.Pool, arn string) error {
 			return err
 		}
 	}
+	// Every role has USAGE on the schema public, and DSQL refuses GRANT on it (SQLSTATE 0A000, system entity).
+	// GRANT ON ALL TABLES covers only existing tables, so cmd/migrate runs this after each migration.
 	for _, sql := range []string{
-		"GRANT USAGE ON SCHEMA public TO app",
 		"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app",
 		"REVOKE ALL ON schema_migrations FROM app",
 	} {
