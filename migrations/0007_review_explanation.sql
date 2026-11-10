@@ -1,1 +1,0 @@
-UPDATE reviews SET result_json = json_remove(json_set(result_json, '$.explanation', json_extract(result_json, '$.explanationRu')), '$.explanationRu') WHERE json_extract(result_json, '$.explanationRu') IS NOT NULL;
