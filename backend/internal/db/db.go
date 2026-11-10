@@ -42,7 +42,7 @@ func poolConfig(cfg Config) (*pgxpool.Config, error) {
 		return nil, err
 	}
 	// DSQL ends a connection after 60 minutes.
-	// https://docs.aws.amazon.com/aurora-dsql/latest/userguide/authentication-authorization.html
+	// https://docs.aws.amazon.com/aurora-dsql/latest/userguide/CHAP_quotas.html
 	pc.MaxConnLifetime = 55 * time.Minute
 	token := auth.GenerateDbConnectAuthToken
 	if cfg.User == "admin" {
