@@ -22,6 +22,8 @@ type Server struct {
 	DB *pgxpool.Pool
 	// EmailOf returns the email of a Cognito user; the access token has no email claim.
 	EmailOf func(ctx context.Context, sub string) (string, error)
+	// Send sends an email. An error means that the email service did not accept the message.
+	Send func(ctx context.Context, m Mail) error
 }
 
 // Handle picks the route by its route key.
@@ -45,6 +47,8 @@ func (s *Server) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 		return s.listMembers(ctx, req), nil
 	case "DELETE /v1/groups/{groupId}/members/{userId}":
 		return s.removeMember(ctx, req), nil
+	case "POST /v1/groups/{groupId}/invitations":
+		return s.createInvitation(ctx, req), nil
 	default:
 		return jsonResponse(http.StatusNotFound, Error{Message: "not found"}), nil
 	}

@@ -1,11 +1,21 @@
 package api
 
 import (
+	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json/v2"
+	"log/slog"
+	"net/http"
 	"net/mail"
 	"strings"
 	"unicode"
+
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/jackc/pgx/v5"
+
+	"github.com/rustatian/jak-tam-to-slowo/backend/internal/db"
 )
 
 // Mail is one plain-text email.
@@ -55,4 +65,52 @@ func invitationMail(to, inviter, group, token string) Mail {
 			"Żeby dołączyć, otwórz ten link na iPhonie:\n" + inviteLink + token + "\n\n" +
 			"Link jest ważny przez 7 dni. Jeśli nie spodziewasz się tego zaproszenia, zignoruj tę wiadomość.\n",
 	}
+}
+
+// createInvitation stores an invitation and sends its email. The token is only in the email.
+func (s *Server) createInvitation(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	sub, fail := s.member(ctx, req)
+	if fail != nil {
+		return *fail
+	}
+	var body InvitationCreate
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
+		return jsonResponse(http.StatusBadRequest, Error{Message: "invalid JSON body"})
+	}
+	email, ok := validEmail(body.Email)
+	if !ok {
+		return jsonResponse(http.StatusBadRequest, Error{Message: "email is not valid"})
+	}
+	groupID := req.PathParameters["groupId"]
+	token := rand.Text()
+	invitation := Invitation{Email: email}
+	var group, inviter string
+	err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
+		// One pending invitation for an address in a group: a new one replaces it.
+		if _, err := tx.Exec(ctx, "DELETE FROM invitations WHERE group_id = $1 AND email = $2 AND accepted_at IS NULL", groupID, email); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, "INSERT INTO invitations (group_id, email, token_hash, invited_by, expires_at) VALUES ($1, $2, $3, $4, now() + interval '7 days') RETURNING id, created_at, expires_at",
+			groupID, email, tokenHash(token), sub).Scan(&invitation.Id, &invitation.CreatedAt, &invitation.ExpiresAt); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, "SELECT g.name, u.display_name FROM groups g, users u WHERE g.id = $1 AND u.id = $2", groupID, sub).Scan(&group, &inviter)
+	})
+	if err != nil {
+		return serverError(ctx, req, sub, err)
+	}
+	// The send is after the commit: db.Tx can run a transaction again, and the email goes out once.
+	if err := s.Send(ctx, invitationMail(email, inviter, group, token)); err != nil {
+		slog.ErrorContext(ctx, req.RouteKey, "sub", sub, "error", err)
+		err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, "DELETE FROM invitations WHERE id = $1", invitation.Id)
+			return err
+		})
+		if err != nil {
+			return serverError(ctx, req, sub, err)
+		}
+		return jsonResponse(http.StatusBadGateway, Error{Message: "the invitation email was not sent"})
+	}
+	invitation.InvitedBy = &Member{Id: sub, DisplayName: inviter}
+	return jsonResponse(http.StatusCreated, invitation)
 }
