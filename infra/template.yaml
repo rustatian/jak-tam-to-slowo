@@ -119,6 +119,7 @@ Resources:
         Variables:
           DSQL_ENDPOINT: !GetAtt Cluster.Endpoint
           USER_POOL_ID: !Ref UserPool
+          MAIL_FROM: noreply@slowo.rustatian.me
       # The database role app maps to this role (cmd/migrate); dsql:DbConnect allows no admin connection.
       Policies:
         - Statement:
@@ -128,6 +129,11 @@ Resources:
             - Effect: Allow
               Action: cognito-idp:AdminGetUser
               Resource: !GetAtt UserPool.Arn
+            # The identity of the sender domain is in the stack slowo-shared.
+            # https://docs.aws.amazon.com/service-authorization/latest/reference/list_sesv2.html
+            - Effect: Allow
+              Action: ses:SendEmail
+              Resource: !Sub arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/slowo.rustatian.me
       Events:
         GetMe:
           Type: HttpApi
@@ -182,6 +188,24 @@ Resources:
           Properties:
             ApiId: !Ref HttpApi
             Path: /v1/groups/{groupId}/members/{userId}
+            Method: DELETE
+        CreateInvitation:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/groups/{groupId}/invitations
+            Method: POST
+        ListInvitations:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/groups/{groupId}/invitations
+            Method: GET
+        CancelInvitation:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/groups/{groupId}/invitations/{invitationId}
             Method: DELETE
 
 Outputs:
