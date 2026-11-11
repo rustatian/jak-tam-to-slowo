@@ -44,6 +44,7 @@ func TestPatchMe(t *testing.T) {
 		{name: "40 letters with diacritics pass", body: `{"displayName":"` + strings.Repeat("ż", 40) + `"}`, wantStatus: 200, wantMe: with(func(m *Me) { m.DisplayName = strings.Repeat("ż", 40) })},
 		{name: "41 letters are rejected", body: `{"displayName":"` + strings.Repeat("ż", 41) + `"}`, wantStatus: 400, wantBody: nameRule, wantMe: start},
 		{name: "a blank display name is rejected", body: `{"displayName":"   "}`, wantStatus: 400, wantBody: nameRule, wantMe: start},
+		{name: "a display name with a line break is rejected", body: `{"displayName":"Ola\nKliknij tu"}`, wantStatus: 400, wantBody: nameRule, wantMe: start},
 		{name: "an unknown direction is rejected", body: `{"direction":"pl-de"}`, wantStatus: 400, wantBody: `{"message":"direction must be ru-pl or pl-ru"}`, wantMe: start},
 		{name: "a body that is not JSON is rejected", body: `{"displayName":`, wantStatus: 400, wantBody: `{"message":"invalid JSON body"}`, wantMe: start},
 		{name: "a member name in another case is not that member", body: `{"DisplayName":"Ola"}`, wantStatus: 200, wantMe: start},
