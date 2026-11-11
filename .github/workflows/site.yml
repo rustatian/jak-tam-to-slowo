@@ -1,0 +1,44 @@
+name: Site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/**
+      - .github/workflows/site.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: site
+
+jobs:
+  upload:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # The names of the role and of the bucket have the account ID. They are repository secrets, and
+      # mask-aws-account-id is set, so GitHub hides the ID in the public run log:
+      # https://docs.github.com/en/actions/reference/workflows-and-actions/contexts
+      # The role can only write the bucket and clear the cache, and only a run on main can use it.
+      - name: Use the deploy role
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.SITE_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+          mask-aws-account-id: true
+
+      - name: Upload the site
+        run: aws s3 sync site "s3://$BUCKET" --delete --cache-control 'public, max-age=0, s-maxage=86400'
+        env:
+          BUCKET: ${{ secrets.SITE_BUCKET }}
+
+      - name: Clear the CloudFront cache
+        run: aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths '/*'
+        env:
+          DISTRIBUTION_ID: ${{ vars.SITE_DISTRIBUTION_ID }}

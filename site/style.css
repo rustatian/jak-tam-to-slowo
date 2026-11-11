@@ -1,0 +1,131 @@
+:root {
+  color-scheme: light dark;
+  --text: #1c1c1e;
+  --muted: #55555c;
+  --link: #0a5fd6;
+  --card: rgba(255, 255, 255, 0.72);
+  --edge: rgba(0, 0, 0, 0.08);
+  --bg-a: #d6e6ff;
+  --bg-b: #f5f8ff;
+  --bg-c: #e4defc;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #f2f2f7;
+    --muted: #ababb5;
+    --link: #6eabff;
+    --card: rgba(255, 255, 255, 0.08);
+    --edge: rgba(255, 255, 255, 0.14);
+    --bg-a: #0b1d40;
+    --bg-b: #05070d;
+    --bg-c: #17133d;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  background-color: var(--bg-b);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--text);
+  background: linear-gradient(160deg, var(--bg-a), var(--bg-b) 55%, var(--bg-c)) fixed;
+}
+
+main {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 3rem 1.25rem 4rem;
+}
+
+.tiles {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.tiles span {
+  width: 4.5rem;
+  height: 4.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--edge);
+  border-radius: 1.25rem;
+  background: var(--card);
+  color: var(--link);
+  font-size: 2.25rem;
+  font-weight: 700;
+}
+
+.tiles span:first-child {
+  transform: translateY(-0.4rem);
+}
+
+.tiles span:last-child {
+  transform: translateY(0.4rem);
+}
+
+h1 {
+  margin: 0 0 1.5rem;
+  font-size: 2rem;
+  line-height: 1.2;
+  text-align: center;
+}
+
+h2 {
+  margin: 2.5rem 0 0.75rem;
+  font-size: 1.5rem;
+  line-height: 1.25;
+}
+
+h3 {
+  margin: 1.75rem 0 0.5rem;
+  font-size: 1.125rem;
+}
+
+p,
+li {
+  margin: 0 0 0.75rem;
+}
+
+ul {
+  padding-left: 1.25rem;
+}
+
+a {
+  color: var(--link);
+}
+
+.card {
+  margin-bottom: 1.25rem;
+  padding: 1.25rem 1.5rem 0.75rem;
+  border: 1px solid var(--edge);
+  border-radius: 1.25rem;
+  background: var(--card);
+}
+
+.center {
+  text-align: center;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+hr {
+  margin: 3rem 0;
+  border: 0;
+  border-top: 1px solid var(--edge);
+}
