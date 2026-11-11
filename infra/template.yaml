@@ -135,6 +135,24 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /v1/me
             Method: GET
+        PatchMe:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/me
+            Method: PATCH
+        PutAiConsent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/me/ai-consent
+            Method: PUT
+        DeleteAiConsent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/me/ai-consent
+            Method: DELETE
 
 Outputs:
   UserPoolId:
