@@ -126,12 +126,17 @@ func TestCreateInvitation(t *testing.T) {
 		wantInviter string // the display name of the inviter in the answer and in the email
 		wantPending int    // the pending invitations of nowy@example.com in all groups after the call
 		wantCount   int    // the invitations that the caller sent today (UTC), by the count on the user row
+		// wantAccepted is the number of accepted invitations of nowy@example.com in all groups after the call.
+		wantAccepted int
 	}{
 		{name: "stores the invitation and sends one email", sub: subOla, body: `{"email":"  Nowy@Example.com "}`,
 			wantStatus: 201, wantInviter: "Ola", wantPending: 1, wantCount: 1},
 		{name: "a second invitation of the address replaces the first", sub: subOla, body: `{"email":"nowy@example.com"}`,
 			setup:      `INSERT INTO invitations (group_id, email, token_hash, expires_at) SELECT id, 'nowy@example.com', 'old', now() + interval '1 day' FROM groups WHERE name = 'Rodzina'`,
 			wantStatus: 201, wantInviter: "Ola", wantPending: 1, wantCount: 1},
+		{name: "an accepted invitation of the address stays", sub: subOla, body: `{"email":"nowy@example.com"}`,
+			setup:      `INSERT INTO invitations (group_id, email, token_hash, expires_at, accepted_at) SELECT id, 'nowy@example.com', 'used', now() + interval '1 day', now() FROM groups WHERE name = 'Rodzina'`,
+			wantStatus: 201, wantInviter: "Ola", wantPending: 1, wantCount: 1, wantAccepted: 1},
 		{name: "the same address in another group keeps its invitation", sub: subOla, body: `{"email":"nowy@example.com"}`,
 			setup:      `INSERT INTO invitations (group_id, email, token_hash, expires_at) SELECT id, 'nowy@example.com', 'praca', now() + interval '1 day' FROM groups WHERE name = 'Praca'`,
 			wantStatus: 201, wantInviter: "Ola", wantPending: 2, wantCount: 1},
@@ -183,6 +188,13 @@ func TestCreateInvitation(t *testing.T) {
 			}
 			if pending != tt.wantPending {
 				t.Errorf("pending invitations of the address = %d, want %d", pending, tt.wantPending)
+			}
+			var accepted int
+			if err := pool.QueryRow(ctx, "SELECT count(*) FROM invitations WHERE email = 'nowy@example.com' AND accepted_at IS NOT NULL").Scan(&accepted); err != nil {
+				t.Fatal(err)
+			}
+			if accepted != tt.wantAccepted {
+				t.Errorf("accepted invitations of the address = %d, want %d", accepted, tt.wantAccepted)
 			}
 			var count int
 			if err := pool.QueryRow(ctx, "SELECT CASE WHEN invites_day = (now() AT TIME ZONE 'UTC')::date THEN invites_count ELSE 0 END FROM users WHERE id = $1", tt.sub).Scan(&count); err != nil {
@@ -461,6 +473,107 @@ func TestPreviewInvitation(t *testing.T) {
 			}
 			if want := strings.ReplaceAll(tt.wantBody, "<rodzina>", rodzina); resp.Body != want {
 				t.Errorf("body = %s, want %s", resp.Body, want)
+			}
+		})
+	}
+}
+
+// tokenPraca is the token of the invitation of Praca that the tests insert.
+const tokenPraca = "PRA2CA3TOKEN4PRA2CA3TOKEN45"
+
+// pendingInvitations adds two pending invitations for nowy@example.com: one of Rodzina with tokenRodzina, sent by
+// Ola, and one of Praca with tokenPraca, sent by Ewa.
+func pendingInvitations(t *testing.T, pool *pgxpool.Pool, rodzina, praca string) {
+	t.Helper()
+	const day = 24 * time.Hour
+	ola, ewa := subOla, subEwa
+	invitationRow(t, pool, rodzina, "nowy@example.com", tokenHash(tokenRodzina), &ola, -day, 6*day, false)
+	invitationRow(t, pool, praca, "nowy@example.com", tokenHash(tokenPraca), &ewa, -day, 6*day, false)
+}
+
+func TestAcceptInvitation(t *testing.T) {
+	const (
+		alreadyMember = `{"message":"already a member of this group"}`
+		inOtherGroup  = `{"message":"in another group"}`
+		ofRodzina     = "group_id = (SELECT id FROM groups WHERE name = 'Rodzina')"
+	)
+	both := []string{"Praca", "Rodzina"}
+	tests := []struct {
+		name       string
+		setup      string // a statement that changes the fixture before the call
+		sub        string
+		token      string
+		body       string
+		wantStatus int
+		wantBody   string
+		// The state after the call: the name of the caller's group, empty for none, the names of the groups that
+		// exist, whether the invitation of the token is accepted, and the number of invitation rows.
+		wantGroup       string
+		wantGroups      []string
+		wantAccepted    bool
+		wantInvitations int
+	}{
+		{name: "a user without a group joins, and the address does not need to match", sub: subJan, token: tokenRodzina,
+			wantStatus: 204, wantGroup: "Rodzina", wantGroups: both, wantAccepted: true, wantInvitations: 2},
+		{name: "a user without a row joins", sub: subNone, token: tokenRodzina,
+			wantStatus: 204, wantGroup: "Rodzina", wantGroups: both, wantAccepted: true, wantInvitations: 2},
+		{name: "an unknown token is not found", sub: subJan, token: "NOPE",
+			wantStatus: 404, wantBody: noInvitation, wantGroups: both, wantInvitations: 2},
+		{name: "an accepted invitation is not found", sub: subJan, token: tokenRodzina,
+			setup:      "UPDATE invitations SET accepted_at = now() WHERE " + ofRodzina,
+			wantStatus: 404, wantBody: noInvitation, wantGroups: both, wantAccepted: true, wantInvitations: 2},
+		{name: "an expired invitation is not found", sub: subJan, token: tokenRodzina,
+			setup:      "UPDATE invitations SET expires_at = now() - interval '1 minute' WHERE " + ofRodzina,
+			wantStatus: 404, wantBody: noInvitation, wantGroups: both, wantInvitations: 2},
+		{name: "a member of the group gets a conflict and the invitation stays pending", sub: subAdam, token: tokenRodzina,
+			wantStatus: 409, wantBody: alreadyMember, wantGroup: "Rodzina", wantGroups: both, wantInvitations: 2},
+		{name: "a member of another group needs the confirmation", sub: subEwa, token: tokenRodzina,
+			wantStatus: 409, wantBody: inOtherGroup, wantGroup: "Praca", wantGroups: both, wantInvitations: 2},
+		{name: "leaveGroup false is not a confirmation", sub: subEwa, token: tokenRodzina, body: `{"leaveGroup":false}`,
+			wantStatus: 409, wantBody: inOtherGroup, wantGroup: "Praca", wantGroups: both, wantInvitations: 2},
+		{name: "with the confirmation the last member moves and the old group is deleted", sub: subEwa, token: tokenRodzina, body: `{"leaveGroup":true}`,
+			wantStatus: 204, wantGroup: "Rodzina", wantGroups: []string{"Rodzina"}, wantAccepted: true, wantInvitations: 1},
+		{name: "with the confirmation a member moves and the old group stays", sub: subAdam, token: tokenPraca, body: `{"leaveGroup":true}`,
+			wantStatus: 204, wantGroup: "Praca", wantGroups: both, wantAccepted: true, wantInvitations: 2},
+		{name: "a body that is not JSON is rejected", sub: subJan, token: tokenRodzina, body: `{"leaveGroup":`,
+			wantStatus: 400, wantBody: notJSON, wantGroups: both, wantInvitations: 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			pool, srv, rodzina, praca := groupFixture(t)
+			pendingInvitations(t, pool, rodzina, praca)
+			if tt.setup != "" {
+				if _, err := pool.Exec(ctx, tt.setup); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			resp, err := srv.Handle(ctx, groupRequest("POST /v1/invitations/{token}/acceptance", tt.sub, tt.body, map[string]string{"token": tt.token}))
+			if err != nil {
+				t.Fatalf("Handle returned error %v", err)
+			}
+			if resp.StatusCode != tt.wantStatus {
+				t.Errorf("status = %d, want %d", resp.StatusCode, tt.wantStatus)
+			}
+			if resp.Body != tt.wantBody {
+				t.Errorf("body = %q, want %q", resp.Body, tt.wantBody)
+			}
+			if got := groupNameOf(t, pool, tt.sub); got != tt.wantGroup {
+				t.Errorf("group of the caller = %q, want %q", got, tt.wantGroup)
+			}
+			if groups := groupNames(t, pool); !slices.Equal(groups, tt.wantGroups) {
+				t.Errorf("groups = %v, want %v", groups, tt.wantGroups)
+			}
+			var accepted bool
+			if err := pool.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM invitations WHERE token_hash = $1 AND accepted_at IS NOT NULL)", tokenHash(tt.token)).Scan(&accepted); err != nil {
+				t.Fatal(err)
+			}
+			if accepted != tt.wantAccepted {
+				t.Errorf("the invitation of the token is accepted = %t, want %t", accepted, tt.wantAccepted)
+			}
+			if got := countRows(t, pool, "invitations"); got != tt.wantInvitations {
+				t.Errorf("invitation rows = %d, want %d", got, tt.wantInvitations)
 			}
 		})
 	}

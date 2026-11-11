@@ -412,10 +412,11 @@ func groupNames(t *testing.T, pool *pgxpool.Pool) []string {
 	return names
 }
 
-// memberChange is one request of TestMemberChangesAtTheSameInstant: the caller leaves the group.
+// memberChange is one request of TestMemberChangesAtTheSameInstant: the caller leaves the group, or accepts the
+// pending invitation of the group.
 type memberChange struct {
 	sub   string
-	kind  string // "leave"
+	kind  string // "leave" or "accept"
 	group string // the name of the group
 }
 
@@ -449,19 +450,30 @@ func TestMemberChangesAtTheSameInstant(t *testing.T) {
 		first, second         memberChange
 		wantFirst, wantSecond int
 		// The state after both calls: the name of each user's group, empty for none, and the names of the groups that exist.
-		wantOla, wantAdam, wantEwa, wantJan string
-		wantGroups                          []string
+		wantOla, wantAdam, wantEwa, wantJan, wantNone string
+		wantGroups                                    []string
 	}{
 		{name: "the two last members leave", first: memberChange{sub: subOla, kind: "leave", group: "Rodzina"}, second: memberChange{sub: subAdam, kind: "leave", group: "Rodzina"},
 			wantFirst: 204, wantSecond: 204, wantEwa: "Praca", wantGroups: []string{"Praca"}},
+		{name: "the last member leaves, then the invitee accepts", first: memberChange{sub: subEwa, kind: "leave", group: "Praca"}, second: memberChange{sub: subJan, kind: "accept", group: "Praca"},
+			wantFirst: 204, wantSecond: 404, wantOla: "Rodzina", wantAdam: "Rodzina", wantGroups: []string{"Rodzina"}},
+		{name: "the invitee accepts, then the last member leaves", first: memberChange{sub: subJan, kind: "accept", group: "Praca"}, second: memberChange{sub: subEwa, kind: "leave", group: "Praca"},
+			wantFirst: 204, wantSecond: 204, wantOla: "Rodzina", wantAdam: "Rodzina", wantJan: "Praca", wantGroups: []string{"Praca", "Rodzina"}},
+		{name: "two users accept one token", first: memberChange{sub: subJan, kind: "accept", group: "Praca"}, second: memberChange{sub: subNone, kind: "accept", group: "Praca"},
+			wantFirst: 204, wantSecond: 404, wantOla: "Rodzina", wantAdam: "Rodzina", wantEwa: "Praca", wantJan: "Praca", wantGroups: []string{"Praca", "Rodzina"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			pool, srv, rodzina, praca := groupFixture(t)
+			pendingInvitations(t, pool, rodzina, praca)
 			groupID := map[string]string{"Rodzina": rodzina, "Praca": praca}
+			token := map[string]string{"Rodzina": tokenRodzina, "Praca": tokenPraca}
 			send := func(c memberChange) <-chan int {
 				req := groupRequest("DELETE /v1/groups/{groupId}/members/{userId}", c.sub, "", map[string]string{"groupId": groupID[c.group], "userId": c.sub})
+				if c.kind == "accept" {
+					req = groupRequest("POST /v1/invitations/{token}/acceptance", c.sub, "", map[string]string{"token": token[c.group]})
+				}
 				status := make(chan int, 1)
 				go func() {
 					resp, _ := srv.Handle(ctx, req)
@@ -470,8 +482,9 @@ func TestMemberChangesAtTheSameInstant(t *testing.T) {
 				return status
 			}
 
-			// The locks on the two user rows stop each request at its write of that row. Each request has then read
-			// the state from before the other one. The rollback at the end frees a request that still waits.
+			// The locks on the user rows stop each request before its commit: at its write of the user row, or at a row
+			// that the other request has written. Each request has then read the state from before the other one.
+			// The rollback at the end frees a request that still waits.
 			held, err := pool.Begin(ctx)
 			if err != nil {
 				t.Fatal(err)
@@ -505,6 +518,9 @@ func TestMemberChangesAtTheSameInstant(t *testing.T) {
 			}
 			if got := groupNameOf(t, pool, subJan); got != tt.wantJan {
 				t.Errorf("group of Jan = %q, want %q", got, tt.wantJan)
+			}
+			if got := groupNameOf(t, pool, subNone); got != tt.wantNone {
+				t.Errorf("group of the user without a row = %q, want %q", got, tt.wantNone)
 			}
 			if groups := groupNames(t, pool); !slices.Equal(groups, tt.wantGroups) {
 				t.Errorf("groups = %v, want %v", groups, tt.wantGroups)

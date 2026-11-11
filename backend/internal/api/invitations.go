@@ -34,7 +34,12 @@ const maxInvitesPerDay = 20
 // utcDay is the SQL expression for the current date in UTC.
 const utcDay = "(now() AT TIME ZONE 'UTC')::date"
 
-var errTooManyInvitations = errors.New("the member is at the invitation limit of the day")
+var (
+	errTooManyInvitations = errors.New("the member is at the invitation limit of the day")
+	errNoInvitation       = errors.New("no pending invitation has the token")
+	errAlreadyMember      = errors.New("the user is a member of the group of the invitation")
+	errInOtherGroup       = errors.New("the user is in another group")
+)
 
 // validEmail returns the address without the spaces at its ends and in lower case. ok reports that it is one
 // bare address of at most 254 ASCII characters with a dot in its domain. Amazon SES takes only 7-bit ASCII in
@@ -207,4 +212,70 @@ func (s *Server) previewInvitation(ctx context.Context, req events.APIGatewayV2H
 		preview.InvitedBy = inviter
 	}
 	return jsonResponse(http.StatusOK, preview)
+}
+
+// acceptInvitation puts the signed-in user into the group of a pending invitation. The token is the proof, so the
+// email of the account can differ from the address of the invitation. A user of another group moves only with
+// leaveGroup.
+func (s *Server) acceptInvitation(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	sub := subject(req)
+	if sub == "" {
+		return jsonResponse(http.StatusUnauthorized, Error{Message: "unauthorized"})
+	}
+	var body InvitationAccept
+	if req.Body != "" {
+		if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
+			return jsonResponse(http.StatusBadRequest, Error{Message: "invalid JSON body"})
+		}
+	}
+	// The first call of a new user can be this one, so the row is made first.
+	if _, err := s.me(ctx, sub); err != nil {
+		return serverError(ctx, req, sub, err)
+	}
+	hash := tokenHash(req.PathParameters["token"])
+	err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
+		var invitationID, groupID string
+		err := tx.QueryRow(ctx, "SELECT id, group_id FROM invitations WHERE token_hash = $1 AND accepted_at IS NULL AND expires_at > now()", hash).Scan(&invitationID, &groupID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errNoInvitation
+		}
+		if err != nil {
+			return err
+		}
+		var current *string
+		if err := tx.QueryRow(ctx, "SELECT group_id FROM users WHERE id = $1", sub).Scan(&current); err != nil {
+			return err
+		}
+		if current != nil {
+			if *current == groupID {
+				return errAlreadyMember
+			}
+			if body.LeaveGroup == nil || !*body.LeaveGroup {
+				return errInOtherGroup
+			}
+			if _, err := leaveGroup(ctx, tx, sub, *current); err != nil {
+				return err
+			}
+		}
+		// A join changes the members of the group too, so it starts with the same write of the group row as leaveGroup.
+		if _, err := tx.Exec(ctx, "UPDATE groups SET name = name WHERE id = $1", groupID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, "UPDATE users SET group_id = $1 WHERE id = $2", groupID, sub); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, "UPDATE invitations SET accepted_at = now() WHERE id = $1", invitationID)
+		return err
+	})
+	switch {
+	case errors.Is(err, errNoInvitation):
+		return jsonResponse(http.StatusNotFound, Error{Message: "invitation not found"})
+	case errors.Is(err, errAlreadyMember):
+		return jsonResponse(http.StatusConflict, Error{Message: "already a member of this group"})
+	case errors.Is(err, errInOtherGroup):
+		return jsonResponse(http.StatusConflict, Error{Message: "in another group"})
+	case err != nil:
+		return serverError(ctx, req, sub, err)
+	}
+	return noContent()
 }
