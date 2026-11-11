@@ -130,9 +130,9 @@ func (s *Server) createInvitation(ctx context.Context, req events.APIGatewayV2HT
 		return serverError(ctx, req, sub, err)
 	}
 	// The send is after the commit: db.Tx can run a transaction again, and the email goes out once.
-	mail := invitationMail(email, inviter, group, token)
-	mail.Invitation = invitation.Id
-	if err := s.Send(ctx, mail); err != nil {
+	m := invitationMail(email, inviter, group, token)
+	m.Invitation = invitation.Id
+	if err := s.Send(ctx, m); err != nil {
 		slog.ErrorContext(ctx, req.RouteKey, "sub", sub, "error", err)
 		err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, "DELETE FROM invitations WHERE id = $1", invitation.Id)
