@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		5A1000000000000000000014 /* OpenAPIRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 5A1000000000000000000012 /* OpenAPIRuntime */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		5A1000000000000000000004 /* Slowo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Slowo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5A1000000000000000000014 /* OpenAPIRuntime in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -59,12 +64,14 @@
 			buildRules = (
 			);
 			dependencies = (
+				5A1000000000000000000015 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				5A1000000000000000000005 /* Slowo */,
 			);
 			name = Slowo;
 			packageProductDependencies = (
+				5A1000000000000000000012 /* OpenAPIRuntime */,
 			);
 			productName = Slowo;
 			productReference = 5A1000000000000000000004 /* Slowo.app */;
@@ -94,6 +101,10 @@
 			);
 			mainGroup = 5A1000000000000000000002;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				5A1000000000000000000010 /* XCRemoteSwiftPackageReference "swift-openapi-generator" */,
+				5A1000000000000000000011 /* XCRemoteSwiftPackageReference "swift-openapi-runtime" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 5A1000000000000000000003 /* Products */;
 			projectDirPath = "";
@@ -123,6 +134,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		5A1000000000000000000015 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = 5A1000000000000000000013 /* OpenAPIGenerator */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		5A100000000000000000000B /* Debug */ = {
@@ -326,6 +344,38 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		5A1000000000000000000010 /* XCRemoteSwiftPackageReference "swift-openapi-generator" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-openapi-generator.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.14.4;
+			};
+		};
+		5A1000000000000000000011 /* XCRemoteSwiftPackageReference "swift-openapi-runtime" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-openapi-runtime.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.13.4;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		5A1000000000000000000012 /* OpenAPIRuntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5A1000000000000000000011 /* XCRemoteSwiftPackageReference "swift-openapi-runtime" */;
+			productName = OpenAPIRuntime;
+		};
+		5A1000000000000000000013 /* OpenAPIGenerator */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5A1000000000000000000010 /* XCRemoteSwiftPackageReference "swift-openapi-generator" */;
+			productName = "plugin:OpenAPIGenerator";
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 5A1000000000000000000001 /* Project object */;
 }
