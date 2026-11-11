@@ -176,7 +176,7 @@ paths:
       - $ref: "#/components/parameters/GroupId"
     post:
       operationId: createInvitation
-      summary: Invite a person to the group by email. A pending invitation of the same address is replaced.
+      summary: Invite a person to the group by email. A pending invitation of the same address is replaced. A member can send 20 invitations in one day (UTC).
       requestBody:
         required: true
         content:
@@ -196,6 +196,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/InternalError"
         "502":
@@ -287,6 +289,12 @@ components:
             $ref: "#/components/schemas/Error"
     Conflict:
       description: The request conflicts with the current state.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooManyRequests:
+      description: The signed-in user is at a daily limit.
       content:
         application/json:
           schema:

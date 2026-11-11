@@ -108,18 +108,28 @@ func TestCreateInvitation(t *testing.T) {
 		wantBody    string // empty when the answer is the invitation
 		wantInviter string // the display name of the inviter in the answer and in the email
 		wantPending int    // the pending invitations of nowy@example.com in all groups after the call
+		wantCount   int    // the invitations that the caller sent today (UTC), by the count on the user row
 	}{
 		{name: "stores the invitation and sends one email", sub: subOla, body: `{"email":"  Nowy@Example.com "}`,
-			wantStatus: 201, wantInviter: "Ola", wantPending: 1},
+			wantStatus: 201, wantInviter: "Ola", wantPending: 1, wantCount: 1},
 		{name: "a second invitation of the address replaces the first", sub: subOla, body: `{"email":"nowy@example.com"}`,
 			setup:      `INSERT INTO invitations (group_id, email, token_hash, expires_at) SELECT id, 'nowy@example.com', 'old', now() + interval '1 day' FROM groups WHERE name = 'Rodzina'`,
-			wantStatus: 201, wantInviter: "Ola", wantPending: 1},
+			wantStatus: 201, wantInviter: "Ola", wantPending: 1, wantCount: 1},
 		{name: "the same address in another group keeps its invitation", sub: subOla, body: `{"email":"nowy@example.com"}`,
 			setup:      `INSERT INTO invitations (group_id, email, token_hash, expires_at) SELECT id, 'nowy@example.com', 'praca', now() + interval '1 day' FROM groups WHERE name = 'Praca'`,
-			wantStatus: 201, wantInviter: "Ola", wantPending: 2},
+			wantStatus: 201, wantInviter: "Ola", wantPending: 2, wantCount: 1},
 		{name: "an inviter without a display name", sub: subOla, body: `{"email":"nowy@example.com"}`,
 			setup:      `UPDATE users SET display_name = '' WHERE id = 'sub-ola'`,
-			wantStatus: 201, wantInviter: "", wantPending: 1},
+			wantStatus: 201, wantInviter: "", wantPending: 1, wantCount: 1},
+		{name: "the 20th invitation of the day passes", sub: subOla, body: `{"email":"nowy@example.com"}`,
+			setup:      `UPDATE users SET invites_day = (now() AT TIME ZONE 'UTC')::date, invites_count = 19 WHERE id = 'sub-ola'`,
+			wantStatus: 201, wantInviter: "Ola", wantPending: 1, wantCount: 20},
+		{name: "the 21st invitation of the day is refused", sub: subOla, body: `{"email":"nowy@example.com"}`,
+			setup:      `UPDATE users SET invites_day = (now() AT TIME ZONE 'UTC')::date, invites_count = 20 WHERE id = 'sub-ola'`,
+			wantStatus: 429, wantBody: `{"message":"too many invitations today"}`, wantCount: 20},
+		{name: "a new day starts the count again", sub: subOla, body: `{"email":"nowy@example.com"}`,
+			setup:      `UPDATE users SET invites_day = (now() AT TIME ZONE 'UTC')::date - 1, invites_count = 20 WHERE id = 'sub-ola'`,
+			wantStatus: 201, wantInviter: "Ola", wantPending: 1, wantCount: 1},
 		{name: "an address that is not valid is rejected", sub: subOla, body: `{"email":"Ola <ola@example.com>"}`,
 			wantStatus: 400, wantBody: emailRule},
 		{name: "a body without an email is rejected", sub: subOla, body: `{}`,
@@ -128,8 +138,8 @@ func TestCreateInvitation(t *testing.T) {
 			wantStatus: 400, wantBody: notJSON},
 		{name: "a member of another group is refused", sub: subEwa, body: `{"email":"nowy@example.com"}`,
 			wantStatus: 403, wantBody: notMember},
-		{name: "a failed send removes the invitation", sub: subOla, body: `{"email":"nowy@example.com"}`, sendErr: errors.New("the email service is down"),
-			wantStatus: 502, wantBody: `{"message":"the invitation email was not sent"}`},
+		{name: "a failed send removes the invitation and still counts", sub: subOla, body: `{"email":"nowy@example.com"}`, sendErr: errors.New("the email service is down"),
+			wantStatus: 502, wantBody: `{"message":"the invitation email was not sent"}`, wantCount: 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -156,6 +166,13 @@ func TestCreateInvitation(t *testing.T) {
 			}
 			if pending != tt.wantPending {
 				t.Errorf("pending invitations of the address = %d, want %d", pending, tt.wantPending)
+			}
+			var count int
+			if err := pool.QueryRow(ctx, "SELECT CASE WHEN invites_day = (now() AT TIME ZONE 'UTC')::date THEN invites_count ELSE 0 END FROM users WHERE id = $1", tt.sub).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			if count != tt.wantCount {
+				t.Errorf("invitations of the caller today = %d, want %d", count, tt.wantCount)
 			}
 			if tt.wantBody != "" {
 				if resp.Body != tt.wantBody {

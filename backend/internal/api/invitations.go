@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json/v2"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/mail"
@@ -25,6 +26,15 @@ type Mail struct {
 
 // inviteLink is the start of the universal link of an invitation; the token follows it.
 const inviteLink = "https://slowo.rustatian.me/invite/"
+
+// maxInvitesPerDay is the number of invitations that one member can send in one UTC day. Many invitations to
+// bad addresses raise the bounce rate of the SES account, which also sends the sign-in codes.
+const maxInvitesPerDay = 20
+
+// utcDay is the SQL expression for the current date in UTC.
+const utcDay = "(now() AT TIME ZONE 'UTC')::date"
+
+var errTooManyInvitations = errors.New("the member is at the invitation limit of the day")
 
 // validEmail returns the address without the spaces at its ends and in lower case. ok reports that it is one
 // bare address of at most 254 ASCII characters with a dot in its domain. Amazon SES takes only 7-bit ASCII in
@@ -86,6 +96,15 @@ func (s *Server) createInvitation(ctx context.Context, req events.APIGatewayV2HT
 	invitation := Invitation{Email: email}
 	var group, inviter string
 	err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
+		// The limit is in the WHERE clause, so two requests at the same instant cannot both pass at the last one.
+		tag, err := tx.Exec(ctx, "UPDATE users SET invites_count = CASE WHEN invites_day = "+utcDay+" THEN invites_count + 1 ELSE 1 END, invites_day = "+utcDay+
+			" WHERE id = $1 AND (invites_day IS DISTINCT FROM "+utcDay+" OR invites_count < $2)", sub, maxInvitesPerDay)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return errTooManyInvitations
+		}
 		// One pending invitation for an address in a group: a new one replaces it.
 		if _, err := tx.Exec(ctx, "DELETE FROM invitations WHERE group_id = $1 AND email = $2 AND accepted_at IS NULL", groupID, email); err != nil {
 			return err
@@ -96,6 +115,9 @@ func (s *Server) createInvitation(ctx context.Context, req events.APIGatewayV2HT
 		}
 		return tx.QueryRow(ctx, "SELECT g.name, u.display_name FROM groups g, users u WHERE g.id = $1 AND u.id = $2", groupID, sub).Scan(&group, &inviter)
 	})
+	if errors.Is(err, errTooManyInvitations) {
+		return jsonResponse(http.StatusTooManyRequests, Error{Message: "too many invitations today"})
+	}
 	if err != nil {
 		return serverError(ctx, req, sub, err)
 	}
