@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -397,6 +398,69 @@ func TestCancelInvitation(t *testing.T) {
 				if left != 0 {
 					t.Errorf("the cancelled invitation is still there")
 				}
+			}
+		})
+	}
+}
+
+// tokenRodzina is the token of the invitation of Rodzina that the tests insert.
+const tokenRodzina = "ROD2ZINA3TOKEN4ROD2ZINA3TOK"
+
+const noInvitation = `{"message":"invitation not found"}`
+
+func TestPreviewInvitation(t *testing.T) {
+	const day = 24 * time.Hour
+	tests := []struct {
+		name       string
+		row        string // the invitation of Rodzina with tokenRodzina: "pending", "no inviter", "accepted" or "expired"
+		setup      string // a statement that changes the fixture before the call
+		token      string
+		wantStatus int
+		wantBody   string // <rodzina> stands for the ID of the group
+	}{
+		{name: "a pending invitation shows the group and the inviter", row: "pending", token: tokenRodzina,
+			wantStatus: 200, wantBody: `{"groupId":"<rodzina>","groupName":"Rodzina","invitedBy":"Ola"}`},
+		{name: "an inviter without a display name is left out", row: "pending", token: tokenRodzina,
+			setup:      `UPDATE users SET display_name = '' WHERE id = 'sub-ola'`,
+			wantStatus: 200, wantBody: `{"groupId":"<rodzina>","groupName":"Rodzina"}`},
+		{name: "an inviter without an account is left out", row: "no inviter", token: tokenRodzina,
+			wantStatus: 200, wantBody: `{"groupId":"<rodzina>","groupName":"Rodzina"}`},
+		{name: "an unknown token is not found", row: "pending", token: "NOPE", wantStatus: 404, wantBody: noInvitation},
+		{name: "an accepted invitation is not found", row: "accepted", token: tokenRodzina, wantStatus: 404, wantBody: noInvitation},
+		{name: "an expired invitation is not found", row: "expired", token: tokenRodzina, wantStatus: 404, wantBody: noInvitation},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			pool, srv, rodzina, _ := groupFixture(t)
+			ola := subOla
+			switch tt.row {
+			case "pending":
+				invitationRow(t, pool, rodzina, "nowy@example.com", tokenHash(tokenRodzina), &ola, -day, 6*day, false)
+			case "no inviter":
+				invitationRow(t, pool, rodzina, "nowy@example.com", tokenHash(tokenRodzina), nil, -day, 6*day, false)
+			case "accepted":
+				invitationRow(t, pool, rodzina, "nowy@example.com", tokenHash(tokenRodzina), &ola, -day, 6*day, true)
+			case "expired":
+				invitationRow(t, pool, rodzina, "nowy@example.com", tokenHash(tokenRodzina), &ola, -8*day, -time.Minute, false)
+			}
+			if tt.setup != "" {
+				if _, err := pool.Exec(ctx, tt.setup); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			// The request has no authorizer: the route works without sign-in.
+			req := events.APIGatewayV2HTTPRequest{RouteKey: "GET /v1/invitations/{token}", PathParameters: map[string]string{"token": tt.token}}
+			resp, err := srv.Handle(ctx, req)
+			if err != nil {
+				t.Fatalf("Handle returned error %v", err)
+			}
+			if resp.StatusCode != tt.wantStatus {
+				t.Errorf("status = %d, want %d", resp.StatusCode, tt.wantStatus)
+			}
+			if want := strings.ReplaceAll(tt.wantBody, "<rodzina>", rodzina); resp.Body != want {
+				t.Errorf("body = %s, want %s", resp.Body, want)
 			}
 		})
 	}

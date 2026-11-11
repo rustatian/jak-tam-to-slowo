@@ -236,6 +236,50 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /v1/invitations/{token}:
+    parameters:
+      - $ref: "#/components/parameters/InvitationToken"
+    get:
+      operationId: previewInvitation
+      summary: The group and the inviter of a pending invitation. The token is the proof, so the call needs no access token.
+      security: []
+      responses:
+        "200":
+          description: The group that the invitation is for.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitationPreview"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/invitations/{token}/acceptance:
+    parameters:
+      - $ref: "#/components/parameters/InvitationToken"
+    post:
+      operationId: acceptInvitation
+      summary: Join the group of a pending invitation. An invitation can be accepted one time. A user of another group must confirm that they leave it.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationAccept"
+      responses:
+        "204":
+          description: The signed-in user is a member of the group.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     cognito:
@@ -260,6 +304,13 @@ components:
       name: invitationId
       in: path
       required: true
+      schema:
+        type: string
+    InvitationToken:
+      name: token
+      in: path
+      required: true
+      description: The token of an invitation link.
       schema:
         type: string
   responses:
@@ -294,7 +345,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     TooManyRequests:
-      description: The signed-in user is at a daily limit.
+      description: The caller is at a request limit.
       content:
         application/json:
           schema:
@@ -434,6 +485,23 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Invitation"
+    InvitationPreview:
+      type: object
+      required: [groupId, groupName]
+      properties:
+        groupId:
+          type: string
+        groupName:
+          type: string
+        invitedBy:
+          type: string
+          description: The display name of the member who sent the invitation. Absent when that name is empty or the account does not exist any more.
+    InvitationAccept:
+      type: object
+      properties:
+        leaveGroup:
+          type: boolean
+          description: True confirms that the signed-in user leaves their current group to join this one.
     Error:
       type: object
       required: [message]

@@ -188,3 +188,23 @@ func (s *Server) cancelInvitation(ctx context.Context, req events.APIGatewayV2HT
 	}
 	return noContent()
 }
+
+// previewInvitation shows the group and the inviter of a pending invitation. The route has no authorizer: the token
+// of the invitation link is the proof. Every token without a pending invitation gets the same answer.
+func (s *Server) previewInvitation(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	var preview InvitationPreview
+	var inviter *string
+	err := s.DB.QueryRow(ctx, "SELECT g.id, g.name, u.display_name FROM invitations i JOIN groups g ON g.id = i.group_id LEFT JOIN users u ON u.id = i.invited_by "+
+		"WHERE i.token_hash = $1 AND i.accepted_at IS NULL AND i.expires_at > now()", tokenHash(req.PathParameters["token"])).
+		Scan(&preview.GroupId, &preview.GroupName, &inviter)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return jsonResponse(http.StatusNotFound, Error{Message: "invitation not found"})
+	}
+	if err != nil {
+		return serverError(ctx, req, "", err)
+	}
+	if inviter != nil && *inviter != "" {
+		preview.InvitedBy = inviter
+	}
+	return jsonResponse(http.StatusOK, preview)
+}

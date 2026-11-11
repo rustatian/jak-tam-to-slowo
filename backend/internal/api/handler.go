@@ -53,6 +53,8 @@ func (s *Server) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 		return s.listInvitations(ctx, req), nil
 	case "DELETE /v1/groups/{groupId}/invitations/{invitationId}":
 		return s.cancelInvitation(ctx, req), nil
+	case "GET /v1/invitations/{token}":
+		return s.previewInvitation(ctx, req), nil
 	default:
 		return jsonResponse(http.StatusNotFound, Error{Message: "not found"}), nil
 	}
