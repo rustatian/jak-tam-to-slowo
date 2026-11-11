@@ -114,6 +114,18 @@ let cognitoCases: [CognitoCase] = [
         body: #"{"ClientId":"client1","Username":"ola@example.com","ConfirmationCode":"000000","Password":"Nowe-Haslo-2b"}"#,
         outcome: .error(.service("CodeMismatchException"))
     ),
+    CognitoCase(
+        name: "revoke the refresh token",
+        call: {
+            try await $0.revoke("r1")
+            return nil
+        },
+        status: 200,
+        answer: "",
+        target: "RevokeToken",
+        body: #"{"ClientId":"client1","Token":"r1"}"#,
+        outcome: .done
+    ),
 ]
 
 @Test(arguments: cognitoCases)

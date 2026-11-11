@@ -123,3 +123,28 @@ func session(_ c: SessionCase) async throws {
         try await session.validAccessToken()
     }
 }
+
+struct LogOutCase: Sendable, CustomTestStringConvertible {
+    let name: String
+    let fake: FakeCognito
+
+    var testDescription: String { name }
+}
+
+@MainActor
+@Test(arguments: [
+    LogOutCase(name: "log out revokes the refresh token", fake: FakeCognito(answer: "")),
+    LogOutCase(name: "log out without network still signs out", fake: FakeCognito(failure: URLError(.notConnectedToInternet))),
+])
+func logOut(_ c: LogOutCase) async throws {
+    let store = TokenStore(service: "test." + UUID().uuidString)
+    defer { try? store.delete() }
+    try store.save(Tokens(accessToken: "a1", refreshToken: "r1", expiresAt: start.addingTimeInterval(3600)))
+    let session = Session(cognito: c.fake.cognito(now: { start }), store: store, now: { start })
+
+    await session.logOut()
+
+    #expect(c.fake.requests.map { $0.value(forHTTPHeaderField: "X-Amz-Target") } == ["AWSCognitoIdentityProviderService.RevokeToken"])
+    #expect(!session.isSignedIn)
+    #expect(try store.load() == nil)
+}

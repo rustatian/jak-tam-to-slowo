@@ -73,6 +73,14 @@ final class Session {
         return try await refresh.value.accessToken
     }
 
+    /// Revokes the refresh token at Cognito, then signs out. Without network the user is still out.
+    func logOut() async {
+        if let refreshToken = tokens?.refreshToken {
+            try? await cognito.revoke(refreshToken)
+        }
+        signOut()
+    }
+
     func signOut() {
         try? store.delete()
         tokens = nil

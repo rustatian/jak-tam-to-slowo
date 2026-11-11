@@ -80,6 +80,14 @@ struct Cognito: Sendable {
         ])
     }
 
+    /// Revokes the refresh token and the access tokens made from it.
+    func revoke(_ refreshToken: String) async throws {
+        let _: Empty = try await call("RevokeToken", [
+            "ClientId": clientID,
+            "Token": refreshToken,
+        ])
+    }
+
     private func tokens(_ result: AuthAnswer.Result, refreshToken: String) -> Tokens {
         Tokens(
             accessToken: result.accessToken,
@@ -108,7 +116,8 @@ struct Cognito: Sendable {
             throw type.map { CognitoError.service(errorName($0)) } ?? CognitoError.badResponse
         }
         do {
-            return try JSONDecoder().decode(Answer.self, from: data)
+            // RevokeToken answers with an empty body.
+            return try JSONDecoder().decode(Answer.self, from: data.isEmpty ? Data("{}".utf8) : data)
         } catch {
             throw CognitoError.badResponse
         }
