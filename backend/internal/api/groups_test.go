@@ -112,6 +112,7 @@ func TestCreateGroup(t *testing.T) {
 		{name: "40 letters with diacritics pass", sub: subJan, body: `{"name":"` + strings.Repeat("ż", 40) + `"}`, wantStatus: 201, wantName: strings.Repeat("ż", 40), wantEmail: "jan@example.com"},
 		{name: "41 letters are rejected", sub: subJan, body: `{"name":"` + strings.Repeat("ż", 41) + `"}`, wantStatus: 400, wantBody: nameRule},
 		{name: "a blank name is rejected", sub: subJan, body: `{"name":"   "}`, wantStatus: 400, wantBody: nameRule},
+		{name: "a name with a line break is rejected", sub: subJan, body: `{"name":"Rodzina\nKliknij tu"}`, wantStatus: 400, wantBody: nameRule},
 		{name: "a body without a name is rejected", sub: subJan, body: `{}`, wantStatus: 400, wantBody: nameRule},
 		{name: "a body that is not JSON is rejected", sub: subJan, body: `{"name":`, wantStatus: 400, wantBody: notJSON},
 		{name: "a member of a group gets a conflict", sub: subOla, body: `{"name":"Nowa"}`, wantStatus: 409, wantBody: `{"message":"already in a group"}`},
@@ -213,6 +214,7 @@ func TestGroup(t *testing.T) {
 		{name: "a member renames the group, trimmed", routeKey: patch, sub: subOla, body: `{"name":"  Dom  "}`, wantStatus: 200, wantName: "Dom"},
 		{name: "an empty body keeps the name", routeKey: patch, sub: subOla, body: `{}`, wantStatus: 200, wantName: "Rodzina"},
 		{name: "a blank name is rejected", routeKey: patch, sub: subOla, body: `{"name":"   "}`, wantStatus: 400, wantBody: nameRule, wantName: "Rodzina"},
+		{name: "a name with a line break is rejected", routeKey: patch, sub: subOla, body: `{"name":"Dom\nKliknij tu"}`, wantStatus: 400, wantBody: nameRule, wantName: "Rodzina"},
 		{name: "a body that is not JSON is rejected", routeKey: patch, sub: subOla, body: `{"name":`, wantStatus: 400, wantBody: notJSON, wantName: "Rodzina"},
 		{name: "a member of another group cannot rename", routeKey: patch, sub: subEwa, body: `{"name":"Dom"}`, wantStatus: 403, wantBody: notMember, wantName: "Rodzina"},
 	}

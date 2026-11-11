@@ -42,7 +42,7 @@ type Group struct {
 
 // GroupCreate defines model for GroupCreate.
 type GroupCreate struct {
-	// Name The group name. Spaces at the ends are removed; then it has 1 to 40 characters.
+	// Name The group name. Spaces at the ends are removed; then it has 1 to 40 characters, and no control, line-break or text-direction character.
 	Name string `json:"name"`
 }
 
@@ -53,8 +53,34 @@ type GroupMembers struct {
 
 // GroupUpdate defines model for GroupUpdate.
 type GroupUpdate struct {
-	// Name The new group name. Spaces at the ends are removed; then it has 1 to 40 characters.
+	// Name The new group name. Spaces at the ends are removed; then it has 1 to 40 characters, and no control, line-break or text-direction character.
 	Name *string `json:"name,omitempty"`
+}
+
+// Invitation defines model for Invitation.
+type Invitation struct {
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Email The address that the invitation went to, in lower case.
+	Email string `json:"email"`
+
+	// ExpiresAt The invitation can be accepted until this time.
+	ExpiresAt time.Time `json:"expiresAt"`
+	Id        string    `json:"id"`
+
+	// InvitedBy The member who sent the invitation. Absent when that account does not exist any more.
+	InvitedBy *Member `json:"invitedBy,omitempty"`
+}
+
+// InvitationCreate defines model for InvitationCreate.
+type InvitationCreate struct {
+	// Email One email address in ASCII characters. Spaces at the ends are removed, and capital letters become small letters.
+	Email string `json:"email"`
+}
+
+// Invitations defines model for Invitations.
+type Invitations struct {
+	Invitations []Invitation `json:"invitations"`
 }
 
 // Me defines model for Me.
@@ -86,7 +112,7 @@ type MeUpdate struct {
 	// Direction The translation direction of the learner's study.
 	Direction *Direction `json:"direction,omitempty"`
 
-	// DisplayName The new display name. Spaces at the ends are removed; then it has 1 to 40 characters.
+	// DisplayName The new display name. Spaces at the ends are removed; then it has 1 to 40 characters, and no control, line-break or text-direction character.
 	DisplayName *string `json:"displayName,omitempty"`
 	Reminder    *bool   `json:"reminder,omitempty"`
 }
@@ -103,8 +129,14 @@ type Member struct {
 // GroupId defines model for GroupId.
 type GroupId = string
 
+// InvitationId defines model for InvitationId.
+type InvitationId = string
+
 // UserId defines model for UserId.
 type UserId = string
+
+// BadGateway defines model for BadGateway.
+type BadGateway = Error
 
 // BadRequest defines model for BadRequest.
 type BadRequest = Error
@@ -121,6 +153,9 @@ type InternalError = Error
 // NotFound defines model for NotFound.
 type NotFound = Error
 
+// TooManyRequests defines model for TooManyRequests.
+type TooManyRequests = Error
+
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
 
@@ -129,6 +164,9 @@ type CreateGroupJSONRequestBody = GroupCreate
 
 // UpdateGroupJSONRequestBody defines body for UpdateGroup for application/json ContentType.
 type UpdateGroupJSONRequestBody = GroupUpdate
+
+// CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
+type CreateInvitationJSONRequestBody = InvitationCreate
 
 // UpdateMeJSONRequestBody defines body for UpdateMe for application/json ContentType.
 type UpdateMeJSONRequestBody = MeUpdate
