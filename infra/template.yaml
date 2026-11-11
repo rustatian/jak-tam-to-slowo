@@ -133,7 +133,7 @@ Resources:
           Type: HttpApi
           Properties:
             ApiId: !Ref HttpApi
-            Path: /me
+            Path: /v1/me
             Method: GET
 
 Outputs:

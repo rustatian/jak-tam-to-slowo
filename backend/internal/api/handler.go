@@ -27,7 +27,7 @@ type Server struct {
 // Handle picks the route by its route key.
 func (s *Server) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	switch req.RouteKey {
-	case "GET /me":
+	case "GET /v1/me":
 		return s.getMe(ctx, req), nil
 	default:
 		return jsonResponse(http.StatusNotFound, Error{Message: "not found"}), nil
@@ -48,7 +48,7 @@ func (s *Server) getMe(ctx context.Context, req events.APIGatewayV2HTTPRequest) 
 	}
 	me, err := s.me(ctx, sub)
 	if err != nil {
-		slog.ErrorContext(ctx, "GET /me", "sub", sub, "error", err)
+		slog.ErrorContext(ctx, "GET /v1/me", "sub", sub, "error", err)
 		return jsonResponse(http.StatusInternalServerError, Error{Message: "internal error"})
 	}
 	return jsonResponse(http.StatusOK, me)

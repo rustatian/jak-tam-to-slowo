@@ -17,7 +17,7 @@ import (
 
 func meRequest(sub string) events.APIGatewayV2HTTPRequest {
 	return events.APIGatewayV2HTTPRequest{
-		RouteKey: "GET /me",
+		RouteKey: "GET /v1/me",
 		RequestContext: events.APIGatewayV2HTTPRequestContext{
 			Authorizer: &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
 				JWT: &events.APIGatewayV2HTTPRequestContextAuthorizerJWTDescription{Claims: map[string]string{"sub": sub}},

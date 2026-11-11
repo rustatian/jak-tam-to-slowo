@@ -21,9 +21,9 @@ func TestHandle(t *testing.T) {
 		wantStatus int
 		wantBody   string
 	}{
-		{name: "me without an authorizer", routeKey: "GET /me", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
-		{name: "me without a JWT authorizer", routeKey: "GET /me", authorizer: &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{}, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
-		{name: "me with an empty sub claim", routeKey: "GET /me", authorizer: jwt(map[string]string{"sub": ""}), wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
+		{name: "me without an authorizer", routeKey: "GET /v1/me", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
+		{name: "me without a JWT authorizer", routeKey: "GET /v1/me", authorizer: &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{}, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
+		{name: "me with an empty sub claim", routeKey: "GET /v1/me", authorizer: jwt(map[string]string{"sub": ""}), wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
 		{name: "unknown route", routeKey: "GET /nope", authorizer: jwt(map[string]string{"sub": sub}), wantStatus: 404, wantBody: `{"message":"not found"}`},
 	}
 	for _, tt := range tests {
