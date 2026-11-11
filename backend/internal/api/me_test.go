@@ -2,8 +2,9 @@ package api
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -113,6 +114,10 @@ func TestGetMe(t *testing.T) {
 				}
 				if !equalMe(me, tt.wantMe) {
 					t.Errorf("me = %+v, want %+v", me, tt.wantMe)
+				}
+				// The contract: the member is absent without consent.
+				if got := strings.Contains(r.resp.Body, `"aiConsentAt"`); got != (tt.wantMe.AiConsentAt != nil) {
+					t.Errorf("body %s: aiConsentAt present = %v, want %v", r.resp.Body, got, tt.wantMe.AiConsentAt != nil)
 				}
 			}
 			if got := lookups.Load(); got != tt.wantLookups {
