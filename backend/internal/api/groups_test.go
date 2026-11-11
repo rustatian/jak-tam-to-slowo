@@ -374,15 +374,7 @@ func TestRemoveMember(t *testing.T) {
 			if got := groupNameOf(t, pool, subEwa); got != tt.wantEwa {
 				t.Errorf("group of Ewa = %q, want %q", got, tt.wantEwa)
 			}
-			rows, err := pool.Query(ctx, "SELECT name FROM groups ORDER BY name")
-			if err != nil {
-				t.Fatal(err)
-			}
-			groups, err := pgx.CollectRows(rows, pgx.RowTo[string])
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !slices.Equal(groups, tt.wantGroups) {
+			if groups := groupNames(t, pool); !slices.Equal(groups, tt.wantGroups) {
 				t.Errorf("groups = %v, want %v", groups, tt.wantGroups)
 			}
 		})
@@ -403,5 +395,120 @@ func TestLeaveThenCreate(t *testing.T) {
 	}
 	if got := groupNameOf(t, pool, subEwa); got != "Nowa" {
 		t.Errorf("group of the user = %q, want Nowa", got)
+	}
+}
+
+// groupNames returns the names of the groups that exist, in the order of the names.
+func groupNames(t *testing.T, pool *pgxpool.Pool) []string {
+	t.Helper()
+	rows, err := pool.Query(context.Background(), "SELECT name FROM groups ORDER BY name")
+	if err != nil {
+		t.Fatal(err)
+	}
+	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return names
+}
+
+// memberChange is one request of TestMemberChangesAtTheSameInstant: the caller leaves the group.
+type memberChange struct {
+	sub   string
+	kind  string // "leave"
+	group string // the name of the group
+}
+
+// waitForLockWaits waits until n sessions of the pool wait for a lock. Each query through the pool is its own
+// transaction and reads the current state of the sessions; inside one transaction pg_stat_activity stays the same.
+// https://www.postgresql.org/docs/16/monitoring-stats.html#MONITORING-STATS-VIEWS
+func waitForLockWaits(t *testing.T, pool *pgxpool.Pool, n int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var waiting int
+		err := pool.QueryRow(context.Background(), "SELECT count(*) FROM pg_stat_activity WHERE application_name = current_setting('application_name') AND wait_event_type = 'Lock'").Scan(&waiting)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if waiting == n {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("sessions that wait for a lock = %d, want %d", waiting, n)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestMemberChangesAtTheSameInstant sends two requests that change the members of one group, and makes both of
+// them start from the state before the other one.
+func TestMemberChangesAtTheSameInstant(t *testing.T) {
+	tests := []struct {
+		name                  string
+		first, second         memberChange
+		wantFirst, wantSecond int
+		// The state after both calls: the name of each user's group, empty for none, and the names of the groups that exist.
+		wantOla, wantAdam, wantEwa, wantJan string
+		wantGroups                          []string
+	}{
+		{name: "the two last members leave", first: memberChange{sub: subOla, kind: "leave", group: "Rodzina"}, second: memberChange{sub: subAdam, kind: "leave", group: "Rodzina"},
+			wantFirst: 204, wantSecond: 204, wantEwa: "Praca", wantGroups: []string{"Praca"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			pool, srv, rodzina, praca := groupFixture(t)
+			groupID := map[string]string{"Rodzina": rodzina, "Praca": praca}
+			send := func(c memberChange) <-chan int {
+				req := groupRequest("DELETE /v1/groups/{groupId}/members/{userId}", c.sub, "", map[string]string{"groupId": groupID[c.group], "userId": c.sub})
+				status := make(chan int, 1)
+				go func() {
+					resp, _ := srv.Handle(ctx, req)
+					status <- resp.StatusCode
+				}()
+				return status
+			}
+
+			// The locks on the two user rows stop each request at its write of that row. Each request has then read
+			// the state from before the other one. The rollback at the end frees a request that still waits.
+			held, err := pool.Begin(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = held.Rollback(ctx) }()
+			if _, err := held.Exec(ctx, "SELECT id FROM users WHERE id IN ($1, $2) FOR UPDATE", tt.first.sub, tt.second.sub); err != nil {
+				t.Fatal(err)
+			}
+			first := send(tt.first)
+			waitForLockWaits(t, pool, 1)
+			second := send(tt.second)
+			waitForLockWaits(t, pool, 2)
+			if err := held.Commit(ctx); err != nil {
+				t.Fatal(err)
+			}
+
+			if got := <-first; got != tt.wantFirst {
+				t.Errorf("status of the first request = %d, want %d", got, tt.wantFirst)
+			}
+			if got := <-second; got != tt.wantSecond {
+				t.Errorf("status of the second request = %d, want %d", got, tt.wantSecond)
+			}
+			if got := groupNameOf(t, pool, subOla); got != tt.wantOla {
+				t.Errorf("group of Ola = %q, want %q", got, tt.wantOla)
+			}
+			if got := groupNameOf(t, pool, subAdam); got != tt.wantAdam {
+				t.Errorf("group of Adam = %q, want %q", got, tt.wantAdam)
+			}
+			if got := groupNameOf(t, pool, subEwa); got != tt.wantEwa {
+				t.Errorf("group of Ewa = %q, want %q", got, tt.wantEwa)
+			}
+			if got := groupNameOf(t, pool, subJan); got != tt.wantJan {
+				t.Errorf("group of Jan = %q, want %q", got, tt.wantJan)
+			}
+			if groups := groupNames(t, pool); !slices.Equal(groups, tt.wantGroups) {
+				t.Errorf("groups = %v, want %v", groups, tt.wantGroups)
+			}
+		})
 	}
 }
