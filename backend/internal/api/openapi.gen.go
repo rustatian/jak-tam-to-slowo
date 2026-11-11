@@ -85,7 +85,7 @@ type Invitation struct {
 	// ExpiresAt The invitation can be accepted until this time.
 	ExpiresAt time.Time `json:"expiresAt"`
 
-	// Failure The email did not reach the address (bounce), or the receiver marked it as spam (complaint). Absent while no such notice came.
+	// Failure A notice of the email service about the invitation email. With bounce the email probably did not arrive, but an automatic reply of the receiver can cause this notice too. With complaint the receiver marked the email as spam. Absent while no such notice came.
 	Failure *InvitationFailure `json:"failure,omitempty"`
 	Id      string             `json:"id"`
 
@@ -93,7 +93,7 @@ type Invitation struct {
 	InvitedBy *Member `json:"invitedBy,omitempty"`
 }
 
-// InvitationFailure The email did not reach the address (bounce), or the receiver marked it as spam (complaint). Absent while no such notice came.
+// InvitationFailure A notice of the email service about the invitation email. With bounce the email probably did not arrive, but an automatic reply of the receiver can cause this notice too. With complaint the receiver marked the email as spam. Absent while no such notice came.
 type InvitationFailure string
 
 // InvitationAccept defines model for InvitationAccept.

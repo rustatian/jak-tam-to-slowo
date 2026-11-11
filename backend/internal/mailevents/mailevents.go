@@ -33,6 +33,9 @@ func (h *Handler) Handle(ctx context.Context, event events.EventBridgeEvent) err
 	var failure string
 	switch event.DetailType {
 	case "Email Bounced":
+		// Every bounce counts, also a transient one. An automatic reply of the receiver can cause a transient
+		// bounce for an email that arrived, and the event does not tell the two apart.
+		// https://docs.aws.amazon.com/ses/latest/dg/notification-contents.html#bounce-types
 		failure = "bounce"
 	case "Email Complaint Received":
 		failure = "complaint"
@@ -49,6 +52,7 @@ func (h *Handler) Handle(ctx context.Context, event events.EventBridgeEvent) err
 	}
 	// The invitation can be gone, so zero changed rows is no error. The ID is compared as text: PostgreSQL
 	// refuses a uuid parameter that is not a UUID (SQLSTATE 22P02).
+	// https://www.postgresql.org/docs/16/errcodes-appendix.html
 	return db.Tx(ctx, h.DB, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, "UPDATE invitations SET failure = $1 WHERE id::text = $2", failure, ids[0])
 		return err

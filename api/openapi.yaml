@@ -472,7 +472,7 @@ components:
         failure:
           type: string
           enum: [bounce, complaint]
-          description: The email did not reach the address (bounce), or the receiver marked it as spam (complaint). Absent while no such notice came.
+          description: A notice of the email service about the invitation email. With bounce the email probably did not arrive, but an automatic reply of the receiver can cause this notice too. With complaint the receiver marked the email as spam. Absent while no such notice came.
     InvitationCreate:
       type: object
       required: [email]

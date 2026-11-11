@@ -99,7 +99,7 @@ Resources:
 
   # Amazon SES publishes the bounces and the complaints of the emails that go out with this configuration set.
   # Only the default event bus can be the destination.
-  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ses-configurationseteventdestination-eventbridgedestination.html
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-ses-configurationseteventdestination-eventbridgedestination.html
   MailConfigurationSet:
     Type: AWS::SES::ConfigurationSet
     Properties:
