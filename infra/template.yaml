@@ -33,6 +33,12 @@ Resources:
         RecoveryMechanisms:
           - Name: verified_email
             Priority: 1
+      # Password reset emails also use the code template.
+      # https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pool-settings-message-customizations.html
+      VerificationMessageTemplate:
+        DefaultEmailOption: CONFIRM_WITH_CODE
+        EmailSubject: Kod do aplikacji Jak tam to słowo?
+        EmailMessage: "Twój kod weryfikacyjny: {####}. Jeżeli to nie Ty, zignoruj tę wiadomość."
       # DEVELOPER makes Cognito create its SES service-linked role; the identity needs no sending policy.
       # https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pool-settings-message-customizations.html
       EmailConfiguration:
@@ -46,7 +52,15 @@ Resources:
       UserPoolId: !Ref UserPool
       ClientName: ios
       GenerateSecret: false
-      ExplicitAuthFlows: [ALLOW_USER_PASSWORD_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+      # Rotation needs the REFRESH_TOKEN_AUTH flow off; the app refreshes with GetTokensFromRefreshToken.
+      # https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-refresh-token.html
+      ExplicitAuthFlows: [ALLOW_USER_PASSWORD_AUTH]
+      RefreshTokenRotation:
+        Feature: ENABLED
+        RetryGracePeriodSeconds: 60
+      RefreshTokenValidity: 365
+      TokenValidityUnits:
+        RefreshToken: days
       PreventUserExistenceErrors: ENABLED
 
   Certificate:
@@ -119,7 +133,7 @@ Resources:
           Type: HttpApi
           Properties:
             ApiId: !Ref HttpApi
-            Path: /me
+            Path: /v1/me
             Method: GET
 
 Outputs:

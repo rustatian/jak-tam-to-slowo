@@ -8,7 +8,7 @@ servers:
 security:
   - cognito: []
 paths:
-  /me:
+  /v1/me:
     get:
       operationId: getMe
       summary: The signed-in user.
