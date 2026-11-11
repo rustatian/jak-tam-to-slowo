@@ -114,3 +114,55 @@ func (s *Server) createInvitation(ctx context.Context, req events.APIGatewayV2HT
 	invitation.InvitedBy = &Member{Id: sub, DisplayName: inviter}
 	return jsonResponse(http.StatusCreated, invitation)
 }
+
+// listInvitations returns the pending invitations of the group.
+func (s *Server) listInvitations(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	sub, fail := s.member(ctx, req)
+	if fail != nil {
+		return *fail
+	}
+	rows, err := s.DB.Query(ctx, "SELECT i.id, i.email, i.created_at, i.expires_at, u.id, u.display_name FROM invitations i LEFT JOIN users u ON u.id = i.invited_by "+
+		"WHERE i.group_id = $1 AND i.accepted_at IS NULL AND i.expires_at > now() ORDER BY i.created_at, i.id", req.PathParameters["groupId"])
+	if err != nil {
+		return serverError(ctx, req, sub, err)
+	}
+	invitations, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Invitation, error) {
+		var invitation Invitation
+		var inviterID, inviterName *string
+		if err := row.Scan(&invitation.Id, &invitation.Email, &invitation.CreatedAt, &invitation.ExpiresAt, &inviterID, &inviterName); err != nil {
+			return invitation, err
+		}
+		if inviterID != nil {
+			invitation.InvitedBy = &Member{Id: *inviterID, DisplayName: *inviterName}
+		}
+		return invitation, nil
+	})
+	if err != nil {
+		return serverError(ctx, req, sub, err)
+	}
+	return jsonResponse(http.StatusOK, Invitations{Invitations: invitations})
+}
+
+// cancelInvitation deletes a pending invitation of the group.
+func (s *Server) cancelInvitation(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	sub, fail := s.member(ctx, req)
+	if fail != nil {
+		return *fail
+	}
+	var cancelled bool
+	err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
+		// The ID is compared as text: PostgreSQL refuses a uuid parameter that is not a UUID (SQLSTATE 22P02).
+		// https://www.postgresql.org/docs/16/errcodes-appendix.html
+		tag, err := tx.Exec(ctx, "DELETE FROM invitations WHERE id::text = $1 AND group_id = $2 AND accepted_at IS NULL",
+			req.PathParameters["invitationId"], req.PathParameters["groupId"])
+		cancelled = tag.RowsAffected() == 1
+		return err
+	})
+	if err != nil {
+		return serverError(ctx, req, sub, err)
+	}
+	if !cancelled {
+		return jsonResponse(http.StatusNotFound, Error{Message: "invitation not found"})
+	}
+	return noContent()
+}

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const emailRule = `{"message":"email is not valid"}`
@@ -200,6 +202,161 @@ func TestCreateInvitation(t *testing.T) {
 			}
 			if strings.Contains(resp.Body, token) {
 				t.Errorf("the body has the token: %s", resp.Body)
+			}
+		})
+	}
+}
+
+// invitationRow inserts an invitation and returns its ID. created and expires are offsets from now.
+func invitationRow(t *testing.T, pool *pgxpool.Pool, group, email, hash string, invitedBy *string, created, expires time.Duration, accepted bool) string {
+	t.Helper()
+	now := time.Now()
+	var acceptedAt *time.Time
+	if accepted {
+		acceptedAt = &now
+	}
+	var id string
+	if err := pool.QueryRow(context.Background(),
+		"INSERT INTO invitations (group_id, email, token_hash, invited_by, created_at, expires_at, accepted_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+		group, email, hash, invitedBy, now.Add(created), now.Add(expires), acceptedAt).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func TestListInvitations(t *testing.T) {
+	const day = 24 * time.Hour
+	type listed struct{ email, inviter string } // inviter is empty when the answer has no invitedBy
+	tests := []struct {
+		name       string
+		rows       string // the invitation rows of the case: "mixed", "no inviter" or "none"
+		sub        string
+		wantStatus int
+		wantBody   string // empty when the answer is checked as a list
+		want       []listed
+	}{
+		{name: "lists the pending invitations, oldest first", rows: "mixed", sub: subOla, wantStatus: 200,
+			want: []listed{{"a@example.com", "Ola"}, {"b@example.com", "Adam"}}},
+		{name: "an invitation without an inviter has no invitedBy", rows: "no inviter", sub: subOla, wantStatus: 200,
+			want: []listed{{"c@example.com", ""}}},
+		{name: "a group without invitations gives an empty list", rows: "none", sub: subOla, wantStatus: 200, wantBody: `{"invitations":[]}`},
+		{name: "a member of another group is refused", rows: "mixed", sub: subEwa, wantStatus: 403, wantBody: notMember},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			pool, srv, rodzina, praca := groupFixture(t)
+			ola, adam := subOla, subAdam
+			ids := map[string]string{}
+			switch tt.rows {
+			case "mixed":
+				// The newer row goes in first, so the order of the answer comes from created_at.
+				ids["b@example.com"] = invitationRow(t, pool, rodzina, "b@example.com", "b", &adam, -1*day, 6*day, false)
+				ids["a@example.com"] = invitationRow(t, pool, rodzina, "a@example.com", "a", &ola, -2*day, 5*day, false)
+				invitationRow(t, pool, rodzina, "accepted@example.com", "c", &ola, -3*day, 4*day, true)
+				invitationRow(t, pool, rodzina, "expired@example.com", "d", &ola, -8*day, -time.Hour, false)
+				invitationRow(t, pool, praca, "praca@example.com", "e", nil, -time.Hour, 6*day, false)
+			case "no inviter":
+				ids["c@example.com"] = invitationRow(t, pool, rodzina, "c@example.com", "c", nil, -time.Hour, 6*day, false)
+			}
+
+			resp, err := srv.Handle(ctx, groupRequest("GET /v1/groups/{groupId}/invitations", tt.sub, "", map[string]string{"groupId": rodzina}))
+			if err != nil {
+				t.Fatalf("Handle returned error %v", err)
+			}
+			if resp.StatusCode != tt.wantStatus {
+				t.Errorf("status = %d, want %d (body %s)", resp.StatusCode, tt.wantStatus, resp.Body)
+			}
+			if tt.wantBody != "" {
+				if resp.Body != tt.wantBody {
+					t.Errorf("body = %s, want %s", resp.Body, tt.wantBody)
+				}
+				return
+			}
+			var list Invitations
+			if err := json.Unmarshal([]byte(resp.Body), &list); err != nil {
+				t.Fatalf("body %s: %v", resp.Body, err)
+			}
+			if len(list.Invitations) != len(tt.want) {
+				t.Fatalf("invitations = %+v, want %d of them", list.Invitations, len(tt.want))
+			}
+			withInviter := false
+			for i, want := range tt.want {
+				got := list.Invitations[i]
+				var created, expires time.Time
+				if err := pool.QueryRow(ctx, "SELECT created_at, expires_at FROM invitations WHERE id = $1", ids[want.email]).Scan(&created, &expires); err != nil {
+					t.Fatal(err)
+				}
+				if got.Id != ids[want.email] || got.Email != want.email || !got.CreatedAt.Equal(created) || !got.ExpiresAt.Equal(expires) {
+					t.Errorf("invitation %d = %+v, want the row %s %s %v %v", i, got, ids[want.email], want.email, created, expires)
+				}
+				switch {
+				case want.inviter == "" && got.InvitedBy != nil:
+					t.Errorf("invitation %d: invitedBy = %+v, want none", i, *got.InvitedBy)
+				case want.inviter != "" && (got.InvitedBy == nil || got.InvitedBy.DisplayName != want.inviter):
+					t.Errorf("invitation %d: invitedBy = %+v, want %q", i, got.InvitedBy, want.inviter)
+				}
+				withInviter = withInviter || want.inviter != ""
+			}
+			// The contract: the member is absent without an inviter.
+			if got := strings.Contains(resp.Body, `"invitedBy"`); got != withInviter {
+				t.Errorf("body %s: invitedBy present = %v, want %v", resp.Body, got, withInviter)
+			}
+		})
+	}
+}
+
+func TestCancelInvitation(t *testing.T) {
+	const day = 24 * time.Hour
+	const notFound = `{"message":"invitation not found"}`
+	tests := []struct {
+		name       string
+		sub        string
+		target     string // the invitation in the path: "pending", "praca", "accepted", or the text "nope"
+		wantStatus int
+		wantBody   string
+		wantRows   int // the invitation rows after the call; the case starts with 3
+	}{
+		{name: "a member cancels a pending invitation", sub: subOla, target: "pending", wantStatus: 204, wantRows: 2},
+		{name: "an invitation of another group is not found", sub: subOla, target: "praca", wantStatus: 404, wantBody: notFound, wantRows: 3},
+		{name: "an accepted invitation is not found", sub: subOla, target: "accepted", wantStatus: 404, wantBody: notFound, wantRows: 3},
+		{name: "an ID that is not a UUID is not found", sub: subOla, target: "nope", wantStatus: 404, wantBody: notFound, wantRows: 3},
+		{name: "a member of another group is refused", sub: subEwa, target: "pending", wantStatus: 403, wantBody: notMember, wantRows: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			pool, srv, rodzina, praca := groupFixture(t)
+			ola := subOla
+			ids := map[string]string{
+				"pending":  invitationRow(t, pool, rodzina, "a@example.com", "a", &ola, -time.Hour, 6*day, false),
+				"praca":    invitationRow(t, pool, praca, "b@example.com", "b", nil, -time.Hour, 6*day, false),
+				"accepted": invitationRow(t, pool, rodzina, "c@example.com", "c", &ola, -time.Hour, 6*day, true),
+				"nope":     "nope",
+			}
+
+			resp, err := srv.Handle(ctx, groupRequest("DELETE /v1/groups/{groupId}/invitations/{invitationId}", tt.sub, "",
+				map[string]string{"groupId": rodzina, "invitationId": ids[tt.target]}))
+			if err != nil {
+				t.Fatalf("Handle returned error %v", err)
+			}
+			if resp.StatusCode != tt.wantStatus {
+				t.Errorf("status = %d, want %d (body %s)", resp.StatusCode, tt.wantStatus, resp.Body)
+			}
+			if resp.Body != tt.wantBody {
+				t.Errorf("body = %q, want %q", resp.Body, tt.wantBody)
+			}
+			if got := countRows(t, pool, "invitations"); got != tt.wantRows {
+				t.Errorf("invitation rows = %d, want %d", got, tt.wantRows)
+			}
+			if tt.wantStatus == 204 {
+				var left int
+				if err := pool.QueryRow(ctx, "SELECT count(*) FROM invitations WHERE id = $1", ids[tt.target]).Scan(&left); err != nil {
+					t.Fatal(err)
+				}
+				if left != 0 {
+					t.Errorf("the cancelled invitation is still there")
+				}
 			}
 		})
 	}
