@@ -10,7 +10,7 @@ struct SlowoApp: App {
         let stage = Stage.current
         let session = Session(cognito: Cognito(url: stage.cognitoURL, clientID: stage.clientID), store: TokenStore())
         _session = State(initialValue: session)
-        api = Client(serverURL: stage.apiURL, transport: URLSessionTransport(), middlewares: [AuthMiddleware(session: session)])
+        api = Client(serverURL: stage.apiURL, configuration: .backend, transport: URLSessionTransport(), middlewares: [AuthMiddleware(session: session)])
     }
 
     var body: some Scene {

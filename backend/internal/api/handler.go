@@ -29,6 +29,12 @@ func (s *Server) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 	switch req.RouteKey {
 	case "GET /v1/me":
 		return s.getMe(ctx, req), nil
+	case "PATCH /v1/me":
+		return s.patchMe(ctx, req), nil
+	case "PUT /v1/me/ai-consent":
+		return s.putConsent(ctx, req), nil
+	case "DELETE /v1/me/ai-consent":
+		return s.deleteConsent(ctx, req), nil
 	default:
 		return jsonResponse(http.StatusNotFound, Error{Message: "not found"}), nil
 	}
@@ -48,10 +54,15 @@ func (s *Server) getMe(ctx context.Context, req events.APIGatewayV2HTTPRequest) 
 	}
 	me, err := s.me(ctx, sub)
 	if err != nil {
-		slog.ErrorContext(ctx, "GET /v1/me", "sub", sub, "error", err)
-		return jsonResponse(http.StatusInternalServerError, Error{Message: "internal error"})
+		return serverError(ctx, req, sub, err)
 	}
 	return jsonResponse(http.StatusOK, me)
+}
+
+// serverError logs the cause and answers 500 with a fixed message.
+func serverError(ctx context.Context, req events.APIGatewayV2HTTPRequest, sub string, err error) events.APIGatewayV2HTTPResponse {
+	slog.ErrorContext(ctx, req.RouteKey, "sub", sub, "error", err)
+	return jsonResponse(http.StatusInternalServerError, Error{Message: "internal error"})
 }
 
 // me reads the user, and makes the row on the first call.
@@ -79,8 +90,8 @@ func readUser(ctx context.Context, q interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }, sub string) (Me, bool, error) {
 	var me Me
-	err := q.QueryRow(ctx, "SELECT id, email, display_name, direction FROM users WHERE id = $1", sub).
-		Scan(&me.Id, &me.Email, &me.DisplayName, &me.Direction)
+	err := q.QueryRow(ctx, "SELECT id, email, display_name, direction, COALESCE(reminder, false), ai_consent_at FROM users WHERE id = $1", sub).
+		Scan(&me.Id, &me.Email, &me.DisplayName, &me.Direction, &me.Reminder, &me.AiConsentAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Me{}, false, nil
 	}
@@ -95,4 +106,8 @@ func jsonResponse(status int, v any) events.APIGatewayV2HTTPResponse {
 		Headers:    map[string]string{"Content-Type": "application/json"},
 		Body:       string(body),
 	}
+}
+
+func noContent() events.APIGatewayV2HTTPResponse {
+	return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusNoContent}
 }
