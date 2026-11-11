@@ -72,10 +72,25 @@ type Invitation struct {
 	InvitedBy *Member `json:"invitedBy,omitempty"`
 }
 
+// InvitationAccept defines model for InvitationAccept.
+type InvitationAccept struct {
+	// LeaveGroup True confirms that the signed-in user leaves their current group to join this one.
+	LeaveGroup *bool `json:"leaveGroup,omitempty"`
+}
+
 // InvitationCreate defines model for InvitationCreate.
 type InvitationCreate struct {
 	// Email One email address in ASCII characters. Spaces at the ends are removed, and capital letters become small letters.
 	Email string `json:"email"`
+}
+
+// InvitationPreview defines model for InvitationPreview.
+type InvitationPreview struct {
+	GroupId   string `json:"groupId"`
+	GroupName string `json:"groupName"`
+
+	// InvitedBy The display name of the member who sent the invitation. Absent when that name is empty or the account does not exist any more.
+	InvitedBy *string `json:"invitedBy,omitempty"`
 }
 
 // Invitations defines model for Invitations.
@@ -132,6 +147,9 @@ type GroupId = string
 // InvitationId defines model for InvitationId.
 type InvitationId = string
 
+// InvitationToken defines model for InvitationToken.
+type InvitationToken = string
+
 // UserId defines model for UserId.
 type UserId = string
 
@@ -167,6 +185,9 @@ type UpdateGroupJSONRequestBody = GroupUpdate
 
 // CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
 type CreateInvitationJSONRequestBody = InvitationCreate
+
+// AcceptInvitationJSONRequestBody defines body for AcceptInvitation for application/json ContentType.
+type AcceptInvitationJSONRequestBody = InvitationAccept
 
 // UpdateMeJSONRequestBody defines body for UpdateMe for application/json ContentType.
 type UpdateMeJSONRequestBody = MeUpdate

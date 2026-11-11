@@ -160,17 +160,11 @@ func (s *Server) removeMember(ctx context.Context, req events.APIGatewayV2HTTPRe
 	if fail != nil {
 		return *fail
 	}
-	groupID := req.PathParameters["groupId"]
 	err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, "UPDATE users SET group_id = NULL WHERE id = $1 AND group_id = $2", req.PathParameters["userId"], groupID)
-		if err != nil {
-			return err
-		}
-		if tag.RowsAffected() == 0 {
+		wasMember, err := leaveGroup(ctx, tx, req.PathParameters["userId"], req.PathParameters["groupId"])
+		if err == nil && !wasMember {
 			return errNotMember
 		}
-		// A group exists only while it has a member.
-		_, err = tx.Exec(ctx, "DELETE FROM groups g WHERE g.id = $1 AND NOT EXISTS (SELECT 1 FROM users u WHERE u.group_id = g.id)", groupID)
 		return err
 	})
 	if errors.Is(err, errNotMember) {
@@ -180,4 +174,20 @@ func (s *Server) removeMember(ctx context.Context, req events.APIGatewayV2HTTPRe
 		return serverError(ctx, req, sub, err)
 	}
 	return noContent()
+}
+
+// leaveGroup takes a user out of a group; wasMember reports that the user was a member. A change of the members
+// of a group starts with a write of the group row that changes no value. Two such changes of one group then
+// conflict, and db.Tx runs the second one again, so it sees the first.
+func leaveGroup(ctx context.Context, tx pgx.Tx, userID, groupID string) (wasMember bool, err error) {
+	if _, err := tx.Exec(ctx, "UPDATE groups SET name = name WHERE id = $1", groupID); err != nil {
+		return false, err
+	}
+	tag, err := tx.Exec(ctx, "UPDATE users SET group_id = NULL WHERE id = $1 AND group_id = $2", userID, groupID)
+	if err != nil || tag.RowsAffected() == 0 {
+		return false, err
+	}
+	// A group exists only while it has a member.
+	_, err = tx.Exec(ctx, "DELETE FROM groups g WHERE g.id = $1 AND NOT EXISTS (SELECT 1 FROM users u WHERE u.group_id = g.id)", groupID)
+	return true, err
 }

@@ -207,6 +207,26 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /v1/groups/{groupId}/invitations/{invitationId}
             Method: DELETE
+        PreviewInvitation:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/invitations/{token}
+            Method: GET
+            # The token of the invitation link is the proof, so the route has no authorizer.
+            Auth:
+              Authorizer: NONE
+            # The route works without sign-in and reads the database, so it has its own request limit.
+            # https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-function-httpapi.html
+            RouteSettings:
+              ThrottlingBurstLimit: 10
+              ThrottlingRateLimit: 5
+        AcceptInvitation:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/invitations/{token}/acceptance
+            Method: POST
 
 Outputs:
   UserPoolId:
