@@ -12,7 +12,10 @@ import (
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/db"
 )
 
-var errInGroup = errors.New("the user is in a group")
+var (
+	errInGroup   = errors.New("the user is in a group")
+	errNotMember = errors.New("the user is not a member of the group")
+)
 
 // member returns the ID of the signed-in user when the user is a member of the group in the path.
 // Otherwise fail holds the answer. A handler passes the path's group ID to SQL only after this check:
@@ -117,4 +120,52 @@ func (s *Server) patchGroup(ctx context.Context, req events.APIGatewayV2HTTPRequ
 		return serverError(ctx, req, sub, err)
 	}
 	return jsonResponse(http.StatusOK, group)
+}
+
+func (s *Server) listMembers(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	sub, fail := s.member(ctx, req)
+	if fail != nil {
+		return *fail
+	}
+	rows, err := s.DB.Query(ctx, "SELECT id, display_name FROM users WHERE group_id = $1 ORDER BY display_name, id", req.PathParameters["groupId"])
+	if err != nil {
+		return serverError(ctx, req, sub, err)
+	}
+	members, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Member, error) {
+		var m Member
+		err := row.Scan(&m.Id, &m.DisplayName)
+		return m, err
+	})
+	if err != nil {
+		return serverError(ctx, req, sub, err)
+	}
+	return jsonResponse(http.StatusOK, GroupMembers{Members: members})
+}
+
+// removeMember takes a user out of the group. A member who names their own ID leaves.
+func (s *Server) removeMember(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	sub, fail := s.member(ctx, req)
+	if fail != nil {
+		return *fail
+	}
+	groupID := req.PathParameters["groupId"]
+	err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, "UPDATE users SET group_id = NULL WHERE id = $1 AND group_id = $2", req.PathParameters["userId"], groupID)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return errNotMember
+		}
+		// A group exists only while it has a member.
+		_, err = tx.Exec(ctx, "DELETE FROM groups g WHERE g.id = $1 AND NOT EXISTS (SELECT 1 FROM users u WHERE u.group_id = g.id)", groupID)
+		return err
+	})
+	if errors.Is(err, errNotMember) {
+		return jsonResponse(http.StatusNotFound, Error{Message: "member not found"})
+	}
+	if err != nil {
+		return serverError(ctx, req, sub, err)
+	}
+	return noContent()
 }

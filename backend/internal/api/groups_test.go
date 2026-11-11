@@ -255,3 +255,137 @@ func TestGroup(t *testing.T) {
 		})
 	}
 }
+
+// groupNameOf returns the name of a user's group; it is empty without a group.
+func groupNameOf(t *testing.T, pool *pgxpool.Pool, sub string) string {
+	t.Helper()
+	var name string
+	err := pool.QueryRow(context.Background(), "SELECT g.name FROM users u JOIN groups g ON g.id = u.group_id WHERE u.id = $1", sub).Scan(&name)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatal(err)
+	}
+	return name
+}
+
+func TestGroupMembers(t *testing.T) {
+	tests := []struct {
+		name        string
+		sub         string
+		wantStatus  int
+		wantBody    string // empty when the answer is the member list
+		wantMembers []Member
+	}{
+		{name: "lists the members by display name", sub: subOla, wantStatus: 200, wantMembers: []Member{{Id: subAdam, DisplayName: "Adam"}, {Id: subOla, DisplayName: "Ola"}}},
+		{name: "a member of another group is refused", sub: subEwa, wantStatus: 403, wantBody: notMember},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			_, srv, rodzina, _ := groupFixture(t)
+
+			resp, err := srv.Handle(ctx, groupRequest("GET /v1/groups/{groupId}/members", tt.sub, "", map[string]string{"groupId": rodzina}))
+			if err != nil {
+				t.Fatalf("Handle returned error %v", err)
+			}
+			if resp.StatusCode != tt.wantStatus {
+				t.Errorf("status = %d, want %d (body %s)", resp.StatusCode, tt.wantStatus, resp.Body)
+			}
+			if tt.wantBody != "" {
+				if resp.Body != tt.wantBody {
+					t.Errorf("body = %s, want %s", resp.Body, tt.wantBody)
+				}
+				return
+			}
+			var list GroupMembers
+			if err := json.Unmarshal([]byte(resp.Body), &list); err != nil {
+				t.Fatalf("body %s: %v", resp.Body, err)
+			}
+			if !slices.Equal(list.Members, tt.wantMembers) {
+				t.Errorf("members = %+v, want %+v", list.Members, tt.wantMembers)
+			}
+		})
+	}
+}
+
+func TestRemoveMember(t *testing.T) {
+	const notFound = `{"message":"member not found"}`
+	tests := []struct {
+		name       string
+		sub        string // the caller
+		group      string // the name of the group in the path
+		userID     string // the user in the path
+		wantStatus int
+		wantBody   string
+		// The state after the call: the name of each user's group, empty for none, and the names of the groups that exist.
+		wantOla, wantAdam, wantEwa string
+		wantGroups                 []string
+	}{
+		{name: "a member removes another member", sub: subOla, group: "Rodzina", userID: subAdam, wantStatus: 204,
+			wantOla: "Rodzina", wantAdam: "", wantEwa: "Praca", wantGroups: []string{"Praca", "Rodzina"}},
+		{name: "a member leaves and the group stays", sub: subOla, group: "Rodzina", userID: subOla, wantStatus: 204,
+			wantOla: "", wantAdam: "Rodzina", wantEwa: "Praca", wantGroups: []string{"Praca", "Rodzina"}},
+		{name: "the last member leaves and the group is deleted", sub: subEwa, group: "Praca", userID: subEwa, wantStatus: 204,
+			wantOla: "Rodzina", wantAdam: "Rodzina", wantEwa: "", wantGroups: []string{"Rodzina"}},
+		{name: "a user of another group is not a member", sub: subOla, group: "Rodzina", userID: subEwa, wantStatus: 404, wantBody: notFound,
+			wantOla: "Rodzina", wantAdam: "Rodzina", wantEwa: "Praca", wantGroups: []string{"Praca", "Rodzina"}},
+		{name: "an unknown user is not a member", sub: subOla, group: "Rodzina", userID: subNone, wantStatus: 404, wantBody: notFound,
+			wantOla: "Rodzina", wantAdam: "Rodzina", wantEwa: "Praca", wantGroups: []string{"Praca", "Rodzina"}},
+		{name: "a member of another group cannot remove", sub: subEwa, group: "Rodzina", userID: subOla, wantStatus: 403, wantBody: notMember,
+			wantOla: "Rodzina", wantAdam: "Rodzina", wantEwa: "Praca", wantGroups: []string{"Praca", "Rodzina"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			pool, srv, rodzina, praca := groupFixture(t)
+			groupID := map[string]string{"Rodzina": rodzina, "Praca": praca}[tt.group]
+
+			resp, err := srv.Handle(ctx, groupRequest("DELETE /v1/groups/{groupId}/members/{userId}", tt.sub, "", map[string]string{"groupId": groupID, "userId": tt.userID}))
+			if err != nil {
+				t.Fatalf("Handle returned error %v", err)
+			}
+			if resp.StatusCode != tt.wantStatus {
+				t.Errorf("status = %d, want %d (body %s)", resp.StatusCode, tt.wantStatus, resp.Body)
+			}
+			if resp.Body != tt.wantBody {
+				t.Errorf("body = %q, want %q", resp.Body, tt.wantBody)
+			}
+			if got := groupNameOf(t, pool, subOla); got != tt.wantOla {
+				t.Errorf("group of Ola = %q, want %q", got, tt.wantOla)
+			}
+			if got := groupNameOf(t, pool, subAdam); got != tt.wantAdam {
+				t.Errorf("group of Adam = %q, want %q", got, tt.wantAdam)
+			}
+			if got := groupNameOf(t, pool, subEwa); got != tt.wantEwa {
+				t.Errorf("group of Ewa = %q, want %q", got, tt.wantEwa)
+			}
+			rows, err := pool.Query(ctx, "SELECT name FROM groups ORDER BY name")
+			if err != nil {
+				t.Fatal(err)
+			}
+			groups, err := pgx.CollectRows(rows, pgx.RowTo[string])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(groups, tt.wantGroups) {
+				t.Errorf("groups = %v, want %v", groups, tt.wantGroups)
+			}
+		})
+	}
+}
+
+func TestLeaveThenCreate(t *testing.T) {
+	ctx := context.Background()
+	pool, srv, _, praca := groupFixture(t)
+
+	resp, err := srv.Handle(ctx, groupRequest("DELETE /v1/groups/{groupId}/members/{userId}", subEwa, "", map[string]string{"groupId": praca, "userId": subEwa}))
+	if err != nil || resp.StatusCode != 204 {
+		t.Fatalf("leave: status = %d, error = %v (body %s)", resp.StatusCode, err, resp.Body)
+	}
+	resp, err = srv.Handle(ctx, apiRequest("POST /v1/groups", subEwa, `{"name":"Nowa"}`))
+	if err != nil || resp.StatusCode != 201 {
+		t.Fatalf("create: status = %d, error = %v (body %s)", resp.StatusCode, err, resp.Body)
+	}
+	if got := groupNameOf(t, pool, subEwa); got != "Nowa" {
+		t.Errorf("group of the user = %q, want Nowa", got)
+	}
+}
