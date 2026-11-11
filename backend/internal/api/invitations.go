@@ -22,6 +22,9 @@ import (
 // Mail is one plain-text email.
 type Mail struct {
 	To, Subject, Text string
+	// Invitation is the ID of the invitation that the email is for. It goes out as a message tag, so that a
+	// bounce or a complaint names the invitation.
+	Invitation string
 }
 
 // inviteLink is the start of the universal link of an invitation; the token follows it.
@@ -127,7 +130,9 @@ func (s *Server) createInvitation(ctx context.Context, req events.APIGatewayV2HT
 		return serverError(ctx, req, sub, err)
 	}
 	// The send is after the commit: db.Tx can run a transaction again, and the email goes out once.
-	if err := s.Send(ctx, invitationMail(email, inviter, group, token)); err != nil {
+	mail := invitationMail(email, inviter, group, token)
+	mail.Invitation = invitation.Id
+	if err := s.Send(ctx, mail); err != nil {
 		slog.ErrorContext(ctx, req.RouteKey, "sub", sub, "error", err)
 		err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, "DELETE FROM invitations WHERE id = $1", invitation.Id)
@@ -148,7 +153,7 @@ func (s *Server) listInvitations(ctx context.Context, req events.APIGatewayV2HTT
 	if fail != nil {
 		return *fail
 	}
-	rows, err := s.DB.Query(ctx, "SELECT i.id, i.email, i.created_at, i.expires_at, u.id, u.display_name FROM invitations i LEFT JOIN users u ON u.id = i.invited_by "+
+	rows, err := s.DB.Query(ctx, "SELECT i.id, i.email, i.created_at, i.expires_at, i.failure, u.id, u.display_name FROM invitations i LEFT JOIN users u ON u.id = i.invited_by "+
 		"WHERE i.group_id = $1 AND i.accepted_at IS NULL AND i.expires_at > now() ORDER BY i.created_at, i.id", req.PathParameters["groupId"])
 	if err != nil {
 		return serverError(ctx, req, sub, err)
@@ -156,7 +161,7 @@ func (s *Server) listInvitations(ctx context.Context, req events.APIGatewayV2HTT
 	invitations, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Invitation, error) {
 		var invitation Invitation
 		var inviterID, inviterName *string
-		if err := row.Scan(&invitation.Id, &invitation.Email, &invitation.CreatedAt, &invitation.ExpiresAt, &inviterID, &inviterName); err != nil {
+		if err := row.Scan(&invitation.Id, &invitation.Email, &invitation.CreatedAt, &invitation.ExpiresAt, &invitation.Failure, &inviterID, &inviterName); err != nil {
 			return invitation, err
 		}
 		if inviterID != nil {

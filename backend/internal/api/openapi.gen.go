@@ -25,6 +25,24 @@ func (e Direction) Valid() bool {
 	}
 }
 
+// Defines values for InvitationFailure.
+const (
+	Bounce    InvitationFailure = "bounce"
+	Complaint InvitationFailure = "complaint"
+)
+
+// Valid indicates whether the value is a known member of the InvitationFailure enum.
+func (e InvitationFailure) Valid() bool {
+	switch e {
+	case Bounce:
+		return true
+	case Complaint:
+		return true
+	default:
+		return false
+	}
+}
+
 // Direction The translation direction of the learner's study.
 type Direction string
 
@@ -66,11 +84,17 @@ type Invitation struct {
 
 	// ExpiresAt The invitation can be accepted until this time.
 	ExpiresAt time.Time `json:"expiresAt"`
-	Id        string    `json:"id"`
+
+	// Failure The email did not reach the address (bounce), or the receiver marked it as spam (complaint). Absent while no such notice came.
+	Failure *InvitationFailure `json:"failure,omitempty"`
+	Id      string             `json:"id"`
 
 	// InvitedBy The member who sent the invitation. Absent when that account does not exist any more.
 	InvitedBy *Member `json:"invitedBy,omitempty"`
 }
+
+// InvitationFailure The email did not reach the address (bounce), or the receiver marked it as spam (complaint). Absent while no such notice came.
+type InvitationFailure string
 
 // InvitationAccept defines model for InvitationAccept.
 type InvitationAccept struct {
