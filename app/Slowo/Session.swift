@@ -10,6 +10,8 @@ enum SessionError: Error {
 @Observable
 final class Session {
     private(set) var isSignedIn: Bool
+    /// The user typed the password in this run of the app; a launch with stored tokens leaves it false.
+    private(set) var signedInThisRun = false
 
     private let cognito: Cognito
     private let store: TokenStore
@@ -34,6 +36,7 @@ final class Session {
         try store.save(tokens)
         self.tokens = tokens
         isSignedIn = true
+        signedInThisRun = true
     }
 
     func sendResetCode(email: String) async throws {

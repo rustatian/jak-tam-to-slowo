@@ -107,10 +107,12 @@ func session(_ c: SessionCase) async throws {
     let fake = FakeCognito(answer: #"{"AuthenticationResult":{"AccessToken":"a1","ExpiresIn":3600,"IdToken":"i1","RefreshToken":"r1","TokenType":"Bearer"}}"#)
     let session = Session(cognito: fake.cognito(now: { start }), store: store, now: { start })
     #expect(!session.isSignedIn)
+    #expect(!session.signedInThisRun)
 
     try await session.signIn(email: "ola@example.com", password: "Haslo-1a")
 
     #expect(session.isSignedIn)
+    #expect(session.signedInThisRun)
     #expect(try store.load() == Tokens(accessToken: "a1", refreshToken: "r1", expiresAt: start.addingTimeInterval(3600)))
 }
 
