@@ -53,6 +53,11 @@ let sessionCases: [SessionCase] = [
         outcome: .cognito(.service("RefreshTokenReuseException")), refreshCalls: 1, signedIn: false, stored: nil
     ),
     SessionCase(
+        name: "deleted user signs out",
+        expiresIn: 4 * 60, fake: FakeCognito(status: 400, answer: #"{"__type":"UserNotFoundException"}"#), callers: 1,
+        outcome: .cognito(.service("UserNotFoundException")), refreshCalls: 1, signedIn: false, stored: nil
+    ),
+    SessionCase(
         name: "network failure keeps the session",
         expiresIn: 4 * 60, fake: FakeCognito(failure: URLError(.notConnectedToInternet)), callers: 1,
         outcome: .offline, refreshCalls: 1, signedIn: true,

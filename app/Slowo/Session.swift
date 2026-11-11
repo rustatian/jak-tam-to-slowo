@@ -17,8 +17,8 @@ final class Session {
     private var tokens: Tokens?
     private var refreshing: Task<Tokens, Error>?
 
-    /// Cognito answers these when the refresh token is expired, revoked, or rotated out.
-    private static let signOutErrors: Set = ["NotAuthorizedException", "RefreshTokenReuseException"]
+    /// Cognito answers these when the refresh token is expired, revoked, or rotated out, or the user is deleted.
+    private static let signOutErrors: Set = ["NotAuthorizedException", "RefreshTokenReuseException", "UserNotFoundException"]
 
     init(cognito: Cognito, store: TokenStore, now: @escaping () -> Date = Date.init) {
         self.cognito = cognito

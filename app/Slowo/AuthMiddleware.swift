@@ -16,7 +16,7 @@ struct AuthMiddleware: ClientMiddleware {
         var request = request
         request.headerFields[.authorization] = "Bearer " + (try await session.validAccessToken())
         let (response, responseBody) = try await next(request, body, baseURL)
-        // The session refreshes the token before it expires, so a 401 means that it was revoked or the user is gone.
+        // The session refreshes the token before it expires, so a 401 means that API Gateway no longer accepts this token.
         if response.status == .unauthorized {
             await session.signOut()
         }
