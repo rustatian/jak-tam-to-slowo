@@ -3,3 +3,8 @@ generate:
   - client
 namingStrategy: idiomatic
 accessModifier: internal
+# The app generates only the paths that it calls; add a path here when the app starts to use it.
+filter:
+  paths:
+    - /v1/me
+    - /v1/me/ai-consent

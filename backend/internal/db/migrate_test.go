@@ -95,6 +95,10 @@ func TestMigrateRealFiles(t *testing.T) {
 	if direction != "ru-pl" || displayName != "" {
 		t.Errorf("defaults = %q, %q; want ru-pl and an empty display name", direction, displayName)
 	}
+	_, err = pool.Exec(ctx, "INSERT INTO users (id, email, group_id) VALUES ('u3', 'c@example.com', gen_random_uuid())")
+	if !errors.As(err, &pgErr) || pgErr.Code != "23503" {
+		t.Errorf("a group that does not exist: error = %v, want a foreign key violation (23503)", err)
+	}
 }
 
 func TestSetupAppRoleRejectsBadARN(t *testing.T) {

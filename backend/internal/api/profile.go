@@ -13,6 +13,13 @@ import (
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/db"
 )
 
+// trimmedName removes the spaces at the ends of a name. ok reports that the result has 1 to 40 characters.
+func trimmedName(s string) (name string, ok bool) {
+	name = strings.TrimSpace(s)
+	n := utf8.RuneCountInString(name)
+	return name, n >= 1 && n <= 40
+}
+
 // patchMe changes the profile fields that the body names. A field that the body leaves out keeps its value.
 func (s *Server) patchMe(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
 	sub := subject(req)
@@ -24,8 +31,8 @@ func (s *Server) patchMe(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		return jsonResponse(http.StatusBadRequest, Error{Message: "invalid JSON body"})
 	}
 	if update.DisplayName != nil {
-		name := strings.TrimSpace(*update.DisplayName)
-		if n := utf8.RuneCountInString(name); n < 1 || n > 40 {
+		name, ok := trimmedName(*update.DisplayName)
+		if !ok {
 			return jsonResponse(http.StatusBadRequest, Error{Message: "displayName must have 1 to 40 characters"})
 		}
 		update.DisplayName = &name

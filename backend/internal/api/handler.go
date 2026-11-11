@@ -35,6 +35,16 @@ func (s *Server) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 		return s.putConsent(ctx, req), nil
 	case "DELETE /v1/me/ai-consent":
 		return s.deleteConsent(ctx, req), nil
+	case "POST /v1/groups":
+		return s.createGroup(ctx, req), nil
+	case "GET /v1/groups/{groupId}":
+		return s.getGroup(ctx, req), nil
+	case "PATCH /v1/groups/{groupId}":
+		return s.patchGroup(ctx, req), nil
+	case "GET /v1/groups/{groupId}/members":
+		return s.listMembers(ctx, req), nil
+	case "DELETE /v1/groups/{groupId}/members/{userId}":
+		return s.removeMember(ctx, req), nil
 	default:
 		return jsonResponse(http.StatusNotFound, Error{Message: "not found"}), nil
 	}
@@ -90,8 +100,8 @@ func readUser(ctx context.Context, q interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }, sub string) (Me, bool, error) {
 	var me Me
-	err := q.QueryRow(ctx, "SELECT id, email, display_name, direction, COALESCE(reminder, false), ai_consent_at FROM users WHERE id = $1", sub).
-		Scan(&me.Id, &me.Email, &me.DisplayName, &me.Direction, &me.Reminder, &me.AiConsentAt)
+	err := q.QueryRow(ctx, "SELECT id, email, display_name, direction, COALESCE(reminder, false), ai_consent_at, group_id FROM users WHERE id = $1", sub).
+		Scan(&me.Id, &me.Email, &me.DisplayName, &me.Direction, &me.Reminder, &me.AiConsentAt, &me.GroupId)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Me{}, false, nil
 	}

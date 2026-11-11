@@ -27,6 +27,11 @@ func TestHandle(t *testing.T) {
 		{name: "patch me without an authorizer", routeKey: "PATCH /v1/me", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
 		{name: "give consent without an authorizer", routeKey: "PUT /v1/me/ai-consent", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
 		{name: "withdraw consent without an authorizer", routeKey: "DELETE /v1/me/ai-consent", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
+		{name: "create a group without an authorizer", routeKey: "POST /v1/groups", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
+		{name: "read a group without an authorizer", routeKey: "GET /v1/groups/{groupId}", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
+		{name: "rename a group without an authorizer", routeKey: "PATCH /v1/groups/{groupId}", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
+		{name: "list members without an authorizer", routeKey: "GET /v1/groups/{groupId}/members", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
+		{name: "remove a member without an authorizer", routeKey: "DELETE /v1/groups/{groupId}/members/{userId}", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
 		{name: "unknown route", routeKey: "GET /nope", authorizer: jwt(map[string]string{"sub": sub}), wantStatus: 404, wantBody: `{"message":"not found"}`},
 	}
 	for _, tt := range tests {

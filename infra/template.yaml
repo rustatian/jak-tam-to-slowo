@@ -153,6 +153,36 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /v1/me/ai-consent
             Method: DELETE
+        CreateGroup:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/groups
+            Method: POST
+        GetGroup:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/groups/{groupId}
+            Method: GET
+        PatchGroup:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/groups/{groupId}
+            Method: PATCH
+        ListGroupMembers:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/groups/{groupId}/members
+            Method: GET
+        RemoveGroupMember:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/groups/{groupId}/members/{userId}
+            Method: DELETE
 
 Outputs:
   UserPoolId:

@@ -28,11 +28,14 @@ func meRequest(sub string) events.APIGatewayV2HTTPRequest {
 	}
 }
 
-// equalMe compares the consent times by instant, because the database answers in its own time zone.
+// equalMe compares the consent times by instant, because the database answers in its own time zone,
+// and the group IDs by value.
 func equalMe(a, b Me) bool {
 	ta, tb := a.AiConsentAt, b.AiConsentAt
-	a.AiConsentAt, b.AiConsentAt = nil, nil
-	return a == b && (ta == nil) == (tb == nil) && (ta == nil || ta.Equal(*tb))
+	ga, gb := a.GroupId, b.GroupId
+	a.AiConsentAt, b.AiConsentAt, a.GroupId, b.GroupId = nil, nil, nil, nil
+	return a == b && (ta == nil) == (tb == nil) && (ta == nil || ta.Equal(*tb)) &&
+		(ga == nil) == (gb == nil) && (ga == nil || *ga == *gb)
 }
 
 func TestGetMe(t *testing.T) {
@@ -43,6 +46,7 @@ func TestGetMe(t *testing.T) {
 	tests := []struct {
 		name        string
 		row         *Me
+		inGroup     bool
 		emailErr    error
 		calls       int
 		wantStatus  int
@@ -53,6 +57,7 @@ func TestGetMe(t *testing.T) {
 	}{
 		{name: "first call creates the row with the Cognito email", calls: 1, wantStatus: 200, wantMe: created, wantLookups: 1, wantRows: 1},
 		{name: "second call reads the row without Cognito", row: &existing, calls: 1, wantStatus: 200, wantMe: existing, wantLookups: 0, wantRows: 1},
+		{name: "a member has the group ID", row: &existing, inGroup: true, calls: 1, wantStatus: 200, wantMe: existing, wantLookups: 0, wantRows: 1},
 		{name: "email lookup fails", emailErr: errors.New("cognito down"), calls: 1, wantStatus: 500, wantBody: `{"message":"internal error"}`, wantLookups: 1, wantRows: 0},
 		{name: "two first calls make one row", calls: 2, wantStatus: 200, wantMe: created, wantLookups: 2, wantRows: 1},
 	}
@@ -63,9 +68,17 @@ func TestGetMe(t *testing.T) {
 			if _, err := db.Migrate(ctx, pool, migrations.FS); err != nil {
 				t.Fatal(err)
 			}
+			want := tt.wantMe
 			if tt.row != nil {
-				if _, err := pool.Exec(ctx, "INSERT INTO users (id, email, display_name, direction, reminder, ai_consent_at) VALUES ($1, $2, $3, $4, $5, $6)",
-					tt.row.Id, tt.row.Email, tt.row.DisplayName, string(tt.row.Direction), tt.row.Reminder, tt.row.AiConsentAt); err != nil {
+				var groupID *string
+				if tt.inGroup {
+					if err := pool.QueryRow(ctx, "INSERT INTO groups (name) VALUES ('Rodzina') RETURNING id").Scan(&groupID); err != nil {
+						t.Fatal(err)
+					}
+					want.GroupId = groupID
+				}
+				if _, err := pool.Exec(ctx, "INSERT INTO users (id, email, display_name, direction, reminder, ai_consent_at, group_id) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+					tt.row.Id, tt.row.Email, tt.row.DisplayName, string(tt.row.Direction), tt.row.Reminder, tt.row.AiConsentAt, groupID); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -112,12 +125,16 @@ func TestGetMe(t *testing.T) {
 				if err := json.Unmarshal([]byte(r.resp.Body), &me); err != nil {
 					t.Fatalf("body %s: %v", r.resp.Body, err)
 				}
-				if !equalMe(me, tt.wantMe) {
-					t.Errorf("me = %+v, want %+v", me, tt.wantMe)
+				if !equalMe(me, want) {
+					t.Errorf("me = %+v, want %+v", me, want)
 				}
 				// The contract: the member is absent without consent.
-				if got := strings.Contains(r.resp.Body, `"aiConsentAt"`); got != (tt.wantMe.AiConsentAt != nil) {
-					t.Errorf("body %s: aiConsentAt present = %v, want %v", r.resp.Body, got, tt.wantMe.AiConsentAt != nil)
+				if got := strings.Contains(r.resp.Body, `"aiConsentAt"`); got != (want.AiConsentAt != nil) {
+					t.Errorf("body %s: aiConsentAt present = %v, want %v", r.resp.Body, got, want.AiConsentAt != nil)
+				}
+				// The contract: the member is absent without a group.
+				if got := strings.Contains(r.resp.Body, `"groupId"`); got != (want.GroupId != nil) {
+					t.Errorf("body %s: groupId present = %v, want %v", r.resp.Body, got, want.GroupId != nil)
 				}
 			}
 			if got := lookups.Load(); got != tt.wantLookups {
