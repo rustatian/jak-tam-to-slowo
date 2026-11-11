@@ -46,6 +46,7 @@ func TestPatchMe(t *testing.T) {
 		{name: "a blank display name is rejected", body: `{"displayName":"   "}`, wantStatus: 400, wantBody: nameRule, wantMe: start},
 		{name: "a display name with a line break is rejected", body: `{"displayName":"Ola\nKliknij tu"}`, wantStatus: 400, wantBody: nameRule, wantMe: start},
 		{name: "a display name with a line separator is rejected", body: `{"displayName":"Ola\u2028Kliknij tu"}`, wantStatus: 400, wantBody: nameRule, wantMe: start},
+		{name: "a display name with a paragraph separator is rejected", body: `{"displayName":"Ola\u2029Kliknij tu"}`, wantStatus: 400, wantBody: nameRule, wantMe: start},
 		{name: "a display name with a right-to-left override is rejected", body: `{"displayName":"Ola\u202eKliknij tu"}`, wantStatus: 400, wantBody: nameRule, wantMe: start},
 		{name: "a display name with a joined emoji passes", body: `{"displayName":"Ola \ud83d\udc69\u200d\ud83d\udcbb"}`, wantStatus: 200, wantMe: with(func(m *Me) { m.DisplayName = "Ola \U0001F469\u200D\U0001F4BB" })},
 		{name: "an unknown direction is rejected", body: `{"direction":"pl-de"}`, wantStatus: 400, wantBody: `{"message":"direction must be ru-pl or pl-ru"}`, wantMe: start},

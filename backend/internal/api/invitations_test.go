@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,16 +16,31 @@ const emailRule = `{"message":"email is not valid"}`
 
 // sentMail records the emails of a test. When fail is set, every send returns it.
 type sentMail struct {
-	mails []Mail
-	fail  error
+	pool *pgxpool.Pool
+	// rowsAtSend has, for each send, the rows with the token of the email as another connection sees them.
+	rowsAtSend []int
+	mails      []Mail
+	fail       error
 }
 
-func (s *sentMail) send(_ context.Context, m Mail) error {
+func (s *sentMail) send(ctx context.Context, m Mail) error {
+	var rows int
+	if err := s.pool.QueryRow(ctx, "SELECT count(*) FROM invitations WHERE token_hash = $1", tokenHash(mailToken(m))).Scan(&rows); err != nil {
+		return err
+	}
+	s.rowsAtSend = append(s.rowsAtSend, rows)
 	if s.fail != nil {
 		return s.fail
 	}
 	s.mails = append(s.mails, m)
 	return nil
+}
+
+// mailToken returns the invitation token in the link of an email.
+func mailToken(m Mail) string {
+	_, afterLink, _ := strings.Cut(m.Text, inviteLink)
+	token, _, _ := strings.Cut(afterLink, "\n")
+	return token
 }
 
 func TestValidEmail(t *testing.T) {
@@ -150,7 +166,7 @@ func TestCreateInvitation(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			sent := &sentMail{fail: tt.sendErr}
+			sent := &sentMail{pool: pool, fail: tt.sendErr}
 			srv.Send = sent.send
 
 			resp, err := srv.Handle(ctx, groupRequest("POST /v1/groups/{groupId}/invitations", tt.sub, tt.body, map[string]string{"groupId": rodzina}))
@@ -174,6 +190,10 @@ func TestCreateInvitation(t *testing.T) {
 			if count != tt.wantCount {
 				t.Errorf("invitations of the caller today = %d, want %d", count, tt.wantCount)
 			}
+			// Another connection sees the invitation only after the commit.
+			if slices.ContainsFunc(sent.rowsAtSend, func(rows int) bool { return rows != 1 }) {
+				t.Errorf("rows of the token at each send = %v, want 1: the send is after the commit", sent.rowsAtSend)
+			}
 			if tt.wantBody != "" {
 				if resp.Body != tt.wantBody {
 					t.Errorf("body = %s, want %s", resp.Body, tt.wantBody)
@@ -189,10 +209,14 @@ func TestCreateInvitation(t *testing.T) {
 				t.Fatalf("body %s: %v", resp.Body, err)
 			}
 			var id, hash string
+			var invitedBy *string
 			var created, expires time.Time
-			if err := pool.QueryRow(ctx, "SELECT id, token_hash, created_at, expires_at FROM invitations WHERE group_id = $1 AND email = 'nowy@example.com' AND accepted_at IS NULL", rodzina).
-				Scan(&id, &hash, &created, &expires); err != nil {
+			if err := pool.QueryRow(ctx, "SELECT id, token_hash, invited_by, created_at, expires_at FROM invitations WHERE group_id = $1 AND email = 'nowy@example.com' AND accepted_at IS NULL", rodzina).
+				Scan(&id, &hash, &invitedBy, &created, &expires); err != nil {
 				t.Fatalf("the row of the invitation: %v", err)
+			}
+			if invitedBy == nil || *invitedBy != tt.sub {
+				t.Errorf("invited_by = %v, want %s", invitedBy, tt.sub)
 			}
 			if inv.Id != id || inv.Email != "nowy@example.com" || !inv.CreatedAt.Equal(created) || !inv.ExpiresAt.Equal(expires) {
 				t.Errorf("invitation = %+v, want the row %s nowy@example.com %v %v", inv, id, created, expires)
@@ -206,8 +230,7 @@ func TestCreateInvitation(t *testing.T) {
 			if len(sent.mails) != 1 {
 				t.Fatalf("emails = %d, want 1", len(sent.mails))
 			}
-			_, afterLink, _ := strings.Cut(sent.mails[0].Text, inviteLink)
-			token, _, _ := strings.Cut(afterLink, "\n")
+			token := mailToken(sent.mails[0])
 			if len(token) < 26 || strings.Trim(token, "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567") != "" {
 				t.Errorf("token = %q, want at least 26 base32 characters", token)
 			}
