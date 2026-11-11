@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		5A1000000000000000000014 /* OpenAPIRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 5A1000000000000000000012 /* OpenAPIRuntime */; };
+		5A1000000000000000000018 /* OpenAPIURLSession in Frameworks */ = {isa = PBXBuildFile; productRef = 5A1000000000000000000017 /* OpenAPIURLSession */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -44,6 +45,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5A1000000000000000000014 /* OpenAPIRuntime in Frameworks */,
+				5A1000000000000000000018 /* OpenAPIURLSession in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -97,6 +99,7 @@
 			name = Slowo;
 			packageProductDependencies = (
 				5A1000000000000000000012 /* OpenAPIRuntime */,
+				5A1000000000000000000017 /* OpenAPIURLSession */,
 			);
 			productName = Slowo;
 			productReference = 5A1000000000000000000004 /* Slowo.app */;
@@ -156,6 +159,7 @@
 			packageReferences = (
 				5A1000000000000000000010 /* XCRemoteSwiftPackageReference "swift-openapi-generator" */,
 				5A1000000000000000000011 /* XCRemoteSwiftPackageReference "swift-openapi-runtime" */,
+				5A1000000000000000000016 /* XCRemoteSwiftPackageReference "swift-openapi-urlsession" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 5A1000000000000000000003 /* Products */;
@@ -483,6 +487,14 @@
 				minimumVersion = 1.13.4;
 			};
 		};
+		5A1000000000000000000016 /* XCRemoteSwiftPackageReference "swift-openapi-urlsession" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-openapi-urlsession.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.4.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -495,6 +507,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 5A1000000000000000000010 /* XCRemoteSwiftPackageReference "swift-openapi-generator" */;
 			productName = "plugin:OpenAPIGenerator";
+		};
+		5A1000000000000000000017 /* OpenAPIURLSession */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5A1000000000000000000016 /* XCRemoteSwiftPackageReference "swift-openapi-urlsession" */;
+			productName = OpenAPIURLSession;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
