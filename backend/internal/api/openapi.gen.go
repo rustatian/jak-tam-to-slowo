@@ -57,6 +57,32 @@ type GroupUpdate struct {
 	Name *string `json:"name,omitempty"`
 }
 
+// Invitation defines model for Invitation.
+type Invitation struct {
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Email The address that the invitation went to, in lower case.
+	Email string `json:"email"`
+
+	// ExpiresAt The invitation can be accepted until this time.
+	ExpiresAt time.Time `json:"expiresAt"`
+	Id        string    `json:"id"`
+
+	// InvitedBy The member who sent the invitation. Absent when that account does not exist any more.
+	InvitedBy *Member `json:"invitedBy,omitempty"`
+}
+
+// InvitationCreate defines model for InvitationCreate.
+type InvitationCreate struct {
+	// Email One email address in ASCII characters. Spaces at the ends are removed, and capital letters become small letters.
+	Email string `json:"email"`
+}
+
+// Invitations defines model for Invitations.
+type Invitations struct {
+	Invitations []Invitation `json:"invitations"`
+}
+
 // Me defines model for Me.
 type Me struct {
 	// AiConsentAt When the user gave the AI consent. Absent without consent.
@@ -103,8 +129,14 @@ type Member struct {
 // GroupId defines model for GroupId.
 type GroupId = string
 
+// InvitationId defines model for InvitationId.
+type InvitationId = string
+
 // UserId defines model for UserId.
 type UserId = string
+
+// BadGateway defines model for BadGateway.
+type BadGateway = Error
 
 // BadRequest defines model for BadRequest.
 type BadRequest = Error
@@ -129,6 +161,9 @@ type CreateGroupJSONRequestBody = GroupCreate
 
 // UpdateGroupJSONRequestBody defines body for UpdateGroup for application/json ContentType.
 type UpdateGroupJSONRequestBody = GroupUpdate
+
+// CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
+type CreateInvitationJSONRequestBody = InvitationCreate
 
 // UpdateMeJSONRequestBody defines body for UpdateMe for application/json ContentType.
 type UpdateMeJSONRequestBody = MeUpdate

@@ -99,6 +99,29 @@ func TestMigrateRealFiles(t *testing.T) {
 	if !errors.As(err, &pgErr) || pgErr.Code != "23503" {
 		t.Errorf("a group that does not exist: error = %v, want a foreign key violation (23503)", err)
 	}
+
+	var groupID string
+	if err := pool.QueryRow(ctx, "INSERT INTO groups (name) VALUES ('g') RETURNING id").Scan(&groupID); err != nil {
+		t.Fatal(err)
+	}
+	const invite = "INSERT INTO invitations (group_id, email, token_hash, expires_at) VALUES ($1, 'a@example.com', 'h', now() + interval '7 days')"
+	if _, err := pool.Exec(ctx, invite, groupID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.Exec(ctx, invite, groupID)
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		t.Errorf("a second invitation with the same token hash: error = %v, want a unique violation (23505)", err)
+	}
+	if _, err := pool.Exec(ctx, "DELETE FROM groups WHERE id = $1", groupID); err != nil {
+		t.Fatal(err)
+	}
+	var invitations int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM invitations").Scan(&invitations); err != nil {
+		t.Fatal(err)
+	}
+	if invitations != 0 {
+		t.Errorf("invitations after the deletion of their group = %d, want 0", invitations)
+	}
 }
 
 func TestSetupAppRoleRejectsBadARN(t *testing.T) {

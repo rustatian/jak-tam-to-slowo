@@ -171,6 +171,69 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /v1/groups/{groupId}/invitations:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+    post:
+      operationId: createInvitation
+      summary: Invite a person to the group by email. A pending invitation of the same address is replaced.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationCreate"
+      responses:
+        "201":
+          description: The new invitation. Its token is only in the email.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invitation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+    get:
+      operationId: listInvitations
+      summary: The pending invitations of the group.
+      responses:
+        "200":
+          description: The pending invitations, oldest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invitations"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/groups/{groupId}/invitations/{invitationId}:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+      - $ref: "#/components/parameters/InvitationId"
+    delete:
+      operationId: cancelInvitation
+      summary: Cancel a pending invitation.
+      responses:
+        "204":
+          description: The invitation does not exist any more.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     cognito:
@@ -189,6 +252,12 @@ components:
       in: path
       required: true
       description: The ID of a user (the id of Me and of Member).
+      schema:
+        type: string
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
       schema:
         type: string
   responses:
@@ -224,6 +293,12 @@ components:
             $ref: "#/components/schemas/Error"
     InternalError:
       description: The server could not complete the request.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BadGateway:
+      description: The email service did not accept the message.
       content:
         application/json:
           schema:
@@ -316,6 +391,41 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Member"
+    Invitation:
+      type: object
+      required: [id, email, createdAt, expiresAt]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          description: The address that the invitation went to, in lower case.
+        invitedBy:
+          $ref: "#/components/schemas/Member"
+          description: The member who sent the invitation. Absent when that account does not exist any more.
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          description: The invitation can be accepted until this time.
+    InvitationCreate:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          maxLength: 254
+          description: One email address in ASCII characters. Spaces at the ends are removed, and capital letters become small letters.
+    Invitations:
+      type: object
+      required: [invitations]
+      properties:
+        invitations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Invitation"
     Error:
       type: object
       required: [message]
