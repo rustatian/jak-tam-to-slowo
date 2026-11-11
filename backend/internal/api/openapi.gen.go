@@ -33,6 +33,30 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// Group defines model for Group.
+type Group struct {
+	CreatedAt time.Time `json:"createdAt"`
+	Id        string    `json:"id"`
+	Name      string    `json:"name"`
+}
+
+// GroupCreate defines model for GroupCreate.
+type GroupCreate struct {
+	// Name The group name. Spaces at the ends are removed; then it has 1 to 40 characters.
+	Name string `json:"name"`
+}
+
+// GroupMembers defines model for GroupMembers.
+type GroupMembers struct {
+	Members []Member `json:"members"`
+}
+
+// GroupUpdate defines model for GroupUpdate.
+type GroupUpdate struct {
+	// Name The new group name. Spaces at the ends are removed; then it has 1 to 40 characters.
+	Name *string `json:"name,omitempty"`
+}
+
 // Me defines model for Me.
 type Me struct {
 	// AiConsentAt When the user gave the AI consent. Absent without consent.
@@ -46,6 +70,9 @@ type Me struct {
 
 	// Email The email of the Cognito user.
 	Email string `json:"email"`
+
+	// GroupId The group of the user. Absent without a group.
+	GroupId *string `json:"groupId,omitempty"`
 
 	// Id The Cognito user ID (the sub claim of the access token).
 	Id string `json:"id"`
@@ -64,14 +91,44 @@ type MeUpdate struct {
 	Reminder    *bool   `json:"reminder,omitempty"`
 }
 
+// Member defines model for Member.
+type Member struct {
+	// DisplayName The name that the group sees. Empty until the member sets it.
+	DisplayName string `json:"displayName"`
+
+	// Id The ID of the user.
+	Id string `json:"id"`
+}
+
+// GroupId defines model for GroupId.
+type GroupId = string
+
+// UserId defines model for UserId.
+type UserId = string
+
 // BadRequest defines model for BadRequest.
 type BadRequest = Error
+
+// Conflict defines model for Conflict.
+type Conflict = Error
+
+// Forbidden defines model for Forbidden.
+type Forbidden = Error
 
 // InternalError defines model for InternalError.
 type InternalError = Error
 
+// NotFound defines model for NotFound.
+type NotFound = Error
+
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
+
+// CreateGroupJSONRequestBody defines body for CreateGroup for application/json ContentType.
+type CreateGroupJSONRequestBody = GroupCreate
+
+// UpdateGroupJSONRequestBody defines body for UpdateGroup for application/json ContentType.
+type UpdateGroupJSONRequestBody = GroupUpdate
 
 // UpdateMeJSONRequestBody defines body for UpdateMe for application/json ContentType.
 type UpdateMeJSONRequestBody = MeUpdate
