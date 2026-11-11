@@ -36,6 +36,16 @@ final class Session {
         isSignedIn = true
     }
 
+    func sendResetCode(email: String) async throws {
+        try await cognito.forgotPassword(email: email)
+    }
+
+    /// Sets the new password with the code from the email, then signs in with it.
+    func resetPassword(email: String, code: String, newPassword: String) async throws {
+        try await cognito.confirmForgotPassword(email: email, code: code, newPassword: newPassword)
+        try await signIn(email: email, password: newPassword)
+    }
+
     /// Returns an access token with more than 5 minutes left. Callers that come during a refresh wait for it.
     func validAccessToken() async throws -> String {
         guard let tokens else {
