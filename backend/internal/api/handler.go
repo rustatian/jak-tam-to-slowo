@@ -29,6 +29,8 @@ func (s *Server) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 	switch req.RouteKey {
 	case "GET /v1/me":
 		return s.getMe(ctx, req), nil
+	case "PATCH /v1/me":
+		return s.patchMe(ctx, req), nil
 	default:
 		return jsonResponse(http.StatusNotFound, Error{Message: "not found"}), nil
 	}
@@ -48,10 +50,15 @@ func (s *Server) getMe(ctx context.Context, req events.APIGatewayV2HTTPRequest) 
 	}
 	me, err := s.me(ctx, sub)
 	if err != nil {
-		slog.ErrorContext(ctx, "GET /v1/me", "sub", sub, "error", err)
-		return jsonResponse(http.StatusInternalServerError, Error{Message: "internal error"})
+		return serverError(ctx, req, sub, err)
 	}
 	return jsonResponse(http.StatusOK, me)
+}
+
+// serverError logs the cause and answers 500 with a fixed message.
+func serverError(ctx context.Context, req events.APIGatewayV2HTTPRequest, sub string, err error) events.APIGatewayV2HTTPResponse {
+	slog.ErrorContext(ctx, req.RouteKey, "sub", sub, "error", err)
+	return jsonResponse(http.StatusInternalServerError, Error{Message: "internal error"})
 }
 
 // me reads the user, and makes the row on the first call.
