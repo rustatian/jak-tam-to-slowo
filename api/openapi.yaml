@@ -348,7 +348,7 @@ components:
           type: string
           minLength: 1
           maxLength: 40
-          description: The new display name. Spaces at the ends are removed; then it has 1 to 40 characters and no control character.
+          description: The new display name. Spaces at the ends are removed; then it has 1 to 40 characters, and no control, line-break or text-direction character.
         direction:
           $ref: "#/components/schemas/Direction"
         reminder:
@@ -372,7 +372,7 @@ components:
           type: string
           minLength: 1
           maxLength: 40
-          description: The group name. Spaces at the ends are removed; then it has 1 to 40 characters and no control character.
+          description: The group name. Spaces at the ends are removed; then it has 1 to 40 characters, and no control, line-break or text-direction character.
     GroupUpdate:
       type: object
       properties:
@@ -380,7 +380,7 @@ components:
           type: string
           minLength: 1
           maxLength: 40
-          description: The new group name. Spaces at the ends are removed; then it has 1 to 40 characters and no control character.
+          description: The new group name. Spaces at the ends are removed; then it has 1 to 40 characters, and no control, line-break or text-direction character.
     Member:
       type: object
       required: [id, displayName]

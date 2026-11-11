@@ -15,11 +15,14 @@ import (
 )
 
 // trimmedName removes the spaces at the ends of a name. ok reports that the result has 1 to 40 characters and
-// no control character: a name goes into the invitation email as plain text.
+// no character that breaks a line or changes the direction of text: a name goes into the invitation email as
+// plain text.
 func trimmedName(s string) (name string, ok bool) {
 	name = strings.TrimSpace(s)
 	n := utf8.RuneCountInString(name)
-	return name, n >= 1 && n <= 40 && !strings.ContainsFunc(name, unicode.IsControl)
+	return name, n >= 1 && n <= 40 && !strings.ContainsFunc(name, func(r rune) bool {
+		return unicode.IsControl(r) || unicode.In(r, unicode.Zl, unicode.Zp, unicode.Bidi_Control)
+	})
 }
 
 // patchMe changes the profile fields that the body names. A field that the body leaves out keeps its value.

@@ -42,7 +42,7 @@ type Group struct {
 
 // GroupCreate defines model for GroupCreate.
 type GroupCreate struct {
-	// Name The group name. Spaces at the ends are removed; then it has 1 to 40 characters and no control character.
+	// Name The group name. Spaces at the ends are removed; then it has 1 to 40 characters, and no control, line-break or text-direction character.
 	Name string `json:"name"`
 }
 
@@ -53,7 +53,7 @@ type GroupMembers struct {
 
 // GroupUpdate defines model for GroupUpdate.
 type GroupUpdate struct {
-	// Name The new group name. Spaces at the ends are removed; then it has 1 to 40 characters and no control character.
+	// Name The new group name. Spaces at the ends are removed; then it has 1 to 40 characters, and no control, line-break or text-direction character.
 	Name *string `json:"name,omitempty"`
 }
 
@@ -112,7 +112,7 @@ type MeUpdate struct {
 	// Direction The translation direction of the learner's study.
 	Direction *Direction `json:"direction,omitempty"`
 
-	// DisplayName The new display name. Spaces at the ends are removed; then it has 1 to 40 characters and no control character.
+	// DisplayName The new display name. Spaces at the ends are removed; then it has 1 to 40 characters, and no control, line-break or text-direction character.
 	DisplayName *string `json:"displayName,omitempty"`
 	Reminder    *bool   `json:"reminder,omitempty"`
 }
