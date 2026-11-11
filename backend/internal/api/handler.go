@@ -35,6 +35,12 @@ func (s *Server) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 		return s.putConsent(ctx, req), nil
 	case "DELETE /v1/me/ai-consent":
 		return s.deleteConsent(ctx, req), nil
+	case "POST /v1/groups":
+		return s.createGroup(ctx, req), nil
+	case "GET /v1/groups/{groupId}":
+		return s.getGroup(ctx, req), nil
+	case "PATCH /v1/groups/{groupId}":
+		return s.patchGroup(ctx, req), nil
 	default:
 		return jsonResponse(http.StatusNotFound, Error{Message: "not found"}), nil
 	}
