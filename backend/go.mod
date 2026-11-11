@@ -9,6 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/dsql/auth v1.2.12
 	github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.75.11
 	github.com/jackc/pgx/v5 v5.12.0
+	golang.org/x/text v0.41.0
 )
 
 require (
@@ -41,7 +42,6 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/tools v0.48.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

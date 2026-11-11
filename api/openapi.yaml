@@ -142,7 +142,7 @@ paths:
       summary: The members of the group.
       responses:
         "200":
-          description: The members, in the order of display name and ID.
+          description: The members, in the Polish order of display name, then by ID.
           content:
             application/json:
               schema:

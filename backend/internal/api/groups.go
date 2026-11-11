@@ -1,13 +1,17 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
 	"net/http"
+	"slices"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/jackc/pgx/v5"
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
 
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/db"
 )
@@ -19,7 +23,8 @@ var (
 
 // member returns the ID of the signed-in user when the user is a member of the group in the path.
 // Otherwise fail holds the answer. A handler passes the path's group ID to SQL only after this check:
-// PostgreSQL refuses a uuid parameter that is not a UUID (SQLSTATE 22P02).
+// PostgreSQL refuses a uuid parameter that is not a UUID (SQLSTATE 22P02, invalid_text_representation).
+// https://www.postgresql.org/docs/16/errcodes-appendix.html
 func (s *Server) member(ctx context.Context, req events.APIGatewayV2HTTPRequest) (sub string, fail *events.APIGatewayV2HTTPResponse) {
 	sub = subject(req)
 	if sub == "" {
@@ -127,7 +132,7 @@ func (s *Server) listMembers(ctx context.Context, req events.APIGatewayV2HTTPReq
 	if fail != nil {
 		return *fail
 	}
-	rows, err := s.DB.Query(ctx, "SELECT id, display_name FROM users WHERE group_id = $1 ORDER BY display_name, id", req.PathParameters["groupId"])
+	rows, err := s.DB.Query(ctx, "SELECT id, display_name FROM users WHERE group_id = $1", req.PathParameters["groupId"])
 	if err != nil {
 		return serverError(ctx, req, sub, err)
 	}
@@ -139,6 +144,13 @@ func (s *Server) listMembers(ctx context.Context, req events.APIGatewayV2HTTPReq
 	if err != nil {
 		return serverError(ctx, req, sub, err)
 	}
+	// Aurora DSQL has only the C collation, which sorts by bytes, so the order for readers is made here.
+	// https://docs.aws.amazon.com/aurora-dsql/latest/userguide/working-with-postgresql-compatibility-migration-guide.html#working-with-postgresql-compatibility-unsupported-limitations
+	// A Collator keeps the state of a comparison in itself, so each call makes its own.
+	polish := collate.New(language.Polish)
+	slices.SortFunc(members, func(a, b Member) int {
+		return cmp.Or(polish.CompareString(a.DisplayName, b.DisplayName), cmp.Compare(a.Id, b.Id))
+	})
 	return jsonResponse(http.StatusOK, GroupMembers{Members: members})
 }
 

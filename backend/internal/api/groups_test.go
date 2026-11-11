@@ -270,6 +270,7 @@ func groupNameOf(t *testing.T, pool *pgxpool.Pool, sub string) string {
 func TestGroupMembers(t *testing.T) {
 	tests := []struct {
 		name        string
+		setup       string // a statement that changes the fixture before the call
 		sub         string
 		wantStatus  int
 		wantBody    string // empty when the answer is the member list
@@ -277,11 +278,24 @@ func TestGroupMembers(t *testing.T) {
 	}{
 		{name: "lists the members by display name", sub: subOla, wantStatus: 200, wantMembers: []Member{{Id: subAdam, DisplayName: "Adam"}, {Id: subOla, DisplayName: "Ola"}}},
 		{name: "a member of another group is refused", sub: subEwa, wantStatus: 403, wantBody: notMember},
+		// Polish order: the case does not decide, and ą is a letter after a. Byte order gives Az, Zofia, adam, Ąb.
+		{name: "sorts the names for Polish readers", sub: subOla, wantStatus: 200,
+			setup: `UPDATE users SET group_id = (SELECT id FROM groups WHERE name = 'Rodzina'),
+				display_name = CASE id WHEN 'sub-ola' THEN 'Zofia' WHEN 'sub-adam' THEN 'adam' WHEN 'sub-ewa' THEN 'Ąb' ELSE 'Az' END`,
+			wantMembers: []Member{{Id: subAdam, DisplayName: "adam"}, {Id: subJan, DisplayName: "Az"}, {Id: subEwa, DisplayName: "Ąb"}, {Id: subOla, DisplayName: "Zofia"}}},
+		{name: "members with one name are in the order of their IDs", sub: subOla, wantStatus: 200,
+			setup:       `UPDATE users SET display_name = 'Ola' WHERE id IN ('sub-ola', 'sub-adam')`,
+			wantMembers: []Member{{Id: subAdam, DisplayName: "Ola"}, {Id: subOla, DisplayName: "Ola"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			_, srv, rodzina, _ := groupFixture(t)
+			pool, srv, rodzina, _ := groupFixture(t)
+			if tt.setup != "" {
+				if _, err := pool.Exec(ctx, tt.setup); err != nil {
+					t.Fatal(err)
+				}
+			}
 
 			resp, err := srv.Handle(ctx, groupRequest("GET /v1/groups/{groupId}/members", tt.sub, "", map[string]string{"groupId": rodzina}))
 			if err != nil {
