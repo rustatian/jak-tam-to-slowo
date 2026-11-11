@@ -1,6 +1,6 @@
 # Jak tam to słowo?
 
-An iPhone app for learners of Polish and Russian. The members of a group share one collection of cards, study the cards in both directions and race each other. The interface is in Polish.
+An iPhone app for Russian speakers who learn Polish: its words and its grammar. The members of a group share one collection of cards, study the cards in both directions and race each other. The interface is in Polish.
 
 The app is in development. These screens exist today:
 
