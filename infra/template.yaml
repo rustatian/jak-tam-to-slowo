@@ -97,6 +97,30 @@ Resources:
     Properties:
       RetentionInDays: 30
 
+  # Amazon SES publishes the bounces and the complaints of the emails that go out with this configuration set.
+  # Only the default event bus can be the destination.
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ses-configurationseteventdestination-eventbridgedestination.html
+  MailConfigurationSet:
+    Type: AWS::SES::ConfigurationSet
+    Properties:
+      Name: !Sub slowo-${Stage}
+
+  MailEventDestination:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    Properties:
+      ConfigurationSetName: !Ref MailConfigurationSet
+      EventDestination:
+        Name: eventbridge
+        Enabled: true
+        MatchingEventTypes: [BOUNCE, COMPLAINT]
+        EventBridgeDestination:
+          EventBusArn: !Sub arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/default
+
+  MailEventsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 30
+
   Cluster:
     Type: AWS::DSQL::Cluster
     Properties:
@@ -120,6 +144,7 @@ Resources:
           DSQL_ENDPOINT: !GetAtt Cluster.Endpoint
           USER_POOL_ID: !Ref UserPool
           MAIL_FROM: noreply@slowo.rustatian.me
+          MAIL_CONFIGURATION_SET: !Ref MailConfigurationSet
       # The database role app maps to this role (cmd/migrate); dsql:DbConnect allows no admin connection.
       Policies:
         - Statement:
@@ -129,11 +154,14 @@ Resources:
             - Effect: Allow
               Action: cognito-idp:AdminGetUser
               Resource: !GetAtt UserPool.Arn
-            # The identity of the sender domain is in the stack slowo-shared.
+            # The identity of the sender domain is in the stack slowo-shared. A send with a configuration set needs
+            # the right on the set too.
             # https://docs.aws.amazon.com/service-authorization/latest/reference/list_sesv2.html
             - Effect: Allow
               Action: ses:SendEmail
-              Resource: !Sub arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/slowo.rustatian.me
+              Resource:
+                - !Sub arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/slowo.rustatian.me
+                - !Sub arn:aws:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${MailConfigurationSet}
       Events:
         GetMe:
           Type: HttpApi
@@ -227,6 +255,38 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /v1/invitations/{token}/acceptance
             Method: POST
+
+  MailEventsFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: go1.x
+    Properties:
+      CodeUri: ../backend/cmd/mailevents
+      Handler: bootstrap
+      Runtime: provided.al2023
+      Architectures: [arm64]
+      MemorySize: 128
+      Timeout: 10
+      LoggingConfig:
+        LogGroup: !Ref MailEventsLogGroup
+      Environment:
+        Variables:
+          DSQL_ENDPOINT: !GetAtt Cluster.Endpoint
+      # The database role app maps to the role of the API function, so this function runs with that role.
+      Role: !GetAtt ApiFunctionRole.Arn
+      Events:
+        MailEvent:
+          Type: EventBridgeRule
+          Properties:
+            # Dev and prod share the default event bus. The tag names the configuration set of the email.
+            # https://docs.aws.amazon.com/ses/latest/dg/monitoring-eventbridge.html
+            Pattern:
+              source: [aws.ses]
+              detail-type: [Email Bounced, Email Complaint Received]
+              detail:
+                mail:
+                  tags:
+                    "ses:configuration-set": [!Ref MailConfigurationSet]
 
 Outputs:
   UserPoolId:
