@@ -42,7 +42,7 @@ var errTooManyInvitations = errors.New("the member is at the invitation limit of
 // https://docs.aws.amazon.com/ses/latest/APIReference-V2/API_Destination.html
 func validEmail(s string) (address string, ok bool) {
 	address = strings.ToLower(strings.TrimSpace(s))
-	if len(address) > 254 || strings.IndexFunc(address, func(r rune) bool { return r > unicode.MaxASCII }) >= 0 {
+	if len(address) > 254 || strings.ContainsFunc(address, func(r rune) bool { return r > unicode.MaxASCII }) {
 		return "", false
 	}
 	// ParseAddress also reads the form "Name <address>". Only a bare address comes back as its own text.
