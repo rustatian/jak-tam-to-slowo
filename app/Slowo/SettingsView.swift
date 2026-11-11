@@ -32,11 +32,21 @@ struct SettingsView: View {
                         Button("Udziel zgody") { givingConsent = true }
                     } else {
                         Button("Wycofaj zgodę", role: .destructive) { confirmWithdraw = true }
+                            .confirmationDialog("Wycofać zgodę na AI?", isPresented: $confirmWithdraw, titleVisibility: .visible) {
+                                Button("Wycofaj", role: .destructive) {
+                                    save { try await profile.withdrawConsent() }
+                                }
+                            }
                     }
                 }
                 Section("Konto") {
                     LabeledContent("E-mail", value: me.email)
                     Button("Wyloguj się", role: .destructive) { confirmLogOut = true }
+                        .confirmationDialog("Wylogować się?", isPresented: $confirmLogOut, titleVisibility: .visible) {
+                            Button("Wyloguj się", role: .destructive) {
+                                Task { await session.logOut() }
+                            }
+                        }
                 }
                 if let error {
                     Section {
@@ -48,16 +58,6 @@ struct SettingsView: View {
         .navigationTitle("Ustawienia")
         .sheet(isPresented: $givingConsent) {
             ConsentView(profile: profile)
-        }
-        .confirmationDialog("Wycofać zgodę na AI?", isPresented: $confirmWithdraw, titleVisibility: .visible) {
-            Button("Wycofaj", role: .destructive) {
-                save { try await profile.withdrawConsent() }
-            }
-        }
-        .confirmationDialog("Wylogować się?", isPresented: $confirmLogOut, titleVisibility: .visible) {
-            Button("Wyloguj się", role: .destructive) {
-                Task { await session.logOut() }
-            }
         }
     }
 
