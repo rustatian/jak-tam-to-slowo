@@ -1,0 +1,185 @@
+import Foundation
+import OpenAPIRuntime
+import Synchronization
+import Testing
+
+@testable import Slowo
+
+/// Answers each API call from a queue and keeps the calls in order.
+final class FakeAPI: APIProtocol {
+    struct Answers: Sendable {
+        var getMe: [Operations.GetMe.Output] = []
+        var updateMe: [Operations.UpdateMe.Output] = []
+        var giveAiConsent: [Operations.GiveAiConsent.Output] = []
+        var withdrawAiConsent: [Operations.WithdrawAiConsent.Output] = []
+    }
+
+    struct Empty: Error {}
+
+    private let state: Mutex<(answers: Answers, calls: [String], updates: [Components.Schemas.MeUpdate])>
+
+    init(_ answers: Answers) {
+        state = Mutex((answers, [], []))
+    }
+
+    var calls: [String] { state.withLock { $0.calls } }
+    var updates: [Components.Schemas.MeUpdate] { state.withLock { $0.updates } }
+
+    private static func next<T>(_ queue: inout [T]) throws -> T {
+        guard !queue.isEmpty else { throw Empty() }
+        return queue.removeFirst()
+    }
+
+    func getMe(_ input: Operations.GetMe.Input) async throws -> Operations.GetMe.Output {
+        try state.withLock { s in
+            s.calls.append("getMe")
+            return try Self.next(&s.answers.getMe)
+        }
+    }
+
+    func updateMe(_ input: Operations.UpdateMe.Input) async throws -> Operations.UpdateMe.Output {
+        try state.withLock { s in
+            s.calls.append("updateMe")
+            if case let .json(change) = input.body {
+                s.updates.append(change)
+            }
+            return try Self.next(&s.answers.updateMe)
+        }
+    }
+
+    func giveAiConsent(_ input: Operations.GiveAiConsent.Input) async throws -> Operations.GiveAiConsent.Output {
+        try state.withLock { s in
+            s.calls.append("giveAiConsent")
+            return try Self.next(&s.answers.giveAiConsent)
+        }
+    }
+
+    func withdrawAiConsent(_ input: Operations.WithdrawAiConsent.Input) async throws -> Operations.WithdrawAiConsent.Output {
+        try state.withLock { s in
+            s.calls.append("withdrawAiConsent")
+            return try Self.next(&s.answers.withdrawAiConsent)
+        }
+    }
+}
+
+let oldMe = Components.Schemas.Me(id: "s1", email: "ola@example.com", displayName: "", direction: .ruPl, reminder: false)
+let namedMe = Components.Schemas.Me(id: "s1", email: "ola@example.com", displayName: "Ola", direction: .ruPl, reminder: false)
+let consentMe = Components.Schemas.Me(id: "s1", email: "ola@example.com", displayName: "", direction: .ruPl, reminder: false, aiConsentAt: start)
+
+struct ProfileCase: Sendable, CustomTestStringConvertible {
+    let name: String
+    let answers: FakeAPI.Answers
+    let action: @Sendable @MainActor (Profile) async throws -> Void
+    let calls: [String]
+    let error: ProfileError?
+    let me: Components.Schemas.Me
+
+    var testDescription: String { name }
+}
+
+let profileCases: [ProfileCase] = [
+    ProfileCase(
+        name: "update stores the answer",
+        answers: .init(getMe: [.ok(.init(body: .json(oldMe)))], updateMe: [.ok(.init(body: .json(namedMe)))]),
+        action: { try await $0.update(.init(displayName: "Ola")) },
+        calls: ["getMe", "updateMe"], error: nil, me: namedMe
+    ),
+    ProfileCase(
+        name: "a rejected update keeps the old profile",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(oldMe)))],
+            updateMe: [.badRequest(.init(body: .json(.init(message: "displayName must have 1 to 40 characters"))))]
+        ),
+        action: { try await $0.update(.init(displayName: "x")) },
+        calls: ["getMe", "updateMe"], error: .rejected("displayName must have 1 to 40 characters"), me: oldMe
+    ),
+    ProfileCase(
+        name: "giving consent loads the time",
+        answers: .init(getMe: [.ok(.init(body: .json(oldMe))), .ok(.init(body: .json(consentMe)))], giveAiConsent: [.noContent(.init())]),
+        action: { try await $0.giveConsent() },
+        calls: ["getMe", "giveAiConsent", "getMe"], error: nil, me: consentMe
+    ),
+    ProfileCase(
+        name: "withdrawing consent loads the profile without it",
+        answers: .init(getMe: [.ok(.init(body: .json(consentMe))), .ok(.init(body: .json(oldMe)))], withdrawAiConsent: [.noContent(.init())]),
+        action: { try await $0.withdrawConsent() },
+        calls: ["getMe", "withdrawAiConsent", "getMe"], error: nil, me: oldMe
+    ),
+    ProfileCase(
+        name: "a failed consent call keeps the profile",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(oldMe)))],
+            giveAiConsent: [.internalServerError(.init(body: .json(.init(message: "internal error"))))]
+        ),
+        action: { try await $0.giveConsent() },
+        calls: ["getMe", "giveAiConsent"], error: .unexpected, me: oldMe
+    ),
+]
+
+@MainActor
+@Test(arguments: profileCases)
+func profile(_ c: ProfileCase) async throws {
+    let api = FakeAPI(c.answers)
+    let profile = Profile(api: api)
+    try await profile.load()
+
+    var thrown: ProfileError?
+    do {
+        try await c.action(profile)
+    } catch let error as ProfileError {
+        thrown = error
+    }
+
+    #expect(thrown == c.error)
+    #expect(api.calls == c.calls)
+    #expect(profile.me == c.me)
+}
+
+@Test func updateSendsOnlyTheChangedField() async throws {
+    let api = FakeAPI(.init(getMe: [.ok(.init(body: .json(oldMe)))], updateMe: [.ok(.init(body: .json(namedMe)))]))
+    let profile = await Profile(api: api)
+    try await profile.load()
+    try await profile.update(.init(displayName: "Ola"))
+
+    #expect(api.updates == [.init(displayName: "Ola")])
+}
+
+struct DisplayNameCase: Sendable, CustomTestStringConvertible {
+    let name: String
+    let input: String
+    let result: String?
+
+    var testDescription: String { name }
+}
+
+@Test(arguments: [
+    DisplayNameCase(name: "the name is trimmed", input: "  Ola  ", result: "Ola"),
+    DisplayNameCase(name: "40 letters with diacritics pass", input: String(repeating: "ż", count: 40), result: String(repeating: "ż", count: 40)),
+    DisplayNameCase(name: "41 letters are rejected", input: String(repeating: "ż", count: 41), result: nil),
+    DisplayNameCase(name: "a blank name is rejected", input: "   ", result: nil),
+    DisplayNameCase(name: "a combining accent counts as a second scalar", input: String(repeating: "e\u{0301}", count: 40), result: nil),
+])
+func displayNameRule(_ c: DisplayNameCase) {
+    #expect(displayName(c.input) == c.result)
+}
+
+struct ErrorMessageCase: Sendable, CustomTestStringConvertible {
+    let name: String
+    let error: any Error
+    let message: String
+
+    var testDescription: String { name }
+}
+
+@Test(arguments: [
+    ErrorMessageCase(name: "a rejected name", error: ProfileError.rejected("displayName must have 1 to 40 characters"), message: "Nazwa musi mieć od 1 do 40 znaków."),
+    ErrorMessageCase(name: "a failed save", error: ProfileError.unexpected, message: "Nie udało się zapisać zmian."),
+    ErrorMessageCase(
+        name: "no network through the API client",
+        error: ClientError(operationID: "updateMe", operationInput: "", causeDescription: "transport", underlyingError: URLError(.notConnectedToInternet)),
+        message: "Brak połączenia z internetem."
+    ),
+])
+func profileErrorMessage(_ c: ErrorMessageCase) {
+    #expect(errorMessage(c.error) == c.message)
+}

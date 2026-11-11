@@ -107,10 +107,12 @@ func session(_ c: SessionCase) async throws {
     let fake = FakeCognito(answer: #"{"AuthenticationResult":{"AccessToken":"a1","ExpiresIn":3600,"IdToken":"i1","RefreshToken":"r1","TokenType":"Bearer"}}"#)
     let session = Session(cognito: fake.cognito(now: { start }), store: store, now: { start })
     #expect(!session.isSignedIn)
+    #expect(!session.signedInThisRun)
 
     try await session.signIn(email: "ola@example.com", password: "Haslo-1a")
 
     #expect(session.isSignedIn)
+    #expect(session.signedInThisRun)
     #expect(try store.load() == Tokens(accessToken: "a1", refreshToken: "r1", expiresAt: start.addingTimeInterval(3600)))
 }
 
@@ -122,4 +124,29 @@ func session(_ c: SessionCase) async throws {
     await #expect(throws: SessionError.signedOut) {
         try await session.validAccessToken()
     }
+}
+
+struct LogOutCase: Sendable, CustomTestStringConvertible {
+    let name: String
+    let fake: FakeCognito
+
+    var testDescription: String { name }
+}
+
+@MainActor
+@Test(arguments: [
+    LogOutCase(name: "log out revokes the refresh token", fake: FakeCognito(answer: "")),
+    LogOutCase(name: "log out without network still signs out", fake: FakeCognito(failure: URLError(.notConnectedToInternet))),
+])
+func logOut(_ c: LogOutCase) async throws {
+    let store = TokenStore(service: "test." + UUID().uuidString)
+    defer { try? store.delete() }
+    try store.save(Tokens(accessToken: "a1", refreshToken: "r1", expiresAt: start.addingTimeInterval(3600)))
+    let session = Session(cognito: c.fake.cognito(now: { start }), store: store, now: { start })
+
+    await session.logOut()
+
+    #expect(c.fake.requests.map { $0.value(forHTTPHeaderField: "X-Amz-Target") } == ["AWSCognitoIdentityProviderService.RevokeToken"])
+    #expect(!session.isSignedIn)
+    #expect(try store.load() == nil)
 }

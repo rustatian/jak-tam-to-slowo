@@ -16,7 +16,7 @@ struct SlowoApp: App {
     var body: some Scene {
         WindowGroup {
             if session.isSignedIn {
-                SignedInView(api: api)
+                SignedInView(api: api, session: session)
             } else {
                 SignInView(session: session)
             }
@@ -24,15 +24,22 @@ struct SlowoApp: App {
     }
 }
 
-/// Loads the account, which makes the user row on the first call, then shows the tabs.
+/// Loads the profile, which makes the user row on the first call, then shows the tabs.
+/// After a sign-in without AI consent, it offers the consent screen once.
 struct SignedInView: View {
-    let api: Client
+    let session: Session
 
-    @State private var loaded = false
+    @State private var profile: Profile
     @State private var failed = false
+    @State private var offeringConsent = false
+
+    init(api: Client, session: Session) {
+        self.session = session
+        _profile = State(initialValue: Profile(api: api))
+    }
 
     var body: some View {
-        if loaded {
+        if profile.me != nil {
             TabView {
                 Tab("Nauka", systemImage: "graduationcap") {
                     placeholder("Nauka", systemImage: "graduationcap")
@@ -47,8 +54,22 @@ struct SignedInView: View {
                     placeholder("Zawody", systemImage: "flag.checkered")
                 }
                 Tab("Grupa", systemImage: "person.3") {
-                    placeholder("Grupa", systemImage: "person.3")
+                    NavigationStack {
+                        placeholder("Grupa", systemImage: "person.3")
+                            .toolbar {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    NavigationLink {
+                                        SettingsView(profile: profile, session: session)
+                                    } label: {
+                                        Label("Ustawienia", systemImage: "gearshape")
+                                    }
+                                }
+                            }
+                    }
                 }
+            }
+            .sheet(isPresented: $offeringConsent) {
+                ConsentView(profile: profile)
             }
         } else if failed {
             ContentUnavailableView {
@@ -63,16 +84,10 @@ struct SignedInView: View {
 
     private func load() async {
         do {
-            switch try await api.getMe() {
-            case .ok:
-                loaded = true
-            case .unauthorized:
-                // AuthMiddleware has signed out, so the sign-in screen replaces this view.
-                break
-            default:
-                failed = true
-            }
+            try await profile.load()
+            offeringConsent = session.signedInThisRun && profile.me?.aiConsentAt == nil
         } catch {
+            // After a 401 AuthMiddleware has signed out, and the sign-in screen replaces this view.
             failed = true
         }
     }
