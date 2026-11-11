@@ -25,6 +25,8 @@ func TestHandle(t *testing.T) {
 		{name: "me without a JWT authorizer", routeKey: "GET /v1/me", authorizer: &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{}, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
 		{name: "me with an empty sub claim", routeKey: "GET /v1/me", authorizer: jwt(map[string]string{"sub": ""}), wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
 		{name: "patch me without an authorizer", routeKey: "PATCH /v1/me", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
+		{name: "give consent without an authorizer", routeKey: "PUT /v1/me/ai-consent", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
+		{name: "withdraw consent without an authorizer", routeKey: "DELETE /v1/me/ai-consent", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
 		{name: "unknown route", routeKey: "GET /nope", authorizer: jwt(map[string]string{"sub": sub}), wantStatus: 404, wantBody: `{"message":"not found"}`},
 	}
 	for _, tt := range tests {

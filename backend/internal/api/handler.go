@@ -31,6 +31,10 @@ func (s *Server) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 		return s.getMe(ctx, req), nil
 	case "PATCH /v1/me":
 		return s.patchMe(ctx, req), nil
+	case "PUT /v1/me/ai-consent":
+		return s.putConsent(ctx, req), nil
+	case "DELETE /v1/me/ai-consent":
+		return s.deleteConsent(ctx, req), nil
 	default:
 		return jsonResponse(http.StatusNotFound, Error{Message: "not found"}), nil
 	}
@@ -102,4 +106,8 @@ func jsonResponse(status int, v any) events.APIGatewayV2HTTPResponse {
 		Headers:    map[string]string{"Content-Type": "application/json"},
 		Body:       string(body),
 	}
+}
+
+func noContent() events.APIGatewayV2HTTPResponse {
+	return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusNoContent}
 }

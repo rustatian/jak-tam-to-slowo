@@ -53,3 +53,38 @@ func (s *Server) patchMe(ctx context.Context, req events.APIGatewayV2HTTPRequest
 	}
 	return jsonResponse(http.StatusOK, me)
 }
+
+// putConsent stores the AI consent time. A second call keeps the first time.
+func (s *Server) putConsent(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	sub := subject(req)
+	if sub == "" {
+		return jsonResponse(http.StatusUnauthorized, Error{Message: "unauthorized"})
+	}
+	if _, err := s.me(ctx, sub); err != nil {
+		return serverError(ctx, req, sub, err)
+	}
+	err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, "UPDATE users SET ai_consent_at = COALESCE(ai_consent_at, now()) WHERE id = $1", sub)
+		return err
+	})
+	if err != nil {
+		return serverError(ctx, req, sub, err)
+	}
+	return noContent()
+}
+
+// deleteConsent removes the AI consent. A missing row has no consent, so it needs no row.
+func (s *Server) deleteConsent(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	sub := subject(req)
+	if sub == "" {
+		return jsonResponse(http.StatusUnauthorized, Error{Message: "unauthorized"})
+	}
+	err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, "UPDATE users SET ai_consent_at = NULL WHERE id = $1", sub)
+		return err
+	})
+	if err != nil {
+		return serverError(ctx, req, sub, err)
+	}
+	return noContent()
+}
