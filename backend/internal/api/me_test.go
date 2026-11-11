@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 
@@ -26,10 +27,18 @@ func meRequest(sub string) events.APIGatewayV2HTTPRequest {
 	}
 }
 
+// equalMe compares the consent times by instant, because the database answers in its own time zone.
+func equalMe(a, b Me) bool {
+	ta, tb := a.AiConsentAt, b.AiConsentAt
+	a.AiConsentAt, b.AiConsentAt = nil, nil
+	return a == b && (ta == nil) == (tb == nil) && (ta == nil || ta.Equal(*tb))
+}
+
 func TestGetMe(t *testing.T) {
 	const sub = "6c8f2a4e-1d3b-4f5a-9e7c-2b1a0d9e8f7a"
 	created := Me{Id: sub, Email: "learner@example.com", DisplayName: "", Direction: RuPl}
-	existing := Me{Id: sub, Email: "old@example.com", DisplayName: "Ola", Direction: PlRu}
+	consentAt := time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC)
+	existing := Me{Id: sub, Email: "old@example.com", DisplayName: "Ola", Direction: PlRu, Reminder: true, AiConsentAt: &consentAt}
 	tests := []struct {
 		name        string
 		row         *Me
@@ -54,8 +63,8 @@ func TestGetMe(t *testing.T) {
 				t.Fatal(err)
 			}
 			if tt.row != nil {
-				if _, err := pool.Exec(ctx, "INSERT INTO users (id, email, display_name, direction) VALUES ($1, $2, $3, $4)",
-					tt.row.Id, tt.row.Email, tt.row.DisplayName, string(tt.row.Direction)); err != nil {
+				if _, err := pool.Exec(ctx, "INSERT INTO users (id, email, display_name, direction, reminder, ai_consent_at) VALUES ($1, $2, $3, $4, $5, $6)",
+					tt.row.Id, tt.row.Email, tt.row.DisplayName, string(tt.row.Direction), tt.row.Reminder, tt.row.AiConsentAt); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -102,7 +111,7 @@ func TestGetMe(t *testing.T) {
 				if err := json.Unmarshal([]byte(r.resp.Body), &me); err != nil {
 					t.Fatalf("body %s: %v", r.resp.Body, err)
 				}
-				if me != tt.wantMe {
+				if !equalMe(me, tt.wantMe) {
 					t.Errorf("me = %+v, want %+v", me, tt.wantMe)
 				}
 			}

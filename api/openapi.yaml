@@ -20,27 +20,85 @@ paths:
               schema:
                 $ref: "#/components/schemas/Me"
         "401":
-          description: The request has no valid access token.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+          $ref: "#/components/responses/Unauthorized"
         "500":
-          description: The server could not read or make the user.
+          $ref: "#/components/responses/InternalError"
+    patch:
+      operationId: updateMe
+      summary: Change the profile fields that the body names.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MeUpdate"
+      responses:
+        "200":
+          description: The changed user.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/Me"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/me/ai-consent:
+    put:
+      operationId: giveAiConsent
+      summary: Give the AI consent. A second call keeps the first consent time.
+      responses:
+        "204":
+          description: The consent is stored.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: withdrawAiConsent
+      summary: Withdraw the AI consent.
+      responses:
+        "204":
+          description: The user has no AI consent.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     cognito:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  responses:
+    BadRequest:
+      description: The request body is not valid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: The request has no valid access token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: The server could not complete the request.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
+    Direction:
+      type: string
+      enum: [ru-pl, pl-ru]
+      description: The translation direction of the learner's study.
     Me:
       type: object
-      required: [id, email, displayName, direction]
+      required: [id, email, displayName, direction, reminder]
       properties:
         id:
           type: string
@@ -52,9 +110,26 @@ components:
           type: string
           description: The name that the group sees. Empty until the learner sets it.
         direction:
+          $ref: "#/components/schemas/Direction"
+        reminder:
+          type: boolean
+          description: The local reminder for due cards is on.
+        aiConsentAt:
           type: string
-          enum: [ru-pl, pl-ru]
-          description: The translation direction of the learner's study.
+          format: date-time
+          description: When the user gave the AI consent. Absent without consent.
+    MeUpdate:
+      type: object
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 40
+          description: The new display name. Spaces at the ends are removed; then it has 1 to 40 characters.
+        direction:
+          $ref: "#/components/schemas/Direction"
+        reminder:
+          type: boolean
     Error:
       type: object
       required: [message]

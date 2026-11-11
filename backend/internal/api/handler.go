@@ -79,8 +79,8 @@ func readUser(ctx context.Context, q interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }, sub string) (Me, bool, error) {
 	var me Me
-	err := q.QueryRow(ctx, "SELECT id, email, display_name, direction FROM users WHERE id = $1", sub).
-		Scan(&me.Id, &me.Email, &me.DisplayName, &me.Direction)
+	err := q.QueryRow(ctx, "SELECT id, email, display_name, direction, COALESCE(reminder, false), ai_consent_at FROM users WHERE id = $1", sub).
+		Scan(&me.Id, &me.Email, &me.DisplayName, &me.Direction, &me.Reminder, &me.AiConsentAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Me{}, false, nil
 	}
