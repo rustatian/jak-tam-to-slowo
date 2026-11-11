@@ -247,8 +247,13 @@ func TestCreateInvitation(t *testing.T) {
 			if len(token) < 26 || strings.Trim(token, "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567") != "" {
 				t.Errorf("token = %q, want at least 26 base32 characters", token)
 			}
-			if want := invitationMail("nowy@example.com", tt.wantInviter, "Rodzina", token); sent.mails[0] != want {
+			want := invitationMail("nowy@example.com", tt.wantInviter, "Rodzina", token)
+			want.Invitation = id
+			if sent.mails[0] != want {
 				t.Errorf("email = %+v\nwant    %+v", sent.mails[0], want)
+			}
+			if strings.Contains(resp.Body, `"failure"`) {
+				t.Errorf("the body of a new invitation has a failure: %s", resp.Body)
 			}
 			if hash != tokenHash(token) {
 				t.Errorf("token_hash = %s, want the hash of the token in the email", hash)
@@ -279,19 +284,22 @@ func invitationRow(t *testing.T, pool *pgxpool.Pool, group, email, hash string, 
 
 func TestListInvitations(t *testing.T) {
 	const day = 24 * time.Hour
-	type listed struct{ email, inviter string } // inviter is empty when the answer has no invitedBy
+	// inviter is empty when the answer has no invitedBy, and failure is empty when it has no failure.
+	type listed struct{ email, inviter, failure string }
 	tests := []struct {
 		name       string
-		rows       string // the invitation rows of the case: "mixed", "no inviter" or "none"
+		rows       string // the invitation rows of the case: "mixed", "no inviter", "failed" or "none"
 		sub        string
 		wantStatus int
 		wantBody   string // empty when the answer is checked as a list
 		want       []listed
 	}{
 		{name: "lists the pending invitations, oldest first", rows: "mixed", sub: subOla, wantStatus: 200,
-			want: []listed{{"a@example.com", "Ola"}, {"b@example.com", "Adam"}}},
+			want: []listed{{"a@example.com", "Ola", ""}, {"b@example.com", "Adam", ""}}},
 		{name: "an invitation without an inviter has no invitedBy", rows: "no inviter", sub: subOla, wantStatus: 200,
-			want: []listed{{"c@example.com", ""}}},
+			want: []listed{{"c@example.com", "", ""}}},
+		{name: "a failed email shows on the invitation", rows: "failed", sub: subOla, wantStatus: 200,
+			want: []listed{{"x@example.com", "", "bounce"}, {"y@example.com", "", "complaint"}, {"z@example.com", "", ""}}},
 		{name: "a group without invitations gives an empty list", rows: "none", sub: subOla, wantStatus: 200, wantBody: `{"invitations":[]}`},
 		{name: "a member of another group is refused", rows: "mixed", sub: subEwa, wantStatus: 403, wantBody: notMember},
 	}
@@ -311,6 +319,13 @@ func TestListInvitations(t *testing.T) {
 				invitationRow(t, pool, praca, "praca@example.com", "e", nil, -time.Hour, 6*day, false)
 			case "no inviter":
 				ids["c@example.com"] = invitationRow(t, pool, rodzina, "c@example.com", "c", nil, -time.Hour, 6*day, false)
+			case "failed":
+				ids["x@example.com"] = invitationRow(t, pool, rodzina, "x@example.com", "x", nil, -3*time.Hour, 6*day, false)
+				ids["y@example.com"] = invitationRow(t, pool, rodzina, "y@example.com", "y", nil, -2*time.Hour, 6*day, false)
+				ids["z@example.com"] = invitationRow(t, pool, rodzina, "z@example.com", "z", nil, -1*time.Hour, 6*day, false)
+				if _, err := pool.Exec(ctx, "UPDATE invitations SET failure = CASE email WHEN 'x@example.com' THEN 'bounce' WHEN 'y@example.com' THEN 'complaint' END"); err != nil {
+					t.Fatal(err)
+				}
 			}
 
 			resp, err := srv.Handle(ctx, groupRequest("GET /v1/groups/{groupId}/invitations", tt.sub, "", map[string]string{"groupId": rodzina}))
@@ -334,6 +349,7 @@ func TestListInvitations(t *testing.T) {
 				t.Fatalf("invitations = %+v, want %d of them", list.Invitations, len(tt.want))
 			}
 			withInviter := false
+			failures := 0
 			for i, want := range tt.want {
 				got := list.Invitations[i]
 				var created, expires time.Time
@@ -350,6 +366,19 @@ func TestListInvitations(t *testing.T) {
 					t.Errorf("invitation %d: invitedBy = %+v, want %q", i, got.InvitedBy, want.inviter)
 				}
 				withInviter = withInviter || want.inviter != ""
+				switch {
+				case want.failure == "" && got.Failure != nil:
+					t.Errorf("invitation %d: failure = %q, want none", i, *got.Failure)
+				case want.failure != "" && (got.Failure == nil || string(*got.Failure) != want.failure):
+					t.Errorf("invitation %d: failure = %v, want %q", i, got.Failure, want.failure)
+				}
+				if want.failure != "" {
+					failures++
+				}
+			}
+			// The contract: the member is absent without a failure.
+			if got := strings.Count(resp.Body, `"failure"`); got != failures {
+				t.Errorf("body %s: failure members = %d, want %d", resp.Body, got, failures)
 			}
 			// The contract: the member is absent without an inviter.
 			if got := strings.Contains(resp.Body, `"invitedBy"`); got != withInviter {

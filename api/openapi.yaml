@@ -469,6 +469,10 @@ components:
           type: string
           format: date-time
           description: The invitation can be accepted until this time.
+        failure:
+          type: string
+          enum: [bounce, complaint]
+          description: A notice of the email service about the invitation email. With bounce the email probably did not arrive, but an automatic reply of the receiver can cause this notice too. With complaint the receiver marked the email as spam. Absent while no such notice came.
     InvitationCreate:
       type: object
       required: [email]

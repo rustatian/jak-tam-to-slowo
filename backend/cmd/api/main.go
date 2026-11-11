@@ -32,6 +32,8 @@ func main() {
 	poolID := os.Getenv("USER_POOL_ID")
 	mailer := sesv2.NewFromConfig(cfg)
 	from := os.Getenv("MAIL_FROM")
+	// The configuration set of the stage publishes the bounces and the complaints of the emails.
+	configurationSet := os.Getenv("MAIL_CONFIGURATION_SET")
 	// The emails have letters outside ASCII, and SES uses 7-bit ASCII when the content names no character set.
 	// https://docs.aws.amazon.com/ses/latest/APIReference-V2/API_Content.html
 	charset := "UTF-8"
@@ -49,8 +51,11 @@ func main() {
 		return "", errors.New("the user has no email attribute")
 	}, Send: func(ctx context.Context, m api.Mail) error {
 		_, err := mailer.SendEmail(ctx, &sesv2.SendEmailInput{
-			FromEmailAddress: &from,
-			Destination:      &sestypes.Destination{ToAddresses: []string{m.To}},
+			FromEmailAddress:     &from,
+			ConfigurationSetName: &configurationSet,
+			// A bounce or a complaint event names the invitation by this message tag.
+			EmailTags:   []sestypes.MessageTag{{Name: aws.String("invitation"), Value: &m.Invitation}},
+			Destination: &sestypes.Destination{ToAddresses: []string{m.To}},
 			Content: &sestypes.EmailContent{Simple: &sestypes.Message{
 				Subject: &sestypes.Content{Data: &m.Subject, Charset: &charset},
 				Body:    &sestypes.Body{Text: &sestypes.Content{Data: &m.Text, Charset: &charset}},
