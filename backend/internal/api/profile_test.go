@@ -2,7 +2,7 @@ package api
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +46,8 @@ func TestPatchMe(t *testing.T) {
 		{name: "a blank display name is rejected", body: `{"displayName":"   "}`, wantStatus: 400, wantBody: nameRule, wantMe: start},
 		{name: "an unknown direction is rejected", body: `{"direction":"pl-de"}`, wantStatus: 400, wantBody: `{"message":"direction must be ru-pl or pl-ru"}`, wantMe: start},
 		{name: "a body that is not JSON is rejected", body: `{"displayName":`, wantStatus: 400, wantBody: `{"message":"invalid JSON body"}`, wantMe: start},
+		{name: "a member name in another case is not that member", body: `{"DisplayName":"Ola"}`, wantStatus: 200, wantMe: start},
+		{name: "a duplicate member is rejected", body: `{"reminder":true,"reminder":false}`, wantStatus: 400, wantBody: `{"message":"invalid JSON body"}`, wantMe: start},
 		{name: "the first call makes the row", noRow: true, body: `{"reminder":true}`, wantStatus: 200, wantMe: with(func(m *Me) { m.Email = "learner@example.com"; m.Reminder = true })},
 	}
 	for _, tt := range tests {
