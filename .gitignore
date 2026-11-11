@@ -4,3 +4,4 @@
 .dev.vars*
 .env*
 .local/
+xcuserdata/
