@@ -266,7 +266,7 @@ func (s *Server) acceptInvitation(ctx context.Context, req events.APIGatewayV2HT
 		if _, err := tx.Exec(ctx, "UPDATE users SET group_id = $1 WHERE id = $2", groupID, sub); err != nil {
 			return err
 		}
-		// An accepted invitation has no more use, so its row goes, and the address of the invited person with it.
+		// The delete also removes the address of the invited person from the database.
 		_, err = tx.Exec(ctx, "DELETE FROM invitations WHERE id = $1", invitationID)
 		return err
 	})
