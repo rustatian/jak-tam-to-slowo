@@ -12,18 +12,24 @@ final class FakeAPI: APIProtocol {
         var updateMe: [Operations.UpdateMe.Output] = []
         var giveAiConsent: [Operations.GiveAiConsent.Output] = []
         var withdrawAiConsent: [Operations.WithdrawAiConsent.Output] = []
+        var createGroup: [Operations.CreateGroup.Output] = []
+        var getGroup: [Operations.GetGroup.Output] = []
+        var updateGroup: [Operations.UpdateGroup.Output] = []
+        var listGroupMembers: [Operations.ListGroupMembers.Output] = []
+        var removeGroupMember: [Operations.RemoveGroupMember.Output] = []
     }
 
     struct Empty: Error {}
 
-    private let state: Mutex<(answers: Answers, calls: [String], updates: [Components.Schemas.MeUpdate])>
+    private let state: Mutex<(answers: Answers, calls: [String], updates: [Components.Schemas.MeUpdate], inputs: [String])>
 
     init(_ answers: Answers) {
-        state = Mutex((answers, [], []))
+        state = Mutex((answers, [], [], []))
     }
 
     var calls: [String] { state.withLock { $0.calls } }
     var updates: [Components.Schemas.MeUpdate] { state.withLock { $0.updates } }
+    var inputs: [String] { state.withLock { $0.inputs } }
 
     private static func next<T>(_ queue: inout [T]) throws -> T {
         guard !queue.isEmpty else { throw Empty() }
@@ -58,6 +64,48 @@ final class FakeAPI: APIProtocol {
         try state.withLock { s in
             s.calls.append("withdrawAiConsent")
             return try Self.next(&s.answers.withdrawAiConsent)
+        }
+    }
+
+    func createGroup(_ input: Operations.CreateGroup.Input) async throws -> Operations.CreateGroup.Output {
+        try state.withLock { s in
+            s.calls.append("createGroup")
+            if case let .json(group) = input.body {
+                s.inputs.append("createGroup \(group.name)")
+            }
+            return try Self.next(&s.answers.createGroup)
+        }
+    }
+
+    func getGroup(_ input: Operations.GetGroup.Input) async throws -> Operations.GetGroup.Output {
+        try state.withLock { s in
+            s.calls.append("getGroup")
+            return try Self.next(&s.answers.getGroup)
+        }
+    }
+
+    func updateGroup(_ input: Operations.UpdateGroup.Input) async throws -> Operations.UpdateGroup.Output {
+        try state.withLock { s in
+            s.calls.append("updateGroup")
+            if case let .json(change) = input.body {
+                s.inputs.append("updateGroup \(input.path.groupId) \(change.name ?? "")")
+            }
+            return try Self.next(&s.answers.updateGroup)
+        }
+    }
+
+    func listGroupMembers(_ input: Operations.ListGroupMembers.Input) async throws -> Operations.ListGroupMembers.Output {
+        try state.withLock { s in
+            s.calls.append("listGroupMembers")
+            return try Self.next(&s.answers.listGroupMembers)
+        }
+    }
+
+    func removeGroupMember(_ input: Operations.RemoveGroupMember.Input) async throws -> Operations.RemoveGroupMember.Output {
+        try state.withLock { s in
+            s.calls.append("removeGroupMember")
+            s.inputs.append("removeGroupMember \(input.path.groupId) \(input.path.userId)")
+            return try Self.next(&s.answers.removeGroupMember)
         }
     }
 }
@@ -174,6 +222,8 @@ struct ErrorMessageCase: Sendable, CustomTestStringConvertible {
 @Test(arguments: [
     ErrorMessageCase(name: "a rejected name", error: ProfileError.rejected("displayName must have 1 to 40 characters"), message: "Nazwa musi mieć od 1 do 40 znaków."),
     ErrorMessageCase(name: "a failed save", error: ProfileError.unexpected, message: "Nie udało się zapisać zmian."),
+    ErrorMessageCase(name: "a rejected group name", error: GroupError.badName, message: "Nazwa musi mieć od 1 do 40 znaków."),
+    ErrorMessageCase(name: "a failed group call", error: GroupError.unexpected, message: "Coś poszło nie tak. Spróbuj ponownie."),
     ErrorMessageCase(
         name: "no network through the API client",
         error: ClientError(operationID: "updateMe", operationInput: "", causeDescription: "transport", underlyingError: URLError(.notConnectedToInternet)),

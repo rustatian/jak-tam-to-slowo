@@ -17,6 +17,8 @@ func errorMessage(_ error: Error) -> String {
         return "Nazwa musi mieć od 1 do 40 znaków."
     case ProfileError.unexpected:
         return "Nie udało się zapisać zmian."
+    case GroupError.badName:
+        return "Nazwa musi mieć od 1 do 40 znaków."
     default:
         break
     }
