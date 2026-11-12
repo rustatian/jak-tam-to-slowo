@@ -12,3 +12,5 @@ filter:
     - /v1/groups/{groupId}
     - /v1/groups/{groupId}/members
     - /v1/groups/{groupId}/members/{userId}
+    - /v1/groups/{groupId}/invitations
+    - /v1/groups/{groupId}/invitations/{invitationId}

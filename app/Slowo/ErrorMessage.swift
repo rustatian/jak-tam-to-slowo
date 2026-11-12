@@ -17,6 +17,12 @@ func errorMessage(_ error: Error) -> String {
         return "Nazwa musi mieć od 1 do 40 znaków."
     case ProfileError.unexpected:
         return "Nie udało się zapisać zmian."
+    case GroupError.badEmail:
+        return "Nieprawidłowy adres e-mail."
+    case GroupError.tooManyInvitations:
+        return "Możesz wysłać najwyżej 20 zaproszeń dziennie."
+    case GroupError.emailNotSent:
+        return "Nie udało się wysłać e-maila. Spróbuj ponownie."
     default:
         break
     }
