@@ -9,6 +9,7 @@ struct SignInView: View {
     @State private var error: String?
     @State private var working = false
     @State private var resetting = false
+    @State private var signUp: SignUpView.Start?
 
     var body: some View {
         ScrollView {
@@ -57,10 +58,14 @@ struct SignInView: View {
         .sheet(isPresented: $resetting) {
             PasswordResetView(session: session, email: email)
         }
-        // SwiftUI calls the setter with false for each close, also after "Zaloguj się".
-        // The setter forgets the token only while the model still shows the sheet, so "Zaloguj się" keeps it.
+        // SwiftUI calls the setter with false for each close, also after "Zaloguj się" and "Załóż konto".
+        // The setter forgets the token only while the model still shows the sheet, so both buttons keep it.
         .sheet(isPresented: Binding(get: { link.isPresented }, set: { if !$0 && link.isPresented { link.forget() } })) {
-            InvitationView(link: link, profile: nil, accepted: {})
+            InvitationView(link: link, profile: nil, accepted: {}, signUp: { if let token = link.token { signUp = .invitation(token) }; link.isPresented = false })
+        }
+        // The sign-up sheet shows only while the invitation sheet does not show. Each close of the sign-up sheet ends the sign-up.
+        .sheet(item: Binding(get: { link.isPresented ? nil : signUp }, set: { if $0 == nil { signUp = nil } })) { start in
+            SignUpView(session: session, start: start)
         }
     }
 
@@ -105,6 +110,9 @@ struct SignInView: View {
         defer { working = false }
         do {
             try await session.signIn(email: email, password: password)
+        } catch CognitoError.service("UserNotConfirmedException") {
+            error = nil
+            signUp = .unconfirmed(email: email, password: password)
         } catch {
             self.error = errorMessage(error)
         }
