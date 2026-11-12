@@ -12,6 +12,7 @@ struct GroupView: View {
     var body: some View {
         // The ZStack keeps one identity for all states, so a change of the state does not start the task again.
         ZStack { content }
+            .navigationTitle(profile.me?.groupId == nil ? "Grupa" : membership.group?.name ?? "Grupa")
             .task(id: profile.me?.groupId) { await load() }
     }
 
@@ -51,7 +52,6 @@ struct GroupView: View {
                     }
                 }
             }
-            .navigationTitle(group.name)
             .refreshable { await load() }
         } else if failed {
             ContentUnavailableView {
@@ -146,7 +146,7 @@ private struct MemberRow: View {
             LabeledContent(name, value: "Ty")
         } else {
             Text(name)
-                // A destructive role removes the row at once and closes the dialog on it.
+                // The swipe button has no role: a destructive role removes the row at once and closes the dialog on it.
                 .swipeActions {
                     Button("Usuń") { confirmRemove = true }
                         .tint(.red)
