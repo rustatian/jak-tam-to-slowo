@@ -287,6 +287,14 @@ Resources:
                 mail:
                   tags:
                     "ses:configuration-set": [!Ref MailConfigurationSet]
+        ExpiredInvitations:
+          Type: ScheduleV2
+          Properties:
+            # The function gets the Input as its event. A rate schedule has its first run when it is created.
+            # https://docs.aws.amazon.com/scheduler/latest/UserGuide/schedule-types.html#rate-based
+            Name: !Sub slowo-${Stage}-expired-invitations
+            ScheduleExpression: rate(1 day)
+            Input: '{"detail-type": "Scheduled Event"}'
 
 Outputs:
   UserPoolId:
