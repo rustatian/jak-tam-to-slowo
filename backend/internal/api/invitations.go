@@ -114,7 +114,7 @@ func (s *Server) createInvitation(ctx context.Context, req events.APIGatewayV2HT
 			return errTooManyInvitations
 		}
 		// One pending invitation for an address in a group: a new one replaces it.
-		if _, err := tx.Exec(ctx, "DELETE FROM invitations WHERE group_id = $1 AND email = $2 AND accepted_at IS NULL", groupID, email); err != nil {
+		if _, err := tx.Exec(ctx, "DELETE FROM invitations WHERE group_id = $1 AND email = $2", groupID, email); err != nil {
 			return err
 		}
 		if err := tx.QueryRow(ctx, "INSERT INTO invitations (group_id, email, token_hash, invited_by, expires_at) VALUES ($1, $2, $3, $4, now() + interval '7 days') RETURNING id, created_at, expires_at",
@@ -154,7 +154,7 @@ func (s *Server) listInvitations(ctx context.Context, req events.APIGatewayV2HTT
 		return *fail
 	}
 	rows, err := s.DB.Query(ctx, "SELECT i.id, i.email, i.created_at, i.expires_at, i.failure, u.id, u.display_name FROM invitations i LEFT JOIN users u ON u.id = i.invited_by "+
-		"WHERE i.group_id = $1 AND i.accepted_at IS NULL AND i.expires_at > now() ORDER BY i.created_at, i.id", req.PathParameters["groupId"])
+		"WHERE i.group_id = $1 AND i.expires_at > now() ORDER BY i.created_at, i.id", req.PathParameters["groupId"])
 	if err != nil {
 		return serverError(ctx, req, sub, err)
 	}
@@ -185,7 +185,7 @@ func (s *Server) cancelInvitation(ctx context.Context, req events.APIGatewayV2HT
 	err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
 		// The ID is compared as text: PostgreSQL refuses a uuid parameter that is not a UUID (SQLSTATE 22P02).
 		// https://www.postgresql.org/docs/16/errcodes-appendix.html
-		tag, err := tx.Exec(ctx, "DELETE FROM invitations WHERE id::text = $1 AND group_id = $2 AND accepted_at IS NULL",
+		tag, err := tx.Exec(ctx, "DELETE FROM invitations WHERE id::text = $1 AND group_id = $2",
 			req.PathParameters["invitationId"], req.PathParameters["groupId"])
 		cancelled = tag.RowsAffected() == 1
 		return err
@@ -205,7 +205,7 @@ func (s *Server) previewInvitation(ctx context.Context, req events.APIGatewayV2H
 	var preview InvitationPreview
 	// NULLIF gives no name for an inviter whose display name is empty, as for an inviter without an account.
 	err := s.DB.QueryRow(ctx, "SELECT g.id, g.name, NULLIF(u.display_name, '') FROM invitations i JOIN groups g ON g.id = i.group_id LEFT JOIN users u ON u.id = i.invited_by "+
-		"WHERE i.token_hash = $1 AND i.accepted_at IS NULL AND i.expires_at > now()", tokenHash(req.PathParameters["token"])).
+		"WHERE i.token_hash = $1 AND i.expires_at > now()", tokenHash(req.PathParameters["token"])).
 		Scan(&preview.GroupId, &preview.GroupName, &preview.InvitedBy)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return jsonResponse(http.StatusNotFound, Error{Message: "invitation not found"})
@@ -237,7 +237,7 @@ func (s *Server) acceptInvitation(ctx context.Context, req events.APIGatewayV2HT
 	hash := tokenHash(req.PathParameters["token"])
 	err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
 		var invitationID, groupID string
-		err := tx.QueryRow(ctx, "SELECT id, group_id FROM invitations WHERE token_hash = $1 AND accepted_at IS NULL AND expires_at > now()", hash).Scan(&invitationID, &groupID)
+		err := tx.QueryRow(ctx, "SELECT id, group_id FROM invitations WHERE token_hash = $1 AND expires_at > now()", hash).Scan(&invitationID, &groupID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return errNoInvitation
 		}
@@ -266,7 +266,8 @@ func (s *Server) acceptInvitation(ctx context.Context, req events.APIGatewayV2HT
 		if _, err := tx.Exec(ctx, "UPDATE users SET group_id = $1 WHERE id = $2", groupID, sub); err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, "UPDATE invitations SET accepted_at = now() WHERE id = $1", invitationID)
+		// The delete also removes the address of the invited person from the database.
+		_, err = tx.Exec(ctx, "DELETE FROM invitations WHERE id = $1", invitationID)
 		return err
 	})
 	switch {

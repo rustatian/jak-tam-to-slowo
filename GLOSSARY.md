@@ -12,7 +12,7 @@ An iPhone app for Russian speakers who learn Polish: its words and its grammar. 
 
 **Member**: A learner in a group.
 
-**Invitation**: An email from a member with a single-use link that lets one person sign up or join the group. It is valid for 7 days. Once a day, the backend deletes each invitation that is no longer valid and that nobody accepted. The code calls it `invitations`.
+**Invitation**: An email from a member with a single-use link that lets one person sign up or join the group. It is valid for 7 days. The backend deletes an invitation when a person accepts it or a member cancels it. Once a day, it deletes each invitation that is no longer valid. The code calls it `invitations`.
 
 **Invitation token**: The random secret in the invitation link. A sign-up needs a valid, unused and unexpired token. The database stores only the hash of the token.
 

@@ -39,7 +39,7 @@ func (h *Handler) Handle(ctx context.Context, event events.EventBridgeEvent) err
 		// 3,000 rows. Delete in parts when more than 150 members can each send their 20 invitations on one day.
 		// https://docs.aws.amazon.com/aurora-dsql/latest/userguide/CHAP_quotas.html#SECTION_database-limits
 		return db.Tx(ctx, h.DB, func(tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, "DELETE FROM invitations WHERE accepted_at IS NULL AND expires_at <= now()")
+			_, err := tx.Exec(ctx, "DELETE FROM invitations WHERE expires_at <= now()")
 			return err
 		})
 	case "Email Bounced":
