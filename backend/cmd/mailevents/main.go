@@ -1,4 +1,5 @@
-// Command mailevents is the Lambda function for the Amazon SES events of the invitation emails.
+// Command mailevents is the Lambda function for the Amazon SES events of the invitation emails and for the
+// schedule that deletes the expired invitations.
 package main
 
 import (

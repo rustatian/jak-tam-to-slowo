@@ -101,3 +101,54 @@ func TestHandle(t *testing.T) {
 		})
 	}
 }
+
+// testdata/schedule.json is the Input of the schedule in infra/template.yaml. The function gets this text as its event.
+func TestHandleSchedule(t *testing.T) {
+	tests := []struct {
+		name     string
+		expires  string // expires_at of the invitation, as an interval from now
+		accepted bool   // a person accepted the invitation
+		wantKept bool
+	}{
+		{name: "an expired invitation that nobody accepted is deleted", expires: "-1 second"},
+		{name: "an invitation that still works stays", expires: "1 hour", wantKept: true},
+		{name: "an expired invitation that a person accepted stays", expires: "-1 second", accepted: true, wantKept: true},
+	}
+	raw, err := os.ReadFile("testdata/schedule.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var event events.EventBridgeEvent
+	if err := json.Unmarshal(raw, &event); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			pool := dbtest.New(t)
+			if _, err := db.Migrate(ctx, pool, migrations.FS); err != nil {
+				t.Fatal(err)
+			}
+			var group string
+			if err := pool.QueryRow(ctx, "INSERT INTO groups (name) VALUES ('Rodzina') RETURNING id").Scan(&group); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := pool.Exec(ctx, "INSERT INTO invitations (group_id, email, token_hash, expires_at, accepted_at) VALUES ($1, 'a@example.com', 'a', now() + $2::interval, CASE WHEN $3 THEN now() END)",
+				group, tt.expires, tt.accepted); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := (&Handler{DB: pool}).Handle(ctx, event); err != nil {
+				t.Fatalf("Handle returned error %v, want none", err)
+			}
+
+			var kept bool
+			if err := pool.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM invitations)").Scan(&kept); err != nil {
+				t.Fatal(err)
+			}
+			if kept != tt.wantKept {
+				t.Errorf("the invitation is kept = %v, want %v", kept, tt.wantKept)
+			}
+		})
+	}
+}
