@@ -107,12 +107,10 @@ func TestHandleSchedule(t *testing.T) {
 	tests := []struct {
 		name     string
 		expires  string // expires_at of the invitation, as an interval from now
-		accepted bool   // a person accepted the invitation
 		wantKept bool
 	}{
-		{name: "an expired invitation that nobody accepted is deleted", expires: "-1 second"},
+		{name: "an expired invitation is deleted", expires: "-1 second"},
 		{name: "an invitation that still works stays", expires: "1 hour", wantKept: true},
-		{name: "an expired invitation that a person accepted stays", expires: "-1 second", accepted: true, wantKept: true},
 	}
 	raw, err := os.ReadFile("testdata/schedule.json")
 	if err != nil {
@@ -133,8 +131,8 @@ func TestHandleSchedule(t *testing.T) {
 			if err := pool.QueryRow(ctx, "INSERT INTO groups (name) VALUES ('Rodzina') RETURNING id").Scan(&group); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := pool.Exec(ctx, "INSERT INTO invitations (group_id, email, token_hash, expires_at, accepted_at) VALUES ($1, 'a@example.com', 'a', now() + $2::interval, CASE WHEN $3 THEN now() END)",
-				group, tt.expires, tt.accepted); err != nil {
+			if _, err := pool.Exec(ctx, "INSERT INTO invitations (group_id, email, token_hash, expires_at) VALUES ($1, 'a@example.com', 'a', now() + $2::interval)",
+				group, tt.expires); err != nil {
 				t.Fatal(err)
 			}
 
