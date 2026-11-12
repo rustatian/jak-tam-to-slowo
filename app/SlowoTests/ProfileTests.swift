@@ -20,6 +20,8 @@ final class FakeAPI: APIProtocol {
         var createInvitation: [Operations.CreateInvitation.Output] = []
         var listInvitations: [Operations.ListInvitations.Output] = []
         var cancelInvitation: [Operations.CancelInvitation.Output] = []
+        var previewInvitation: [Operations.PreviewInvitation.Output] = []
+        var acceptInvitation: [Operations.AcceptInvitation.Output] = []
     }
 
     struct Empty: Error {}
@@ -134,6 +136,24 @@ final class FakeAPI: APIProtocol {
             s.calls.append("cancelInvitation")
             s.inputs.append("cancelInvitation \(input.path.groupId) \(input.path.invitationId)")
             return try Self.next(&s.answers.cancelInvitation)
+        }
+    }
+
+    func previewInvitation(_ input: Operations.PreviewInvitation.Input) async throws -> Operations.PreviewInvitation.Output {
+        try state.withLock { s in
+            s.calls.append("previewInvitation")
+            s.inputs.append("previewInvitation \(input.path.token)")
+            return try Self.next(&s.answers.previewInvitation)
+        }
+    }
+
+    func acceptInvitation(_ input: Operations.AcceptInvitation.Input) async throws -> Operations.AcceptInvitation.Output {
+        try state.withLock { s in
+            s.calls.append("acceptInvitation")
+            if case let .json(accept) = input.body {
+                s.inputs.append("acceptInvitation \(input.path.token) \(accept.groupName ?? "-") \(accept.leaveGroup == true ? "leave" : "-")")
+            }
+            return try Self.next(&s.answers.acceptInvitation)
         }
     }
 }
@@ -255,6 +275,9 @@ struct ErrorMessageCase: Sendable, CustomTestStringConvertible {
     ErrorMessageCase(name: "an address that is not valid", error: GroupError.badEmail, message: "Nieprawidłowy adres e-mail."),
     ErrorMessageCase(name: "the invitation limit", error: GroupError.tooManyInvitations, message: "Możesz wysłać najwyżej 20 zaproszeń dziennie."),
     ErrorMessageCase(name: "an email that was not sent", error: GroupError.emailNotSent, message: "Nie udało się wysłać e-maila. Spróbuj ponownie."),
+    ErrorMessageCase(name: "a dead invitation", error: InvitationError.notFound, message: "To zaproszenie jest już nieważne."),
+    ErrorMessageCase(name: "too many tries for an invitation", error: InvitationError.tooManyTries, message: "Zbyt wiele prób. Spróbuj ponownie później."),
+    ErrorMessageCase(name: "a rejected name of a new group", error: InvitationError.badName, message: "Nazwa musi mieć od 1 do 40 znaków."),
     ErrorMessageCase(
         name: "no network through the API client",
         error: ClientError(operationID: "updateMe", operationInput: "", causeDescription: "transport", underlyingError: URLError(.notConnectedToInternet)),

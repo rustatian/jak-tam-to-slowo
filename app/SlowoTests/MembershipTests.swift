@@ -499,6 +499,23 @@ let membershipCases: [MembershipCase] = [
         calls: ["getMe", "getGroup", "listGroupMembers", "listInvitations", "cancelInvitation"], inputs: ["cancelInvitation g1 i1"],
         error: .unexpected, group: nasza, members: [ola, ivan], invitations: [kasia]
     ),
+    MembershipCase(
+        name: "a load for another group drops the shown group",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped))), .ok(.init(body: .json(inG2)))],
+            createGroup: [.conflict(.init(body: .json(.init(message: "already in a group"))))],
+            getGroup: [.ok(.init(body: .json(nasza))), .internalServerError(.init(body: .json(.init(message: "internal error"))))],
+            listGroupMembers: [.ok(.init(body: .json(.init(members: [ola, ivan]))))],
+            listInvitations: [.ok(.init(body: .json(.init(invitations: []))))]
+        ),
+        action: {
+            try await $0.load()
+            try await $0.create(name: "Nowa")
+            try await $0.load()
+        },
+        calls: ["getMe", "getGroup", "listGroupMembers", "listInvitations", "createGroup", "getMe", "getGroup"], inputs: ["createGroup Nowa"],
+        error: .unexpected, group: nil, members: [], invitations: []
+    ),
 ]
 
 @MainActor
