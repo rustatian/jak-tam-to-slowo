@@ -6,7 +6,7 @@ struct Stage: Sendable {
     let cognitoURL: URL
     let clientID: String
 
-    /// Each build configuration uses slowo-dev, the one stack that exists.
+    /// Each build configuration uses slowo-dev, the only stack that exists.
     static let current = Stage(
         apiURL: URL(string: "https://api-dev.slowo.rustatian.me")!,
         cognitoURL: URL(string: "https://cognito-idp.eu-central-1.amazonaws.com/")!,
