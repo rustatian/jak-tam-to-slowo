@@ -33,8 +33,13 @@ jobs:
           aws-region: us-east-1
           mask-aws-account-id: true
 
+      # The association file needs the content type application/json and has no file extension, so cp sets
+      # the type. A file that a filter excludes stays in the bucket when --delete is set.
+      # https://docs.aws.amazon.com/cli/latest/reference/s3/sync.html
       - name: Upload the site
-        run: aws s3 sync site "s3://$BUCKET" --delete --cache-control 'public, max-age=0, s-maxage=86400'
+        run: |
+          aws s3 sync site "s3://$BUCKET" --delete --exclude '.well-known/*' --cache-control 'public, max-age=0, s-maxage=86400'
+          aws s3 cp site/.well-known/apple-app-site-association "s3://$BUCKET/.well-known/apple-app-site-association" --content-type application/json --cache-control 'public, max-age=0, s-maxage=86400'
         env:
           BUCKET: ${{ secrets.SITE_BUCKET }}
 
