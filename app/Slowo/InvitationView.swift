@@ -5,6 +5,7 @@ struct InvitationView: View {
     let link: InvitationLink
     let profile: Profile?
     let accepted: () -> Void
+    var signUp: () -> Void = {}
 
     @State private var loadError: (any Error)?
     @State private var groupName = ""
@@ -28,19 +29,7 @@ struct InvitationView: View {
     }
 
     @ViewBuilder private var content: some View {
-        if let loadError {
-            ContentUnavailableView {
-                Label(errorMessage(loadError), systemImage: "exclamationmark.triangle")
-            } actions: {
-                // A retry at once cannot help a dead invitation or the rate limit.
-                switch loadError as? InvitationError {
-                case .notFound, .tooManyTries:
-                    EmptyView()
-                default:
-                    Button("Spróbuj ponownie") { Task { await load() } }
-                }
-            }
-        } else if let preview = link.preview {
+        if let preview = link.preview {
             Form {
                 Section {
                     line(preview)
@@ -50,7 +39,20 @@ struct InvitationView: View {
                 } else {
                     Section {
                         Button("Zaloguj się") { link.isPresented = false }
+                        Button("Załóż konto", action: signUp)
                     }
+                }
+            }
+        } else if let loadError {
+            ContentUnavailableView {
+                Label(errorMessage(loadError), systemImage: "exclamationmark.triangle")
+            } actions: {
+                // A retry at once cannot help a dead invitation or the rate limit.
+                switch loadError as? InvitationError {
+                case .notFound, .tooManyTries:
+                    EmptyView()
+                default:
+                    Button("Spróbuj ponownie") { Task { await load() } }
                 }
             }
         } else {

@@ -150,3 +150,104 @@ func logOut(_ c: LogOutCase) async throws {
     #expect(!session.isSignedIn)
     #expect(try store.load() == nil)
 }
+
+struct ConfirmSignUpCase: Sendable, CustomTestStringConvertible {
+    enum Outcome: Equatable, Sendable {
+        case done
+        case cognito(CognitoError)
+        case offline
+    }
+
+    let name: String
+    let steps: [FakeCognito.Step]
+    let targets: [String]
+    let outcomes: [Outcome]
+    let signedIn: Bool
+    let stored: Tokens?
+
+    var testDescription: String { name }
+}
+
+extension FakeCognito.Step {
+    static let ok = Self()
+    static let signIn = Self(answer: #"{"AuthenticationResult":{"AccessToken":"a1","ExpiresIn":3600,"IdToken":"i1","RefreshToken":"r1","TokenType":"Bearer"}}"#)
+    static let mismatch = Self(status: 400, answer: #"{"__type":"CodeMismatchException","message":"Invalid verification code provided, please try again."}"#)
+    static let expired = Self(status: 400, answer: #"{"__type":"ExpiredCodeException","message":"Invalid code provided, please request a code again."}"#)
+    static let unconfirmed = Self(status: 400, answer: #"{"__type":"UserNotConfirmedException","message":"User is not confirmed."}"#)
+    static let offline = Self(failure: URLError(.notConnectedToInternet))
+}
+
+let signedUp = Tokens(accessToken: "a1", refreshToken: "r1", expiresAt: start.addingTimeInterval(3600))
+
+let confirmSignUpCases: [ConfirmSignUpCase] = [
+    ConfirmSignUpCase(
+        name: "confirm, then sign in",
+        steps: [.ok, .signIn], targets: ["ConfirmSignUp", "InitiateAuth"],
+        outcomes: [.done], signedIn: true, stored: signedUp
+    ),
+    ConfirmSignUpCase(
+        name: "a wrong code stops before the sign-in",
+        steps: [.mismatch], targets: ["ConfirmSignUp"],
+        outcomes: [.cognito(.service("CodeMismatchException"))], signedIn: false, stored: nil
+    ),
+    ConfirmSignUpCase(
+        name: "a confirmed account signs in after the answer for an old code",
+        steps: [.expired, .signIn], targets: ["ConfirmSignUp", "InitiateAuth"],
+        outcomes: [.done], signedIn: true, stored: signedUp
+    ),
+    ConfirmSignUpCase(
+        name: "an old code of an account with no confirmation",
+        steps: [.expired, .unconfirmed], targets: ["ConfirmSignUp", "InitiateAuth"],
+        outcomes: [.cognito(.service("ExpiredCodeException"))], signedIn: false, stored: nil
+    ),
+    ConfirmSignUpCase(
+        name: "no network at the sign-in after the answer for an old code",
+        steps: [.expired, .offline], targets: ["ConfirmSignUp", "InitiateAuth"],
+        outcomes: [.offline], signedIn: false, stored: nil
+    ),
+    ConfirmSignUpCase(
+        name: "a second try after a failed sign-in",
+        steps: [.ok, .offline, .expired, .signIn],
+        targets: ["ConfirmSignUp", "InitiateAuth", "ConfirmSignUp", "InitiateAuth"],
+        outcomes: [.offline, .done], signedIn: true, stored: signedUp
+    ),
+]
+
+@MainActor
+@Test(arguments: confirmSignUpCases)
+func confirmSignUp(_ c: ConfirmSignUpCase) async throws {
+    let store = TokenStore(service: "test." + UUID().uuidString)
+    defer { try? store.delete() }
+    let fake = FakeCognito(steps: c.steps)
+    let session = Session(cognito: fake.cognito(now: { start }), store: store, now: { start })
+
+    var outcomes: [ConfirmSignUpCase.Outcome] = []
+    for _ in c.outcomes {
+        do {
+            try await session.confirmSignUp(email: "ola@example.com", code: "123456", password: "Haslo-1a")
+            outcomes.append(.done)
+        } catch let error as CognitoError {
+            outcomes.append(.cognito(error))
+        } catch is URLError {
+            outcomes.append(.offline)
+        }
+    }
+
+    let targets = fake.requests.compactMap { $0.value(forHTTPHeaderField: "X-Amz-Target")?.split(separator: ".").last.map(String.init) }
+    #expect(targets == c.targets)
+    #expect(outcomes == c.outcomes)
+    #expect(session.isSignedIn == c.signedIn)
+    #expect(try store.load() == c.stored)
+
+    for (request, target) in zip(fake.requests, targets) {
+        let data = try #require(request.httpBody)
+        let body = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        if target == "ConfirmSignUp" {
+            #expect(body["ConfirmationCode"] as? String == "123456")
+        } else {
+            let parameters = body["AuthParameters"] as? [String: String]
+            #expect(parameters?["USERNAME"] == "ola@example.com")
+            #expect(parameters?["PASSWORD"] == "Haslo-1a")
+        }
+    }
+}

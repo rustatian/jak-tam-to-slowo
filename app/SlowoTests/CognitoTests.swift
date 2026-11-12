@@ -22,6 +22,7 @@ struct CognitoCase: Sendable, CustomTestStringConvertible {
 }
 
 let signInBody = #"{"AuthFlow":"USER_PASSWORD_AUTH","ClientId":"client1","AuthParameters":{"USERNAME":"ola@example.com","PASSWORD":"Haslo-1a"}}"#
+let signUpBody = #"{"ClientId":"client1","Username":"ola@example.com","Password":"Haslo-1a","ValidationData":[{"Name":"invitation","Value":"T1"}]}"#
 
 let cognitoCases: [CognitoCase] = [
     CognitoCase(
@@ -124,6 +125,54 @@ let cognitoCases: [CognitoCase] = [
         answer: "",
         target: "RevokeToken",
         body: #"{"ClientId":"client1","Token":"r1"}"#,
+        outcome: .done
+    ),
+    CognitoCase(
+        name: "sign-up sends the invitation as validation data",
+        call: {
+            try await $0.signUp(email: " ola@example.com\n", password: "Haslo-1a", invitation: "T1")
+            return nil
+        },
+        status: 200,
+        answer: #"{"CodeDeliveryDetails":{"AttributeName":"email","DeliveryMedium":"EMAIL","Destination":"o***@e***"},"UserConfirmed":false,"UserSub":"s1"}"#,
+        target: "SignUp",
+        body: signUpBody,
+        outcome: .done
+    ),
+    CognitoCase(
+        name: "a sign-up that the trigger rejects keeps the text",
+        call: {
+            try await $0.signUp(email: "ola@example.com", password: "Haslo-1a", invitation: "T1")
+            return nil
+        },
+        status: 400,
+        answer: #"{"__type":"UserLambdaValidationException","message":"PreSignUp failed with error invitation not found."}"#,
+        target: "SignUp",
+        body: signUpBody,
+        outcome: .error(.trigger("PreSignUp failed with error invitation not found."))
+    ),
+    CognitoCase(
+        name: "confirm sign-up",
+        call: {
+            try await $0.confirmSignUp(email: " ola@example.com\n", code: "123456")
+            return nil
+        },
+        status: 200,
+        answer: "{}",
+        target: "ConfirmSignUp",
+        body: #"{"ClientId":"client1","Username":"ola@example.com","ConfirmationCode":"123456"}"#,
+        outcome: .done
+    ),
+    CognitoCase(
+        name: "send the sign-up code again",
+        call: {
+            try await $0.resendCode(email: "ola@example.com ")
+            return nil
+        },
+        status: 200,
+        answer: #"{"CodeDeliveryDetails":{"AttributeName":"email","DeliveryMedium":"EMAIL","Destination":"o***@e***"}}"#,
+        target: "ResendConfirmationCode",
+        body: #"{"ClientId":"client1","Username":"ola@example.com"}"#,
         outcome: .done
     ),
 ]

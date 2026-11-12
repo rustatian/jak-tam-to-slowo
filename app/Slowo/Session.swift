@@ -49,6 +49,30 @@ final class Session {
         try await signIn(email: email, password: newPassword)
     }
 
+    func signUp(email: String, password: String, invitation: String) async throws {
+        try await cognito.signUp(email: email, password: password, invitation: invitation)
+    }
+
+    func sendSignUpCode(email: String) async throws {
+        try await cognito.resendCode(email: email)
+    }
+
+    /// Confirms the account with the code from the email, then signs in with the password of the sign-up.
+    func confirmSignUp(email: String, code: String, password: String) async throws {
+        do {
+            try await cognito.confirmSignUp(email: email, code: code)
+        } catch CognitoError.service("ExpiredCodeException") {
+            // The pool gives this answer also for a confirmed account. Only a confirmed account can sign in.
+            do {
+                try await signIn(email: email, password: password)
+                return
+            } catch is CognitoError {
+                throw CognitoError.service("ExpiredCodeException")
+            }
+        }
+        try await signIn(email: email, password: password)
+    }
+
     /// Returns an access token with more than 5 minutes left. Callers that come during a refresh wait for it.
     func validAccessToken() async throws -> String {
         guard let tokens else {

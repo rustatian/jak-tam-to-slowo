@@ -12,6 +12,8 @@ enum CognitoError: Error, Equatable {
     case service(String)
     /// Cognito asks for a challenge, for example NEW_PASSWORD_REQUIRED. The app answers none.
     case unsupportedChallenge(String)
+    /// A Lambda trigger rejected the request. The text is the message of the answer.
+    case trigger(String)
     case badResponse
 }
 
@@ -80,6 +82,31 @@ struct Cognito: Sendable {
         ])
     }
 
+    /// The PreSignUp trigger reads the invitation token from the validation data.
+    func signUp(email: String, password: String, invitation: String) async throws {
+        let _: Empty = try await call("SignUp", [
+            "ClientId": clientID,
+            "Username": trimmed(email),
+            "Password": password,
+            "ValidationData": [["Name": "invitation", "Value": invitation]],
+        ])
+    }
+
+    func confirmSignUp(email: String, code: String) async throws {
+        let _: Empty = try await call("ConfirmSignUp", [
+            "ClientId": clientID,
+            "Username": trimmed(email),
+            "ConfirmationCode": code,
+        ])
+    }
+
+    func resendCode(email: String) async throws {
+        let _: Empty = try await call("ResendConfirmationCode", [
+            "ClientId": clientID,
+            "Username": trimmed(email),
+        ])
+    }
+
     /// Revokes the refresh token and the access tokens made from it.
     func revoke(_ refreshToken: String) async throws {
         let _: Empty = try await call("RevokeToken", [
@@ -112,8 +139,11 @@ struct Cognito: Sendable {
             throw CognitoError.badResponse
         }
         guard (200..<300).contains(status) else {
-            let type = (try? JSONDecoder().decode(ErrorAnswer.self, from: data))?.type
-            throw type.map { CognitoError.service(errorName($0)) } ?? CognitoError.badResponse
+            guard let answer = try? JSONDecoder().decode(ErrorAnswer.self, from: data) else {
+                throw CognitoError.badResponse
+            }
+            let name = errorName(answer.type)
+            throw name == "UserLambdaValidationException" ? CognitoError.trigger(answer.message ?? "") : CognitoError.service(name)
         }
         do {
             // RevokeToken answers with an empty body.
@@ -161,9 +191,11 @@ private struct AuthAnswer: Decodable {
 
 private struct ErrorAnswer: Decodable {
     let type: String
+    let message: String?
 
     enum CodingKeys: String, CodingKey {
         case type = "__type"
+        case message
     }
 }
 

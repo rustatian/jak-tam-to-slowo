@@ -3,33 +3,44 @@ import Synchronization
 
 @testable import Slowo
 
-/// Answers every Cognito request with one fixed answer, or fails it, and keeps the requests.
+/// Answers the Cognito requests with a list of steps, and keeps the requests.
+/// Request n gets step n, and the last step answers each later request.
 final class FakeCognito: Sendable {
-    private let status: Int
-    private let answer: String
-    private let failure: URLError?
+    struct Step: Sendable {
+        var status = 200
+        var answer = "{}"
+        var failure: URLError?
+    }
+
+    private let steps: [Step]
     private let delay: Duration
     private let sent = Mutex<[URLRequest]>([])
 
+    init(steps: [Step]) {
+        self.steps = steps
+        delay = .zero
+    }
+
     init(status: Int = 200, answer: String = "{}", failure: URLError? = nil, delay: Duration = .zero) {
-        self.status = status
-        self.answer = answer
-        self.failure = failure
+        steps = [Step(status: status, answer: answer, failure: failure)]
         self.delay = delay
     }
 
     var requests: [URLRequest] { sent.withLock { $0 } }
 
     func send(_ request: URLRequest) async throws -> (Data, URLResponse) {
-        sent.withLock { $0.append(request) }
+        let step = sent.withLock {
+            $0.append(request)
+            return steps[min($0.count, steps.count) - 1]
+        }
         if delay > .zero {
             try await Task.sleep(for: delay)
         }
-        if let failure {
+        if let failure = step.failure {
             throw failure
         }
-        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
-        return (Data(answer.utf8), response)
+        let response = HTTPURLResponse(url: request.url!, statusCode: step.status, httpVersion: nil, headerFields: nil)!
+        return (Data(step.answer.utf8), response)
     }
 
     func cognito(now: @escaping @Sendable () -> Date) -> Cognito {

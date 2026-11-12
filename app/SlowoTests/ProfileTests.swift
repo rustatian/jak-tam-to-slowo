@@ -278,6 +278,10 @@ struct ErrorMessageCase: Sendable, CustomTestStringConvertible {
     ErrorMessageCase(name: "a dead invitation", error: InvitationError.notFound, message: "To zaproszenie jest już nieważne."),
     ErrorMessageCase(name: "too many tries for an invitation", error: InvitationError.tooManyTries, message: "Zbyt wiele prób. Spróbuj ponownie później."),
     ErrorMessageCase(name: "a rejected name of a new group", error: InvitationError.badName, message: "Nazwa musi mieć od 1 do 40 znaków."),
+    ErrorMessageCase(name: "a sign-up with a dead invitation", error: CognitoError.trigger("PreSignUp failed with error invitation not found."), message: "To zaproszenie jest już nieważne."),
+    ErrorMessageCase(name: "a sign-up that the trigger cannot check", error: CognitoError.trigger("PreSignUp failed with error sign-up is not possible now."), message: "Rejestracja nie jest teraz możliwa. Spróbuj ponownie później."),
+    ErrorMessageCase(name: "an address that has an account", error: CognitoError.service("UsernameExistsException"), message: "Konto z tym adresem już istnieje. Zaloguj się."),
+    ErrorMessageCase(name: "an address with a wrong form", error: CognitoError.service("InvalidParameterException"), message: "Nieprawidłowy adres e-mail."),
     ErrorMessageCase(
         name: "no network through the API client",
         error: ClientError(operationID: "updateMe", operationInput: "", causeDescription: "transport", underlyingError: URLError(.notConnectedToInternet)),

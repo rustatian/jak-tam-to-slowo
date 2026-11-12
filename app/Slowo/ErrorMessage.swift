@@ -4,7 +4,7 @@ import OpenAPIRuntime
 /// The password rules of the user pool.
 let passwordRules = "Co najmniej 8 znaków, w tym wielka i mała litera, cyfra i znak specjalny."
 
-/// The Polish text for an error of a sign-in, password reset, profile, group or invitation call.
+/// The Polish text for an error of a sign-in, sign-up, password reset, profile, group or invitation call.
 func errorMessage(_ error: Error) -> String {
     // The generated API client wraps the transport error.
     let error = (error as? ClientError)?.underlyingError ?? error
@@ -27,6 +27,11 @@ func errorMessage(_ error: Error) -> String {
         return "To zaproszenie jest już nieważne."
     case InvitationError.tooManyTries:
         return "Zbyt wiele prób. Spróbuj ponownie później."
+    // The PreSignUp trigger gives "invitation not found" for a dead token.
+    case CognitoError.trigger(let text) where text.contains("invitation not found"):
+        return "To zaproszenie jest już nieważne."
+    case CognitoError.trigger:
+        return "Rejestracja nie jest teraz możliwa. Spróbuj ponownie później."
     default:
         break
     }
@@ -48,6 +53,10 @@ func errorMessage(_ error: Error) -> String {
         return "Kod wygasł. Wyślij nowy kod."
     case "InvalidPasswordException":
         return passwordRules
+    case "UsernameExistsException":
+        return "Konto z tym adresem już istnieje. Zaloguj się."
+    case "InvalidParameterException":
+        return "Nieprawidłowy adres e-mail."
     default:
         return "Coś poszło nie tak. Spróbuj ponownie."
     }
