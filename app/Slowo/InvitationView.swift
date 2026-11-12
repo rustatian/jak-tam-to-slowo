@@ -111,7 +111,7 @@ struct InvitationView: View {
     }
 
     private func load() async {
-        // A forget clears the token while the sheet closes: the closing sheet keeps its content.
+        // forget() clears the token while the sheet closes: the closing sheet keeps its content.
         guard link.token != nil else { return }
         loadError = nil
         error = nil
