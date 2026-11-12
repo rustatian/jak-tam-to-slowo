@@ -42,6 +42,7 @@ var (
 	errNoInvitation       = errors.New("no pending invitation has the token")
 	errAlreadyMember      = errors.New("the user is a member of the group of the invitation")
 	errInOtherGroup       = errors.New("the user is in another group")
+	errGroupName          = errors.New("the name of the new group is not valid")
 )
 
 // validEmail returns the address without the spaces at its ends and in lower case. ok reports that it is one
@@ -199,12 +200,13 @@ func (s *Server) cancelInvitation(ctx context.Context, req events.APIGatewayV2HT
 	return noContent()
 }
 
-// previewInvitation shows the group and the inviter of a pending invitation. The route has no authorizer: the token
-// of the invitation link is the proof. Every token without a pending invitation gets the same answer.
+// previewInvitation shows the group and the inviter of a pending invitation. A new group invitation has none of
+// them. The route has no authorizer: the token of the invitation link is the proof. Every token without a pending
+// invitation gets the same answer.
 func (s *Server) previewInvitation(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
 	var preview InvitationPreview
 	// NULLIF gives no name for an inviter whose display name is empty, as for an inviter without an account.
-	err := s.DB.QueryRow(ctx, "SELECT g.id, g.name, NULLIF(u.display_name, '') FROM invitations i JOIN groups g ON g.id = i.group_id LEFT JOIN users u ON u.id = i.invited_by "+
+	err := s.DB.QueryRow(ctx, "SELECT g.id, g.name, NULLIF(u.display_name, '') FROM invitations i LEFT JOIN groups g ON g.id = i.group_id LEFT JOIN users u ON u.id = i.invited_by "+
 		"WHERE i.token_hash = $1 AND i.expires_at > now()", tokenHash(req.PathParameters["token"])).
 		Scan(&preview.GroupId, &preview.GroupName, &preview.InvitedBy)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -216,9 +218,10 @@ func (s *Server) previewInvitation(ctx context.Context, req events.APIGatewayV2H
 	return jsonResponse(http.StatusOK, preview)
 }
 
-// acceptInvitation puts the signed-in user into the group of a pending invitation. The token is the proof, so the
-// email of the account can differ from the address of the invitation. A user of another group moves only with
-// leaveGroup.
+// acceptInvitation puts the signed-in user into the group of a pending invitation. A new group invitation has no
+// group: the acceptance creates it with the name from the body, and the user is its first member. The token is the
+// proof, so the email of the account can differ from the address of the invitation. A user of another group moves
+// only with leaveGroup.
 func (s *Server) acceptInvitation(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
 	sub := subject(req)
 	if sub == "" {
@@ -236,7 +239,8 @@ func (s *Server) acceptInvitation(ctx context.Context, req events.APIGatewayV2HT
 	}
 	hash := tokenHash(req.PathParameters["token"])
 	err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
-		var invitationID, groupID string
+		var invitationID string
+		var groupID *string
 		err := tx.QueryRow(ctx, "SELECT id, group_id FROM invitations WHERE token_hash = $1 AND expires_at > now()", hash).Scan(&invitationID, &groupID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return errNoInvitation
@@ -244,12 +248,22 @@ func (s *Server) acceptInvitation(ctx context.Context, req events.APIGatewayV2HT
 		if err != nil {
 			return err
 		}
+		var newName string
+		if groupID == nil {
+			if body.GroupName == nil {
+				return errGroupName
+			}
+			var ok bool
+			if newName, ok = trimmedName(*body.GroupName); !ok {
+				return errGroupName
+			}
+		}
 		var current *string
 		if err := tx.QueryRow(ctx, "SELECT group_id FROM users WHERE id = $1", sub).Scan(&current); err != nil {
 			return err
 		}
 		if current != nil {
-			if *current == groupID {
+			if groupID != nil && *current == *groupID {
 				return errAlreadyMember
 			}
 			if body.LeaveGroup == nil || !*body.LeaveGroup {
@@ -259,8 +273,13 @@ func (s *Server) acceptInvitation(ctx context.Context, req events.APIGatewayV2HT
 				return err
 			}
 		}
-		// A join changes the members of the group too, so it starts with the same write of the group row as leaveGroup.
-		if _, err := tx.Exec(ctx, "UPDATE groups SET name = name WHERE id = $1", groupID); err != nil {
+		if groupID == nil {
+			err = tx.QueryRow(ctx, "INSERT INTO groups (name) VALUES ($1) RETURNING id", newName).Scan(&groupID)
+		} else {
+			// A join changes the members of the group too, so it starts with the same write of the group row as leaveGroup.
+			_, err = tx.Exec(ctx, "UPDATE groups SET name = name WHERE id = $1", groupID)
+		}
+		if err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, "UPDATE users SET group_id = $1 WHERE id = $2", groupID, sub); err != nil {
@@ -277,6 +296,8 @@ func (s *Server) acceptInvitation(ctx context.Context, req events.APIGatewayV2HT
 		return jsonResponse(http.StatusConflict, Error{Message: "already a member of this group"})
 	case errors.Is(err, errInOtherGroup):
 		return jsonResponse(http.StatusConflict, Error{Message: "in another group"})
+	case errors.Is(err, errGroupName):
+		return jsonResponse(http.StatusBadRequest, Error{Message: "name must have 1 to 40 characters"})
 	case err != nil:
 		return serverError(ctx, req, sub, err)
 	}

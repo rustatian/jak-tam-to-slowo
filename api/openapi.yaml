@@ -241,7 +241,7 @@ paths:
       - $ref: "#/components/parameters/InvitationToken"
     get:
       operationId: previewInvitation
-      summary: The group and the inviter of a pending invitation. The token is the proof, so the call needs no access token.
+      summary: The group and the inviter of a pending invitation. An invitation that starts a new group has no group and no inviter. The token is the proof, so the call needs no access token.
       security: []
       responses:
         "200":
@@ -261,7 +261,7 @@ paths:
       - $ref: "#/components/parameters/InvitationToken"
     post:
       operationId: acceptInvitation
-      summary: Join the group of a pending invitation. An invitation can be accepted one time. A user of another group must confirm that they leave it.
+      summary: Join the group of a pending invitation, or start the group of a new group invitation. An invitation can be accepted one time. A user of another group must confirm that they leave it.
       requestBody:
         content:
           application/json:
@@ -491,12 +491,13 @@ components:
             $ref: "#/components/schemas/Invitation"
     InvitationPreview:
       type: object
-      required: [groupId, groupName]
       properties:
         groupId:
           type: string
+          description: Absent for an invitation that starts a new group.
         groupName:
           type: string
+          description: Absent for an invitation that starts a new group.
         invitedBy:
           type: string
           description: The display name of the member who sent the invitation. Absent when that name is empty or the account does not exist any more.
@@ -506,6 +507,11 @@ components:
         leaveGroup:
           type: boolean
           description: True confirms that the signed-in user leaves their current group to join this one.
+        groupName:
+          type: string
+          minLength: 1
+          maxLength: 40
+          description: The name of the new group, with the rule of the group name. Needed for an invitation that starts a new group.
     Error:
       type: object
       required: [message]
