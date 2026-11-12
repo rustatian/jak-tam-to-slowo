@@ -1,4 +1,5 @@
-// Package mailevents records what Amazon SES reports about the invitation emails.
+// Package mailevents records what Amazon SES reports about the invitation emails, and deletes the expired
+// invitations on a schedule.
 package mailevents
 
 import (
@@ -13,7 +14,7 @@ import (
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/db"
 )
 
-// Handler receives the events of the invitation emails from Amazon EventBridge.
+// Handler receives the events of the invitation emails from Amazon EventBridge, and the event of the schedule.
 type Handler struct {
 	DB *pgxpool.Pool
 }
@@ -27,11 +28,20 @@ type detail struct {
 	} `json:"mail"`
 }
 
-// Handle marks the invitation of a bounce or a complaint event. It writes no part of the event into the log,
-// because an event has the address of the invited person.
+// Handle marks the invitation of a bounce or a complaint event, and deletes the expired invitations on the event
+// of the schedule. It writes no part of an event into the log, because a mail event has the address of the
+// invited person.
 func (h *Handler) Handle(ctx context.Context, event events.EventBridgeEvent) error {
 	var failure string
 	switch event.DetailType {
+	case "Scheduled Event":
+		// shortcut: one transaction deletes all expired invitations, and Aurora DSQL lets a transaction change
+		// 3,000 rows. Delete in parts when more than 150 members can each send their 20 invitations on one day.
+		// https://docs.aws.amazon.com/aurora-dsql/latest/userguide/CHAP_quotas.html#SECTION_database-limits
+		return db.Tx(ctx, h.DB, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, "DELETE FROM invitations WHERE accepted_at IS NULL AND expires_at <= now()")
+			return err
+		})
 	case "Email Bounced":
 		// Every bounce counts, also a transient one. An automatic reply of the receiver can cause a transient
 		// bounce for an email that arrived, and the event does not tell the two apart.
