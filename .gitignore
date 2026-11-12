@@ -5,3 +5,5 @@
 .env*
 .local/
 xcuserdata/
+.DS_Store
+*.profraw
