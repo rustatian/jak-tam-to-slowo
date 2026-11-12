@@ -8,6 +8,7 @@ struct GroupView: View {
     @State private var failed = false
     @State private var error: String?
     @State private var confirmLeave = false
+    @State private var invites = 0
 
     var body: some View {
         // The ZStack keeps one identity for all states, so a change of the state does not start the task again.
@@ -35,6 +36,9 @@ struct GroupView: View {
                         }
                     }
                 }
+                InvitationSection(membership: membership, invited: { invites += 1 }) { id in
+                    change { try await membership.cancel(id) }
+                }
                 Section {
                     Button("Opuść grupę", role: .destructive) { confirmLeave = true }
                         .confirmationDialog("Opuścić grupę?", isPresented: $confirmLeave, titleVisibility: .visible) {
@@ -53,6 +57,13 @@ struct GroupView: View {
                 }
             }
             .refreshable { await load() }
+            .task(id: invites) {
+                guard invites > 0 else { return }
+                // A bounce or a complaint reaches the server a few seconds after the send. This load shows no error.
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
+                try? await membership.load()
+            }
         } else if failed {
             ContentUnavailableView {
                 Label("Nie udało się połączyć z serwerem.", systemImage: "wifi.exclamationmark")
@@ -129,6 +140,92 @@ private struct CreateGroupView: View {
             try await membership.create(name: valid)
         } catch {
             self.error = errorMessage(error)
+        }
+    }
+}
+
+private struct InvitationSection: View {
+    let membership: Membership
+    let invited: () -> Void
+    let cancel: (String) -> Void
+
+    @State private var email = ""
+    @State private var working = false
+    @State private var error: String?
+
+    private var address: String { email.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        Section {
+            ForEach(membership.invitations, id: \.id) { invitation in
+                InvitationRow(invitation: invitation) { cancel(invitation.id) }
+            }
+            TextField("Adres e-mail", text: $email)
+                .keyboardType(.emailAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Zaproś") { Task { await invite() } }
+                .disabled(working || address.isEmpty)
+        } header: {
+            Text("Zaproszenia")
+        } footer: {
+            VStack(alignment: .leading) {
+                Text("Wyślemy e-mail z linkiem. Zaproszenie jest ważne przez 7 dni.")
+                if let error {
+                    Text(error).foregroundStyle(.red)
+                }
+            }
+        }
+    }
+
+    private func invite() async {
+        working = true
+        defer { working = false }
+        do {
+            try await membership.invite(email: address)
+            email = ""
+            error = nil
+            invited()
+        } catch {
+            self.error = errorMessage(error)
+        }
+    }
+}
+
+private struct InvitationRow: View {
+    let invitation: Components.Schemas.Invitation
+    let cancel: () -> Void
+
+    @State private var confirmCancel = false
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text(invitation.email)
+            Group {
+                if let name = invitation.invitedBy?.displayName, !name.isEmpty {
+                    Text("Zaprasza: \(name).")
+                }
+                Text("Ważne do \(polishDate(invitation.expiresAt)).")
+            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            if let failure = invitation.failure {
+                let text: LocalizedStringKey = switch failure {
+                case .bounce: "E-mail prawdopodobnie nie dotarł."
+                case .complaint: "Odbiorca oznaczył e-mail jako spam."
+                }
+                Label(text, systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        }
+        // The swipe button has no role: a destructive role removes the row at once and closes the dialog on it.
+        .swipeActions {
+            Button("Anuluj") { confirmCancel = true }
+                .tint(.red)
+        }
+        .confirmationDialog("Anulować zaproszenie dla \(invitation.email)?", isPresented: $confirmCancel, titleVisibility: .visible) {
+            Button("Anuluj zaproszenie", role: .destructive, action: cancel)
         }
     }
 }
