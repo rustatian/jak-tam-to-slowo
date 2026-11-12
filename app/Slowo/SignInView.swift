@@ -63,10 +63,13 @@ struct SignInView: View {
         .sheet(isPresented: Binding(get: { link.isPresented }, set: { if !$0 && link.isPresented { link.forget() } })) {
             InvitationView(link: link, profile: nil, accepted: {}, signUp: { if let token = link.token { signUp = .invitation(token) }; link.isPresented = false })
         }
-        // The sign-up sheet shows only while the invitation sheet does not show. Each close of the sign-up sheet ends the sign-up.
+        // The sign-up sheet shows only while the invitation sheet does not show.
+        // "Anuluj" and a swipe end the sign-up through the setter.
+        // An invitation link ends it through `onChange`, because SwiftUI does not call the setter when the getter closes the sheet.
         .sheet(item: Binding(get: { link.isPresented ? nil : signUp }, set: { if $0 == nil { signUp = nil } })) { start in
             SignUpView(session: session, start: start)
         }
+        .onChange(of: link.isPresented) { _, shown in if shown { signUp = nil } }
     }
 
     /// The two letters of the app icon: the Russian Ж and the Polish Ł.
