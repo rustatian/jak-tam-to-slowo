@@ -58,7 +58,7 @@ struct SignUpView: View {
                     .disabled(working || code.isEmpty)
                     Button("Wyślij nowy kod", action: sendCode)
                         .disabled(working)
-                } else {
+                } else if case let .invitation(token) = start {
                     Section {
                         TextField("E-mail", text: $email)
                             .textContentType(.username)
@@ -76,7 +76,6 @@ struct SignUpView: View {
                         }
                     }
                     Button("Załóż konto") {
-                        guard case let .invitation(token) = start else { return }
                         run {
                             try await session.signUp(email: email, password: password, invitation: token)
                             codeSent = true

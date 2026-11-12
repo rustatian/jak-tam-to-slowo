@@ -160,7 +160,6 @@ struct ConfirmSignUpCase: Sendable, CustomTestStringConvertible {
 
     let name: String
     let steps: [FakeCognito.Step]
-    let tries: Int
     let targets: [String]
     let outcomes: [Outcome]
     let signedIn: Bool
@@ -183,32 +182,32 @@ let signedUp = Tokens(accessToken: "a1", refreshToken: "r1", expiresAt: start.ad
 let confirmSignUpCases: [ConfirmSignUpCase] = [
     ConfirmSignUpCase(
         name: "confirm, then sign in",
-        steps: [.ok, .signIn], tries: 1, targets: ["ConfirmSignUp", "InitiateAuth"],
+        steps: [.ok, .signIn], targets: ["ConfirmSignUp", "InitiateAuth"],
         outcomes: [.done], signedIn: true, stored: signedUp
     ),
     ConfirmSignUpCase(
         name: "a wrong code stops before the sign-in",
-        steps: [.mismatch], tries: 1, targets: ["ConfirmSignUp"],
+        steps: [.mismatch], targets: ["ConfirmSignUp"],
         outcomes: [.cognito(.service("CodeMismatchException"))], signedIn: false, stored: nil
     ),
     ConfirmSignUpCase(
         name: "a confirmed account signs in after the answer for an old code",
-        steps: [.expired, .signIn], tries: 1, targets: ["ConfirmSignUp", "InitiateAuth"],
+        steps: [.expired, .signIn], targets: ["ConfirmSignUp", "InitiateAuth"],
         outcomes: [.done], signedIn: true, stored: signedUp
     ),
     ConfirmSignUpCase(
         name: "an old code of an account with no confirmation",
-        steps: [.expired, .unconfirmed], tries: 1, targets: ["ConfirmSignUp", "InitiateAuth"],
+        steps: [.expired, .unconfirmed], targets: ["ConfirmSignUp", "InitiateAuth"],
         outcomes: [.cognito(.service("ExpiredCodeException"))], signedIn: false, stored: nil
     ),
     ConfirmSignUpCase(
         name: "no network at the sign-in after the answer for an old code",
-        steps: [.expired, .offline], tries: 1, targets: ["ConfirmSignUp", "InitiateAuth"],
+        steps: [.expired, .offline], targets: ["ConfirmSignUp", "InitiateAuth"],
         outcomes: [.offline], signedIn: false, stored: nil
     ),
     ConfirmSignUpCase(
         name: "a second try after a failed sign-in",
-        steps: [.ok, .offline, .expired, .signIn], tries: 2,
+        steps: [.ok, .offline, .expired, .signIn],
         targets: ["ConfirmSignUp", "InitiateAuth", "ConfirmSignUp", "InitiateAuth"],
         outcomes: [.offline, .done], signedIn: true, stored: signedUp
     ),
@@ -223,7 +222,7 @@ func confirmSignUp(_ c: ConfirmSignUpCase) async throws {
     let session = Session(cognito: fake.cognito(now: { start }), store: store, now: { start })
 
     var outcomes: [ConfirmSignUpCase.Outcome] = []
-    for _ in 0..<c.tries {
+    for _ in c.outcomes {
         do {
             try await session.confirmSignUp(email: "ola@example.com", code: "123456", password: "Haslo-1a")
             outcomes.append(.done)

@@ -65,7 +65,7 @@ struct SignInView: View {
         }
         // The sign-up sheet shows only while the invitation sheet does not show.
         // "Anuluj" and a swipe end the sign-up through the setter.
-        // An invitation link ends it through `onChange`, because SwiftUI does not call the setter when the getter closes the sheet.
+        // An invitation link ends it through `onChange`, because `sheet(item:)` does not call this setter when the getter closes the sheet.
         .sheet(item: Binding(get: { link.isPresented ? nil : signUp }, set: { if $0 == nil { signUp = nil } })) { start in
             SignUpView(session: session, start: start)
         }
