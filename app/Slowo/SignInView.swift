@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SignInView: View {
     let session: Session
+    let link: InvitationLink
 
     @State private var email = ""
     @State private var password = ""
@@ -55,6 +56,10 @@ struct SignInView: View {
         .background { backdrop }
         .sheet(isPresented: $resetting) {
             PasswordResetView(session: session, email: email)
+        }
+        // SwiftUI calls the setter when a swipe closes the sheet. "Zaloguj się" closes it through `link.isPresented` and keeps the token.
+        .sheet(isPresented: Binding(get: { link.isPresented }, set: { if !$0 { link.forget() } })) {
+            InvitationView(link: link, profile: nil, accepted: {})
         }
     }
 
