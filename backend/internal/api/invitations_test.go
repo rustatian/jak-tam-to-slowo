@@ -613,3 +613,99 @@ func TestAcceptInvitation(t *testing.T) {
 		})
 	}
 }
+
+func TestNewGroupMail(t *testing.T) {
+	got := newGroupMail("nowy@example.com", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	want := Mail{To: "nowy@example.com", Subject: "Zaproszenie do aplikacji „Jak tam to słowo?”",
+		Text: "Cześć!\n\nMasz zaproszenie do aplikacji „Jak tam to słowo?”. Po rejestracji założysz w aplikacji własną grupę i zaprosisz do niej inne osoby.\n\n" +
+			"Żeby zacząć, otwórz ten link na iPhonie:\nhttps://slowo.rustatian.me/invite/ABCDEFGHIJKLMNOPQRSTUVWXYZ\n\n" +
+			"Link jest ważny przez 7 dni. Jeśli nie spodziewasz się tego zaproszenia, zignoruj tę wiadomość.\n"}
+	if got != want {
+		t.Errorf("mail = %+v\nwant   %+v", got, want)
+	}
+}
+
+func TestInviteToNewGroup(t *testing.T) {
+	sendFailed := errors.New("the email service is down")
+	tests := []struct {
+		name    string
+		setup   string // a statement that changes the fixture before the call
+		email   string
+		sendErr error
+		wantErr error // nil when the call must pass
+		// The invitations of nowy@example.com after the call: those without a group, and those to a group.
+		wantNew   int
+		wantGroup int
+	}{
+		{name: "stores a new group invitation and sends one email", email: "  Nowy@Example.com ", wantNew: 1},
+		{name: "a second invitation of the address replaces the first", email: "nowy@example.com",
+			setup:   `INSERT INTO invitations (email, token_hash, expires_at) VALUES ('nowy@example.com', 'old', now() + interval '1 day')`,
+			wantNew: 1},
+		{name: "an invitation of the address to a group stays", email: "nowy@example.com",
+			setup:   `INSERT INTO invitations (group_id, email, token_hash, expires_at) SELECT id, 'nowy@example.com', 'rodzina', now() + interval '1 day' FROM groups WHERE name = 'Rodzina'`,
+			wantNew: 1, wantGroup: 1},
+		{name: "an address that is not valid is rejected", email: "Ola <ola@example.com>", wantErr: ErrEmail},
+		{name: "a failed send removes the invitation", email: "nowy@example.com", sendErr: sendFailed, wantErr: sendFailed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			pool, srv, _, _ := groupFixture(t)
+			if tt.setup != "" {
+				if _, err := pool.Exec(ctx, tt.setup); err != nil {
+					t.Fatal(err)
+				}
+			}
+			sent := &sentMail{pool: pool, fail: tt.sendErr}
+			srv.Send = sent.send
+
+			if err := srv.InviteToNewGroup(ctx, tt.email); !errors.Is(err, tt.wantErr) {
+				t.Errorf("error = %v, want %v", err, tt.wantErr)
+			}
+			var withoutGroup, toGroup int
+			if err := pool.QueryRow(ctx, "SELECT count(*) FILTER (WHERE group_id IS NULL), count(*) FILTER (WHERE group_id IS NOT NULL) FROM invitations WHERE email = 'nowy@example.com'").
+				Scan(&withoutGroup, &toGroup); err != nil {
+				t.Fatal(err)
+			}
+			if withoutGroup != tt.wantNew || toGroup != tt.wantGroup {
+				t.Errorf("invitations of the address: %d without a group and %d to a group, want %d and %d", withoutGroup, toGroup, tt.wantNew, tt.wantGroup)
+			}
+			// Another connection sees the invitation only after the commit.
+			if slices.ContainsFunc(sent.rowsAtSend, func(rows int) bool { return rows != 1 }) {
+				t.Errorf("rows of the token at each send = %v, want 1: the send is after the commit", sent.rowsAtSend)
+			}
+			if tt.wantErr != nil {
+				if len(sent.mails) != 0 {
+					t.Errorf("emails = %d, want none", len(sent.mails))
+				}
+				return
+			}
+
+			if len(sent.mails) != 1 {
+				t.Fatalf("emails = %d, want 1", len(sent.mails))
+			}
+			token := mailToken(sent.mails[0])
+			var id, hash string
+			var invitedBy *string
+			var sevenDays bool
+			if err := pool.QueryRow(ctx, "SELECT id, token_hash, invited_by, expires_at - created_at = interval '7 days' FROM invitations WHERE group_id IS NULL AND email = 'nowy@example.com'").
+				Scan(&id, &hash, &invitedBy, &sevenDays); err != nil {
+				t.Fatalf("the row of the invitation: %v", err)
+			}
+			if invitedBy != nil {
+				t.Errorf("invited_by = %s, want none", *invitedBy)
+			}
+			if !sevenDays {
+				t.Errorf("the invitation is not valid for 7 days")
+			}
+			if len(token) < 26 || hash != tokenHash(token) {
+				t.Errorf("token_hash = %s, want the hash of the token in the email, and a token of at least 26 characters", hash)
+			}
+			want := newGroupMail("nowy@example.com", token)
+			want.Invitation = id
+			if sent.mails[0] != want {
+				t.Errorf("email = %+v\nwant    %+v", sent.mails[0], want)
+			}
+		})
+	}
+}
