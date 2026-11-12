@@ -57,8 +57,9 @@ struct SignInView: View {
         .sheet(isPresented: $resetting) {
             PasswordResetView(session: session, email: email)
         }
-        // SwiftUI calls the setter when a swipe closes the sheet. "Zaloguj się" closes it through `link.isPresented` and keeps the token.
-        .sheet(isPresented: Binding(get: { link.isPresented }, set: { if !$0 { link.forget() } })) {
+        // SwiftUI calls the setter with false for each close, also after "Zaloguj się".
+        // The setter forgets the token only while the model still shows the sheet, so "Zaloguj się" keeps it.
+        .sheet(isPresented: Binding(get: { link.isPresented }, set: { if !$0 && link.isPresented { link.forget() } })) {
             InvitationView(link: link, profile: nil, accepted: {})
         }
     }

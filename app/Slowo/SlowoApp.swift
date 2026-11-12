@@ -48,11 +48,6 @@ struct SignedInView: View {
         case study, words, add, contests, group
     }
 
-    private enum SheetItem: Identifiable {
-        case invitation, consent
-        var id: Self { self }
-    }
-
     init(api: Client, session: Session, link: InvitationLink) {
         self.session = session
         self.link = link
@@ -91,13 +86,14 @@ struct SignedInView: View {
                     }
                 }
             }
-            .sheet(item: sheet) { item in
-                switch item {
-                case .invitation:
-                    InvitationView(link: link, profile: profile) { tab = .group }
-                case .consent:
-                    ConsentView(profile: profile)
-                }
+            // SwiftUI calls each setter with false also when the code closes the sheet.
+            // The invitation setter forgets the token only while the model still shows the invitation.
+            // The consent setter ends the offer only when no invitation takes the place of the consent sheet.
+            .sheet(isPresented: Binding(get: { link.isPresented }, set: { if !$0 && link.isPresented { link.forget() } })) {
+                InvitationView(link: link, profile: profile) { tab = .group }
+            }
+            .sheet(isPresented: Binding(get: { offeringConsent && !link.isPresented }, set: { if !$0 && !link.isPresented { offeringConsent = false } })) {
+                ConsentView(profile: profile)
             }
         } else if failed {
             ContentUnavailableView {
@@ -120,19 +116,6 @@ struct SignedInView: View {
         } catch {
             // After a 401 AuthMiddleware has signed out, and the sign-in screen replaces this view.
             failed = true
-        }
-    }
-
-    /// SwiftUI calls the setter when a swipe or `dismiss()` closes the sheet that shows.
-    private var sheet: Binding<SheetItem?> {
-        Binding {
-            if link.isPresented { .invitation } else if offeringConsent { .consent } else { nil }
-        } set: { _ in
-            if link.isPresented {
-                link.forget()
-            } else {
-                offeringConsent = false
-            }
         }
     }
 
