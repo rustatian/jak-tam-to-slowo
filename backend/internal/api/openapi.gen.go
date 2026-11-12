@@ -98,6 +98,9 @@ type InvitationFailure string
 
 // InvitationAccept defines model for InvitationAccept.
 type InvitationAccept struct {
+	// GroupName The name of the new group, 1 to 40 characters. Needed for an invitation that starts a new group.
+	GroupName *string `json:"groupName,omitempty"`
+
 	// LeaveGroup True confirms that the signed-in user leaves their current group to join this one.
 	LeaveGroup *bool `json:"leaveGroup,omitempty"`
 }
@@ -110,8 +113,11 @@ type InvitationCreate struct {
 
 // InvitationPreview defines model for InvitationPreview.
 type InvitationPreview struct {
-	GroupId   string `json:"groupId"`
-	GroupName string `json:"groupName"`
+	// GroupId Absent for an invitation that starts a new group.
+	GroupId *string `json:"groupId,omitempty"`
+
+	// GroupName Absent for an invitation that starts a new group.
+	GroupName *string `json:"groupName,omitempty"`
 
 	// InvitedBy The display name of the member who sent the invitation. Absent when that name is empty or the account does not exist any more.
 	InvitedBy *string `json:"invitedBy,omitempty"`

@@ -16,6 +16,8 @@ An iPhone app for Russian speakers who learn Polish: its words and its grammar. 
 
 **Invitation token**: The random secret in the invitation link. A sign-up needs a valid, unused and unexpired token. The database stores only the hash of the token.
 
+**New group invitation**: An invitation without a group. The operator sends it with the admin command. Its acceptance creates a group with the name that the invitee gives, and the invitee is the first member.
+
 ### Cards
 
 **Card**: One item of the group's collection. Its kind is `translation` or `grammar`. The code calls it `cards`.
