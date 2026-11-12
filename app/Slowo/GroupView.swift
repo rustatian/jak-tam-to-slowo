@@ -63,6 +63,8 @@ struct GroupView: View {
                 try? await Task.sleep(for: .seconds(5))
                 guard !Task.isCancelled else { return }
                 try? await membership.load()
+                // The task starts again each time the list appears; at 0 it does nothing.
+                if !Task.isCancelled { invites = 0 }
             }
         } else if failed {
             ContentUnavailableView {
