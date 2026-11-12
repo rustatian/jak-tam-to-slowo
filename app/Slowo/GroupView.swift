@@ -213,10 +213,10 @@ private struct InvitationRow: View {
             .foregroundStyle(.secondary)
             if let failure = invitation.failure {
                 let text: LocalizedStringKey = switch failure {
-                case .bounce: "E-mail prawdopodobnie nie dotarł."
-                case .complaint: "Odbiorca oznaczył e-mail jako spam."
+                case .bounce: "\(Image(systemName: "exclamationmark.triangle")) E-mail prawdopodobnie nie dotarł."
+                case .complaint: "\(Image(systemName: "exclamationmark.triangle")) Odbiorca oznaczył e-mail jako spam."
                 }
-                Label(text, systemImage: "exclamationmark.triangle")
+                Text(text)
                     .font(.footnote)
                     .foregroundStyle(.red)
             }
@@ -226,8 +226,10 @@ private struct InvitationRow: View {
             Button("Anuluj") { confirmCancel = true }
                 .tint(.red)
         }
-        .confirmationDialog("Anulować zaproszenie dla \(invitation.email)?", isPresented: $confirmCancel, titleVisibility: .visible) {
+        .confirmationDialog("Anulować zaproszenie?", isPresented: $confirmCancel, titleVisibility: .visible) {
             Button("Anuluj zaproszenie", role: .destructive, action: cancel)
+        } message: {
+            Text(invitation.email)
         }
     }
 }
