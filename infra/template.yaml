@@ -24,9 +24,9 @@ Resources:
     Properties:
       UserPoolName: !Sub slowo-${Stage}
       UserPoolTier: ESSENTIALS
-      # Sign-up stays closed until the pre sign-up trigger checks invitation tokens.
+      # Sign-up is open, and PreSignUpFunction lets only a request with the token of a pending invitation pass.
       AdminCreateUserConfig:
-        AllowAdminCreateUserOnly: true
+        AllowAdminCreateUserOnly: false
       UsernameAttributes: [email]
       AutoVerifiedAttributes: [email]
       UsernameConfiguration:
@@ -122,6 +122,11 @@ Resources:
           EventBusArn: !Sub arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/default
 
   MailEventsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 30
+
+  PreSignUpLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       RetentionInDays: 30
@@ -297,6 +302,38 @@ Resources:
             Path: /v1/invitations/{token}/acceptance
             Method: POST
 
+  # Cognito calls this function before each sign-up and waits at most 5 seconds for its answer.
+  # https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-working-with-lambda-triggers.html#important-lambda-considerations
+  PreSignUpFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: go1.x
+    Properties:
+      CodeUri: ../backend/cmd/presignup
+      Handler: bootstrap
+      Runtime: provided.al2023
+      Architectures: [arm64]
+      MemorySize: 128
+      Timeout: 5
+      LoggingConfig:
+        LogGroup: !Ref PreSignUpLogGroup
+      Environment:
+        Variables:
+          DSQL_ENDPOINT: !GetAtt Cluster.Endpoint
+      # The function has its own role, because the role of the API function names the user pool and the user pool
+      # names this function. cmd/migrate maps the database role app to this role too.
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dsql:DbConnect
+              Resource: !GetAtt Cluster.ResourceArn
+      Events:
+        SignUp:
+          Type: Cognito
+          Properties:
+            UserPool: !Ref UserPool
+            Trigger: PreSignUp
+
   MailEventsFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -350,3 +387,5 @@ Outputs:
     Value: !GetAtt Cluster.Endpoint
   ApiFunctionRoleArn:
     Value: !GetAtt ApiFunctionRole.Arn
+  PreSignUpFunctionRoleArn:
+    Value: !GetAtt PreSignUpFunctionRole.Arn
