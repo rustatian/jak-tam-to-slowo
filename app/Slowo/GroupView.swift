@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The form to create a group when the user has no group, else the group and its members.
+/// The form to create a group when the user has no group, else the group, its members and its pending invitations.
 struct GroupView: View {
     let profile: Profile
     let membership: Membership
@@ -59,7 +59,7 @@ struct GroupView: View {
             .refreshable { await load() }
             .task(id: invites) {
                 guard invites > 0 else { return }
-                // A bounce or a complaint reaches the server a few seconds after the send. This load shows no error.
+                // A bounce can reach the server a few seconds after the send. This load shows no error.
                 try? await Task.sleep(for: .seconds(5))
                 guard !Task.isCancelled else { return }
                 try? await membership.load()
