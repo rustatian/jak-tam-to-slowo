@@ -16,7 +16,7 @@ struct SettingsView: View {
             if let me = profile.me {
                 Section("Profil") {
                     NavigationLink {
-                        DisplayNameView(profile: profile)
+                        NameView(title: "Nazwa w grupie", name: me.displayName) { try await profile.update(.init(displayName: $0)) }
                     } label: {
                         LabeledContent("Nazwa w grupie", value: me.displayName.isEmpty ? "Brak" : me.displayName)
                     }
@@ -98,23 +98,25 @@ func polishDate(_ date: Date) -> String {
     date.formatted(.dateTime.day().month(.wide).year().locale(Locale(identifier: "pl_PL")))
 }
 
-struct DisplayNameView: View {
-    let profile: Profile
+struct NameView: View {
+    let title: LocalizedStringKey
+    let save: (String) async throws -> Void
 
     @State private var name: String
     @State private var working = false
     @State private var error: String?
     @Environment(\.dismiss) private var dismiss
 
-    init(profile: Profile) {
-        self.profile = profile
-        _name = State(initialValue: profile.me?.displayName ?? "")
+    init(title: LocalizedStringKey, name: String, save: @escaping (String) async throws -> Void) {
+        self.title = title
+        self.save = save
+        _name = State(initialValue: name)
     }
 
     var body: some View {
         Form {
             Section {
-                TextField("Nazwa w grupie", text: $name)
+                TextField(title, text: $name)
                     .textInputAutocapitalization(.words)
             } footer: {
                 VStack(alignment: .leading) {
@@ -125,21 +127,21 @@ struct DisplayNameView: View {
                 }
             }
         }
-        .navigationTitle("Nazwa w grupie")
+        .navigationTitle(title)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Zapisz") { Task { await save() } }
-                    .disabled(working || displayName(name) == nil)
+                Button("Zapisz") { Task { await submit() } }
+                    .disabled(working || trimmedName(name) == nil)
             }
         }
     }
 
-    private func save() async {
-        guard let valid = displayName(name) else { return }
+    private func submit() async {
+        guard let valid = trimmedName(name) else { return }
         working = true
         defer { working = false }
         do {
-            try await profile.update(.init(displayName: valid))
+            try await save(valid)
             dismiss()
         } catch {
             self.error = errorMessage(error)

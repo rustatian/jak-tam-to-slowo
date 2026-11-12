@@ -8,3 +8,7 @@ filter:
   paths:
     - /v1/me
     - /v1/me/ai-consent
+    - /v1/groups
+    - /v1/groups/{groupId}
+    - /v1/groups/{groupId}/members
+    - /v1/groups/{groupId}/members/{userId}

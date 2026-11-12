@@ -9,7 +9,7 @@ enum ProfileError: Error, Equatable {
 
 /// The trimmed name, or nil when it breaks the server's rule: 1 to 40 Unicode scalars after the trim.
 /// The server counts code points, so `String.count` (grapheme clusters) would accept names that it rejects.
-func displayName(_ input: String) -> String? {
+func trimmedName(_ input: String) -> String? {
     let name = input.trimmingCharacters(in: .whitespacesAndNewlines)
     return (1...40).contains(name.unicodeScalars.count) ? name : nil
 }

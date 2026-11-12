@@ -8,6 +8,10 @@ The app is in development. These screens exist today:
 |---|---|---|
 | <img src="docs/screenshots/sign-in.png" width="240" alt="The sign-in screen"> | <img src="docs/screenshots/ai-consent.png" width="240" alt="The AI consent screen"> | <img src="docs/screenshots/settings.png" width="240" alt="The settings screen"> |
 
+| Group |
+|---|
+| <img src="docs/screenshots/group.png" width="240" alt="The Grupa tab with a group and its members"> |
+
 ## Parts
 
 - `app/`: the SwiftUI app for iOS 26.
