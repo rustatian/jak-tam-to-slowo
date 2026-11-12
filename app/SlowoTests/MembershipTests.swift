@@ -58,6 +58,39 @@ let membershipCases: [MembershipCase] = [
         calls: ["getMe", "getGroup"], inputs: [], error: .unexpected, group: nil, members: []
     ),
     MembershipCase(
+        name: "a removal between the two reads shows no group",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped))), .ok(.init(body: .json(alone)))],
+            getGroup: [.ok(.init(body: .json(nasza)))],
+            listGroupMembers: [.forbidden(.init(body: .json(.init(message: "not a member of this group"))))]
+        ),
+        action: { try await $0.load() },
+        calls: ["getMe", "getGroup", "listGroupMembers", "getMe"], inputs: [], error: nil, group: nil, members: []
+    ),
+    MembershipCase(
+        name: "a failed member read shows no group",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            getGroup: [.ok(.init(body: .json(nasza)))],
+            listGroupMembers: [.internalServerError(.init(body: .json(.init(message: "internal error"))))]
+        ),
+        action: { try await $0.load() },
+        calls: ["getMe", "getGroup", "listGroupMembers"], inputs: [], error: .unexpected, group: nil, members: []
+    ),
+    MembershipCase(
+        name: "a failed reload keeps the shown group",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            getGroup: [.ok(.init(body: .json(nasza))), .internalServerError(.init(body: .json(.init(message: "internal error"))))],
+            listGroupMembers: [.ok(.init(body: .json(.init(members: [ola, ivan]))))]
+        ),
+        action: {
+            try await $0.load()
+            try await $0.load()
+        },
+        calls: ["getMe", "getGroup", "listGroupMembers", "getGroup"], inputs: [], error: .unexpected, group: nasza, members: [ola, ivan]
+    ),
+    MembershipCase(
         name: "create joins the new group",
         answers: .init(
             getMe: [.ok(.init(body: .json(alone))), .ok(.init(body: .json(grouped)))],
@@ -110,6 +143,21 @@ let membershipCases: [MembershipCase] = [
         },
         calls: ["getMe", "getGroup", "listGroupMembers", "updateGroup"], inputs: ["updateGroup g1 Nowa"],
         error: nil, group: .init(id: "g1", name: "Nowa", createdAt: start), members: [ola, ivan]
+    ),
+    MembershipCase(
+        name: "a rejected new name keeps the group",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            getGroup: [.ok(.init(body: .json(nasza)))],
+            updateGroup: [.badRequest(.init(body: .json(.init(message: "name must have 1 to 40 characters"))))],
+            listGroupMembers: [.ok(.init(body: .json(.init(members: [ola, ivan]))))]
+        ),
+        action: {
+            try await $0.load()
+            try await $0.rename("Nowa")
+        },
+        calls: ["getMe", "getGroup", "listGroupMembers", "updateGroup"], inputs: ["updateGroup g1 Nowa"],
+        error: .badName, group: nasza, members: [ola, ivan]
     ),
     MembershipCase(
         name: "rename after a removal shows no group",
@@ -178,6 +226,21 @@ let membershipCases: [MembershipCase] = [
             getGroup: [.ok(.init(body: .json(nasza)))],
             listGroupMembers: [.ok(.init(body: .json(.init(members: [ola, ivan]))))],
             removeGroupMember: [.noContent(.init())]
+        ),
+        action: {
+            try await $0.load()
+            try await $0.leave()
+        },
+        calls: ["getMe", "getGroup", "listGroupMembers", "removeGroupMember", "getMe"], inputs: ["removeGroupMember g1 s1"],
+        error: nil, group: nil, members: []
+    ),
+    MembershipCase(
+        name: "leave of a member who is gone",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped))), .ok(.init(body: .json(alone)))],
+            getGroup: [.ok(.init(body: .json(nasza)))],
+            listGroupMembers: [.ok(.init(body: .json(.init(members: [ola, ivan]))))],
+            removeGroupMember: [.notFound(.init(body: .json(.init(message: "member not found"))))]
         ),
         action: {
             try await $0.load()
