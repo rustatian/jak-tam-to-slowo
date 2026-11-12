@@ -10,7 +10,8 @@ struct GroupView: View {
     @State private var confirmLeave = false
 
     var body: some View {
-        content
+        // The ZStack keeps one identity for all states, so a change of the state does not start the task again.
+        ZStack { content }
             .task(id: profile.me?.groupId) { await load() }
     }
 
