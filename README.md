@@ -8,9 +8,9 @@ The app is in development. These screens exist today:
 |---|---|---|
 | <img src="docs/screenshots/sign-in.png" width="240" alt="The sign-in screen"> | <img src="docs/screenshots/ai-consent.png" width="240" alt="The AI consent screen"> | <img src="docs/screenshots/settings.png" width="240" alt="The settings screen"> |
 
-| Group | Invitation |
-|---|---|
-| <img src="docs/screenshots/group.png" width="240" alt="The Grupa tab with a group and its members"> | <img src="docs/screenshots/invitation.png" width="240" alt="The invitation of a link, with the button to join the group"> |
+| Group | Invitation | Sign-up |
+|---|---|---|
+| <img src="docs/screenshots/group.png" width="240" alt="The Grupa tab with a group and its members"> | <img src="docs/screenshots/invitation.png" width="240" alt="The invitation of a link, with the button to join the group"> | <img src="docs/screenshots/sign-up.png" width="240" alt="The sign-up sheet with the fields for the e-mail and the password"> |
 
 ## Parts
 
