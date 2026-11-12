@@ -57,9 +57,10 @@ let invitationLinkCases: [InvitationLinkCase] = [
         answers: .init(getMe: [.ok(.init(body: .json(alone)))], previewInvitation: [.ok(.init(body: .json(naszaPreview)))]),
         action: { link, _ in
             try await link.loadPreview()
+            link.isPresented = false
             link.open(URL(string: "https://slowo.rustatian.me/invite/ABC234.")!)
         },
-        calls: ["previewInvitation"], inputs: ["previewInvitation T1"], error: nil, token: "T1", isPresented: true, preview: naszaPreview, groupId: nil
+        calls: ["previewInvitation"], inputs: ["previewInvitation T1"], error: nil, token: "T1", isPresented: false, preview: naszaPreview, groupId: nil
     ),
     InvitationLinkCase(
         name: "the preview of a group invitation",
@@ -77,16 +78,17 @@ let invitationLinkCases: [InvitationLinkCase] = [
         calls: ["previewInvitation"], inputs: ["previewInvitation T1"], error: nil, token: "T2", isPresented: true, preview: nil, groupId: nil
     ),
     InvitationLinkCase(
-        name: "the same link again keeps the preview",
+        name: "the same link again shows the sheet and keeps the preview",
         answers: .init(getMe: [.ok(.init(body: .json(alone)))], previewInvitation: [.ok(.init(body: .json(naszaPreview)))]),
         action: { link, _ in
             try await link.loadPreview()
+            link.isPresented = false
             link.open(linkT1)
         },
         calls: ["previewInvitation"], inputs: ["previewInvitation T1"], error: nil, token: "T1", isPresented: true, preview: naszaPreview, groupId: nil
     ),
     InvitationLinkCase(
-        name: "a link after a forget starts with no preview",
+        name: "a link after the sheet closes starts with no preview",
         answers: .init(getMe: [.ok(.init(body: .json(alone)))], previewInvitation: [.ok(.init(body: .json(naszaPreview)))]),
         action: { link, _ in
             try await link.loadPreview()
@@ -137,6 +139,17 @@ let invitationLinkCases: [InvitationLinkCase] = [
         error: nil, token: nil, isPresented: false, preview: naszaPreview, groupId: "g1"
     ),
     InvitationLinkCase(
+        name: "a failed profile load after a join",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(alone))), .internalServerError(.init(body: .json(.init(message: "internal error"))))],
+            acceptInvitation: [.noContent(.init())]
+        ),
+        action: { link, profile in
+            await #expect(throws: ProfileError.unexpected) { try await link.accept(profile: profile) }
+        },
+        calls: ["acceptInvitation", "getMe"], inputs: ["acceptInvitation T1 - -"], error: nil, token: "T1", isPresented: true, preview: nil, groupId: nil
+    ),
+    InvitationLinkCase(
         name: "join of a member of the group",
         answers: .init(
             getMe: [.ok(.init(body: .json(grouped))), .ok(.init(body: .json(grouped)))],
@@ -153,6 +166,15 @@ let invitationLinkCases: [InvitationLinkCase] = [
         ),
         action: { link, profile in try await link.accept(profile: profile) },
         calls: ["acceptInvitation"], inputs: ["acceptInvitation T1 - -"], error: .inAnotherGroup, token: "T1", isPresented: true, preview: nil, groupId: "g2"
+    ),
+    InvitationLinkCase(
+        name: "a conflict with another message",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(alone)))],
+            acceptInvitation: [.conflict(.init(body: .json(.init(message: "another conflict"))))]
+        ),
+        action: { link, profile in try await link.accept(profile: profile) },
+        calls: ["acceptInvitation"], inputs: ["acceptInvitation T1 - -"], error: .unexpected, token: "T1", isPresented: true, preview: nil, groupId: nil
     ),
     InvitationLinkCase(
         name: "leave and join",
