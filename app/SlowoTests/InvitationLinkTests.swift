@@ -86,6 +86,16 @@ let invitationLinkCases: [InvitationLinkCase] = [
         calls: ["previewInvitation"], inputs: ["previewInvitation T1"], error: nil, token: "T1", isPresented: true, preview: naszaPreview, groupId: nil
     ),
     InvitationLinkCase(
+        name: "a link after a forget starts with no preview",
+        answers: .init(getMe: [.ok(.init(body: .json(alone)))], previewInvitation: [.ok(.init(body: .json(naszaPreview)))]),
+        action: { link, _ in
+            try await link.loadPreview()
+            link.forget()
+            link.open(linkT1)
+        },
+        calls: ["previewInvitation"], inputs: ["previewInvitation T1"], error: nil, token: "T1", isPresented: true, preview: nil, groupId: nil
+    ),
+    InvitationLinkCase(
         name: "a dead link",
         answers: .init(
             getMe: [.ok(.init(body: .json(alone)))],
@@ -124,7 +134,7 @@ let invitationLinkCases: [InvitationLinkCase] = [
             try await link.accept(profile: profile)
         },
         calls: ["previewInvitation", "acceptInvitation", "getMe"], inputs: ["previewInvitation T1", "acceptInvitation T1 - -"],
-        error: nil, token: nil, isPresented: false, preview: nil, groupId: "g1"
+        error: nil, token: nil, isPresented: false, preview: naszaPreview, groupId: "g1"
     ),
     InvitationLinkCase(
         name: "join of a member of the group",

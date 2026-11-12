@@ -91,9 +91,9 @@ final class InvitationLink {
         }
     }
 
+    /// Keeps the preview, so the closing sheet keeps its content. The next link clears it in `open(_:)`.
     func forget() {
         token = nil
-        preview = nil
         isPresented = false
     }
 }
