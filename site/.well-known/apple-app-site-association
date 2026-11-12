@@ -1,0 +1,12 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["TBPK9C57CU.me.rustatian.slowo"],
+        "components": [
+          { "/": "/invite/*" }
+        ]
+      }
+    ]
+  }
+}
