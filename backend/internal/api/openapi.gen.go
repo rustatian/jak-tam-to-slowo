@@ -98,7 +98,7 @@ type InvitationFailure string
 
 // InvitationAccept defines model for InvitationAccept.
 type InvitationAccept struct {
-	// GroupName The name of the new group, 1 to 40 characters. Needed for an invitation that starts a new group.
+	// GroupName The name of the new group, with the rule of the group name. Needed for an invitation that starts a new group.
 	GroupName *string `json:"groupName,omitempty"`
 
 	// LeaveGroup True confirms that the signed-in user leaves their current group to join this one.

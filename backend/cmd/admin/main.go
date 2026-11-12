@@ -23,7 +23,7 @@ func main() {
 	if len(os.Args) < 2 || os.Args[1] != "new-group" {
 		log.Fatal(usage)
 	}
-	flags := flag.NewFlagSet("new-group", flag.ExitOnError)
+	flags := flag.NewFlagSet("new-group", flag.ContinueOnError)
 	endpoint := flags.String("endpoint", "", "DSQL cluster endpoint (stack output ClusterEndpoint)")
 	region := flags.String("region", "eu-central-1", "region of the cluster and of Amazon SES")
 	stage := flags.String("stage", "", "dev or prod; the emails go out with the SES configuration set slowo-<stage>")

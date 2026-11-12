@@ -1,5 +1,6 @@
 // Command migrate applies the SQL migrations to Aurora DSQL as the admin role, or to PostgreSQL.
-// With -app-role-arn it also sets up the database role app for the API Lambda.
+// With -app-role-arn it also maps the database role app to the IAM role of a Lambda function. Run it one time for
+// each function role of the stack.
 package main
 
 import (
@@ -19,7 +20,7 @@ func main() {
 	endpoint := flag.String("endpoint", "", "DSQL cluster endpoint (stack output ClusterEndpoint)")
 	region := flag.String("region", "eu-central-1", "DSQL cluster region")
 	url := flag.String("database-url", "", "PostgreSQL connection string, instead of -endpoint")
-	roleARN := flag.String("app-role-arn", "", "IAM role of the API Lambda (stack output ApiFunctionRoleArn); DSQL only")
+	roleARN := flag.String("app-role-arn", "", "IAM role of a Lambda function that uses the database (stack outputs ApiFunctionRoleArn and PreSignUpFunctionRoleArn, one run for each); DSQL only")
 	flag.Parse()
 	if (*endpoint == "") == (*url == "") {
 		log.Fatal("give exactly one of -endpoint and -database-url")

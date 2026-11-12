@@ -75,22 +75,32 @@ func TestValidEmail(t *testing.T) {
 }
 
 func TestInvitationMail(t *testing.T) {
-	const rest = "\n\nŻeby dołączyć, otwórz ten link na iPhonie:\nhttps://slowo.rustatian.me/invite/ABCDEFGHIJKLMNOPQRSTUVWXYZ\n\n" +
-		"Link jest ważny przez 7 dni. Jeśli nie spodziewasz się tego zaproszenia, zignoruj tę wiadomość.\n"
+	const (
+		token   = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		link    = "https://slowo.rustatian.me/invite/ABCDEFGHIJKLMNOPQRSTUVWXYZ\n\n"
+		end     = "Link jest ważny przez 7 dni. Jeśli nie spodziewasz się tego zaproszenia, zignoruj tę wiadomość.\n"
+		toGroup = "Zaproszenie do grupy w aplikacji „Jak tam to słowo?”"
+		join    = "\n\nŻeby dołączyć, otwórz ten link na iPhonie:\n"
+	)
 	tests := []struct {
-		name     string
-		inviter  string
-		wantText string
+		name        string
+		got         Mail
+		wantSubject string
+		wantText    string
 	}{
-		{name: "with the name of the inviter", inviter: "Ola", wantText: "Cześć!\n\nOla zaprasza Cię do grupy „Rodzina” w aplikacji „Jak tam to słowo?”." + rest},
-		{name: "without a name", inviter: "", wantText: "Cześć!\n\nMasz zaproszenie do grupy „Rodzina” w aplikacji „Jak tam to słowo?”." + rest},
+		{name: "to a group, with the name of the inviter", got: invitationMail("nowy@example.com", "Ola", "Rodzina", token), wantSubject: toGroup,
+			wantText: "Cześć!\n\nOla zaprasza Cię do grupy „Rodzina” w aplikacji „Jak tam to słowo?”." + join + link + end},
+		{name: "to a group, without a name", got: invitationMail("nowy@example.com", "", "Rodzina", token), wantSubject: toGroup,
+			wantText: "Cześć!\n\nMasz zaproszenie do grupy „Rodzina” w aplikacji „Jak tam to słowo?”." + join + link + end},
+		{name: "to a new group", got: newGroupMail("nowy@example.com", token), wantSubject: "Zaproszenie do aplikacji „Jak tam to słowo?”",
+			wantText: "Cześć!\n\nMasz zaproszenie do aplikacji „Jak tam to słowo?”. Po rejestracji założysz w aplikacji własną grupę i zaprosisz do niej inne osoby." +
+				"\n\nŻeby zacząć, otwórz ten link na iPhonie:\n" + link + end},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := invitationMail("nowy@example.com", tt.inviter, "Rodzina", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-			want := Mail{To: "nowy@example.com", Subject: "Zaproszenie do grupy w aplikacji „Jak tam to słowo?”", Text: tt.wantText}
-			if got != want {
-				t.Errorf("mail = %+v\nwant   %+v", got, want)
+			want := Mail{To: "nowy@example.com", Subject: tt.wantSubject, Text: tt.wantText}
+			if tt.got != want {
+				t.Errorf("mail = %+v\nwant   %+v", tt.got, want)
 			}
 		})
 	}
@@ -611,17 +621,6 @@ func TestAcceptInvitation(t *testing.T) {
 				t.Errorf("invitation rows = %d, want %d", got, tt.wantInvitations)
 			}
 		})
-	}
-}
-
-func TestNewGroupMail(t *testing.T) {
-	got := newGroupMail("nowy@example.com", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-	want := Mail{To: "nowy@example.com", Subject: "Zaproszenie do aplikacji „Jak tam to słowo?”",
-		Text: "Cześć!\n\nMasz zaproszenie do aplikacji „Jak tam to słowo?”. Po rejestracji założysz w aplikacji własną grupę i zaprosisz do niej inne osoby.\n\n" +
-			"Żeby zacząć, otwórz ten link na iPhonie:\nhttps://slowo.rustatian.me/invite/ABCDEFGHIJKLMNOPQRSTUVWXYZ\n\n" +
-			"Link jest ważny przez 7 dni. Jeśli nie spodziewasz się tego zaproszenia, zignoruj tę wiadomość.\n"}
-	if got != want {
-		t.Errorf("mail = %+v\nwant   %+v", got, want)
 	}
 }
 
