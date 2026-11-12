@@ -127,6 +127,8 @@ Resources:
       RetentionInDays: 30
 
   # The subscription sends a confirmation email first. Alarms reach the address only after the confirmation.
+  # SNS deletes a subscription that is not confirmed in 48 hours, and a stack update without changes does not
+  # make it again.
   # https://docs.aws.amazon.com/sns/latest/dg/sns-email-notifications.html
   AlarmTopic:
     Type: AWS::SNS::Topic
@@ -137,8 +139,9 @@ Resources:
           Endpoint: !Ref AlarmEmail
 
   # A failed run of the events function leaves expired invitations in the database or a bounce without its mark.
-  # The Errors metric has a value only when a run fails, so missing data counts as good. Lambda runs a failed
-  # event two more times within 3 minutes, so with a period of 5 minutes one failed event gives one alarm.
+  # The Errors metric has no value while the function does not run, so missing data counts as good.
+  # Lambda runs a failed event two more times within 3 minutes, so with a period of 5 minutes one failed event
+  # gives one alarm.
   # https://docs.aws.amazon.com/lambda/latest/dg/invocation-async-error-handling.html
   MailEventsErrorsAlarm:
     Type: AWS::CloudWatch::Alarm
