@@ -3,15 +3,19 @@ import Observation
 enum GroupError: Error, Equatable {
     /// The server rejected the group name.
     case badName
+    case badEmail
+    case tooManyInvitations
+    case emailNotSent
     case unexpected
 }
 
-/// The group of the signed-in user and its members, as the server has them.
+/// The group of the signed-in user, its members and its pending invitations, as the server has them.
 @MainActor
 @Observable
 final class Membership {
     private(set) var group: Components.Schemas.Group?
     private(set) var members: [Components.Schemas.Member] = []
+    private(set) var invitations: [Components.Schemas.Invitation] = []
 
     private let api: any APIProtocol
     private let profile: Profile
@@ -29,9 +33,10 @@ final class Membership {
         switch try await api.getGroup(.init(path: .init(groupId: groupId))) {
         case let .ok(ok):
             let group = try ok.body.json
-            if let members = try await listMembers(groupId) {
+            if let members = try await listMembers(groupId), let invitations = try await listInvitations(groupId) {
                 self.group = group
                 self.members = members
+                self.invitations = invitations
             }
         case .forbidden:
             try await dropGroup()
@@ -82,6 +87,42 @@ final class Membership {
         }
     }
 
+    func invite(email: String) async throws {
+        guard let groupId = group?.id else { throw GroupError.unexpected }
+        switch try await api.createInvitation(.init(path: .init(groupId: groupId), body: .json(.init(email: email)))) {
+        // The new invitation replaces a pending one of the same address.
+        case .created:
+            if let invitations = try await listInvitations(groupId) {
+                self.invitations = invitations
+            }
+        case .badRequest:
+            throw GroupError.badEmail
+        case .tooManyRequests:
+            throw GroupError.tooManyInvitations
+        case .badGateway:
+            throw GroupError.emailNotSent
+        case .forbidden:
+            try await dropGroup()
+        default:
+            throw GroupError.unexpected
+        }
+    }
+
+    /// Cancels a pending invitation. An invitation that is gone already is not an error.
+    func cancel(_ invitationID: String) async throws {
+        guard let groupId = group?.id else { throw GroupError.unexpected }
+        switch try await api.cancelInvitation(.init(path: .init(groupId: groupId, invitationId: invitationID))) {
+        case .noContent, .notFound:
+            if let invitations = try await listInvitations(groupId) {
+                self.invitations = invitations
+            }
+        case .forbidden:
+            try await dropGroup()
+        default:
+            throw GroupError.unexpected
+        }
+    }
+
     func leave() async throws {
         guard let groupId = group?.id, let userId = profile.me?.id else { throw GroupError.unexpected }
         switch try await api.removeGroupMember(.init(path: .init(groupId: groupId, userId: userId))) {
@@ -106,6 +147,19 @@ final class Membership {
         }
     }
 
+    /// The pending invitations, or nil when the user is not a member of the group any more.
+    private func listInvitations(_ groupId: String) async throws -> [Components.Schemas.Invitation]? {
+        switch try await api.listInvitations(.init(path: .init(groupId: groupId))) {
+        case let .ok(ok):
+            return try ok.body.json.invitations
+        case .forbidden:
+            try await dropGroup()
+            return nil
+        default:
+            throw GroupError.unexpected
+        }
+    }
+
     /// The user is not a member of the group. The profile loads again to get the current group ID.
     private func dropGroup() async throws {
         try await profile.load()
@@ -115,5 +169,6 @@ final class Membership {
     private func clear() {
         group = nil
         members = []
+        invitations = []
     }
 }

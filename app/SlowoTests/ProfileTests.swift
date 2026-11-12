@@ -17,6 +17,9 @@ final class FakeAPI: APIProtocol {
         var updateGroup: [Operations.UpdateGroup.Output] = []
         var listGroupMembers: [Operations.ListGroupMembers.Output] = []
         var removeGroupMember: [Operations.RemoveGroupMember.Output] = []
+        var createInvitation: [Operations.CreateInvitation.Output] = []
+        var listInvitations: [Operations.ListInvitations.Output] = []
+        var cancelInvitation: [Operations.CancelInvitation.Output] = []
     }
 
     struct Empty: Error {}
@@ -106,6 +109,31 @@ final class FakeAPI: APIProtocol {
             s.calls.append("removeGroupMember")
             s.inputs.append("removeGroupMember \(input.path.groupId) \(input.path.userId)")
             return try Self.next(&s.answers.removeGroupMember)
+        }
+    }
+
+    func createInvitation(_ input: Operations.CreateInvitation.Input) async throws -> Operations.CreateInvitation.Output {
+        try state.withLock { s in
+            s.calls.append("createInvitation")
+            if case let .json(invitation) = input.body {
+                s.inputs.append("createInvitation \(input.path.groupId) \(invitation.email)")
+            }
+            return try Self.next(&s.answers.createInvitation)
+        }
+    }
+
+    func listInvitations(_ input: Operations.ListInvitations.Input) async throws -> Operations.ListInvitations.Output {
+        try state.withLock { s in
+            s.calls.append("listInvitations")
+            return try Self.next(&s.answers.listInvitations)
+        }
+    }
+
+    func cancelInvitation(_ input: Operations.CancelInvitation.Input) async throws -> Operations.CancelInvitation.Output {
+        try state.withLock { s in
+            s.calls.append("cancelInvitation")
+            s.inputs.append("cancelInvitation \(input.path.groupId) \(input.path.invitationId)")
+            return try Self.next(&s.answers.cancelInvitation)
         }
     }
 }
@@ -224,6 +252,9 @@ struct ErrorMessageCase: Sendable, CustomTestStringConvertible {
     ErrorMessageCase(name: "a failed save", error: ProfileError.unexpected, message: "Nie udało się zapisać zmian."),
     ErrorMessageCase(name: "a rejected group name", error: GroupError.badName, message: "Nazwa musi mieć od 1 do 40 znaków."),
     ErrorMessageCase(name: "a failed group call", error: GroupError.unexpected, message: "Coś poszło nie tak. Spróbuj ponownie."),
+    ErrorMessageCase(name: "an address that is not valid", error: GroupError.badEmail, message: "Nieprawidłowy adres e-mail."),
+    ErrorMessageCase(name: "the invitation limit", error: GroupError.tooManyInvitations, message: "Możesz wysłać najwyżej 20 zaproszeń dziennie."),
+    ErrorMessageCase(name: "an email that was not sent", error: GroupError.emailNotSent, message: "Nie udało się wysłać e-maila. Spróbuj ponownie."),
     ErrorMessageCase(
         name: "no network through the API client",
         error: ClientError(operationID: "updateMe", operationInput: "", causeDescription: "transport", underlyingError: URLError(.notConnectedToInternet)),
