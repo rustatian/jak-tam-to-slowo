@@ -26,10 +26,11 @@ final class Membership {
     }
 
     func load() async throws {
-        guard let groupId = profile.me?.groupId else {
+        // After a move to another group the old group does not show while the new one loads.
+        if group?.id != profile.me?.groupId {
             clear()
-            return
         }
+        guard let groupId = profile.me?.groupId else { return }
         switch try await api.getGroup(.init(path: .init(groupId: groupId))) {
         case let .ok(ok):
             let group = try ok.body.json
