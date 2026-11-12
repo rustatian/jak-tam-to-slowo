@@ -192,7 +192,7 @@ func profile(_ c: ProfileCase) async throws {
     #expect(api.updates == [.init(displayName: "Ola")])
 }
 
-struct DisplayNameCase: Sendable, CustomTestStringConvertible {
+struct NameCase: Sendable, CustomTestStringConvertible {
     let name: String
     let input: String
     let result: String?
@@ -201,14 +201,14 @@ struct DisplayNameCase: Sendable, CustomTestStringConvertible {
 }
 
 @Test(arguments: [
-    DisplayNameCase(name: "the name is trimmed", input: "  Ola  ", result: "Ola"),
-    DisplayNameCase(name: "40 letters with diacritics pass", input: String(repeating: "ż", count: 40), result: String(repeating: "ż", count: 40)),
-    DisplayNameCase(name: "41 letters are rejected", input: String(repeating: "ż", count: 41), result: nil),
-    DisplayNameCase(name: "a blank name is rejected", input: "   ", result: nil),
-    DisplayNameCase(name: "a combining accent counts as a second scalar", input: String(repeating: "e\u{0301}", count: 40), result: nil),
+    NameCase(name: "the name is trimmed", input: "  Ola  ", result: "Ola"),
+    NameCase(name: "40 letters with diacritics pass", input: String(repeating: "ż", count: 40), result: String(repeating: "ż", count: 40)),
+    NameCase(name: "41 letters are rejected", input: String(repeating: "ż", count: 41), result: nil),
+    NameCase(name: "a blank name is rejected", input: "   ", result: nil),
+    NameCase(name: "a combining accent counts as a second scalar", input: String(repeating: "e\u{0301}", count: 40), result: nil),
 ])
-func displayNameRule(_ c: DisplayNameCase) {
-    #expect(displayName(c.input) == c.result)
+func nameRule(_ c: NameCase) {
+    #expect(trimmedName(c.input) == c.result)
 }
 
 struct ErrorMessageCase: Sendable, CustomTestStringConvertible {

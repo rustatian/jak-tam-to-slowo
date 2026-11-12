@@ -30,12 +30,15 @@ struct SignedInView: View {
     let session: Session
 
     @State private var profile: Profile
+    @State private var membership: Membership
     @State private var failed = false
     @State private var offeringConsent = false
 
     init(api: Client, session: Session) {
         self.session = session
-        _profile = State(initialValue: Profile(api: api))
+        let profile = Profile(api: api)
+        _profile = State(initialValue: profile)
+        _membership = State(initialValue: Membership(api: api, profile: profile))
     }
 
     var body: some View {
@@ -55,7 +58,7 @@ struct SignedInView: View {
                 }
                 Tab("Grupa", systemImage: "person.3") {
                     NavigationStack {
-                        placeholder("Grupa", systemImage: "person.3")
+                        GroupView(profile: profile, membership: membership)
                             .toolbar {
                                 ToolbarItem(placement: .topBarTrailing) {
                                     NavigationLink {
