@@ -91,7 +91,6 @@ struct AddView: View {
 
     private func request(meaning: String? = nil) {
         error = nil
-        saved = false
         Task {
             do {
                 try await draft.request(text: text, meaning: meaning)
