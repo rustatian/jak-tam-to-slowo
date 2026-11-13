@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"net/http"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -43,4 +44,27 @@ func (s *Server) createDraft(ctx context.Context, req events.APIGatewayV2HTTPReq
 		return serverError(ctx, req, sub, err)
 	}
 	return jsonResponse(http.StatusAccepted, draft)
+}
+
+// getDraft returns the state of a draft job of the signed-in user. It writes nothing.
+func (s *Server) getDraft(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	sub, fail := s.member(ctx, req)
+	if fail != nil {
+		return *fail
+	}
+	// A job that did not end in 120 seconds reads as failed with unavailable, by the clock of the database.
+	const late = "status IN ('queued', 'running') AND created_at < now() - interval '120 seconds'"
+	draft := Draft{Id: req.PathParameters["draftId"]}
+	// The ID is compared as text: PostgreSQL refuses a uuid parameter that is not a UUID (SQLSTATE 22P02).
+	// https://www.postgresql.org/docs/16/errcodes-appendix.html
+	err := s.DB.QueryRow(ctx, "SELECT CASE WHEN "+late+" THEN 'failed' ELSE status END, CASE WHEN "+late+" THEN 'unavailable' ELSE error END, "+
+		"result->'card', result->'choices' FROM jobs WHERE user_id = $1 AND id::text = $2 AND kind = 'draft'", sub, draft.Id).
+		Scan(&draft.Status, &draft.Error, &draft.Card, &draft.Choices)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return jsonResponse(http.StatusNotFound, Error{Message: "draft not found"})
+	}
+	if err != nil {
+		return serverError(ctx, req, sub, err)
+	}
+	return jsonResponse(http.StatusOK, draft)
 }
