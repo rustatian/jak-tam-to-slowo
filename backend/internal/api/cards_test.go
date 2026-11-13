@@ -136,7 +136,7 @@ func TestCreateCard(t *testing.T) {
 			}
 			got := card
 			got.Id = ""
-			// reflect.DeepEqual tells a nil list from an empty one.
+			// reflect.DeepEqual treats a nil list and an empty list as different.
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("card = %+v, want %+v", got, tt.want)
 			}
@@ -163,7 +163,7 @@ func TestListCards(t *testing.T) {
 	}
 	tests := []struct {
 		name       string
-		setup      string // one statement that adds cards to the fixture; it finds a group by its name
+		setup      string // the SQL text that adds cards to the fixture; it finds a group by its name
 		sub        string
 		wantStatus int
 		wantBody   string   // empty when the answer is checked by wantPl or want
@@ -182,10 +182,12 @@ func TestListCards(t *testing.T) {
 				SELECT (SELECT id FROM groups WHERE name = 'Rodzina'), v.pl, 'ru', 'example', 'example', 'meaning', v.archived
 				FROM (VALUES ('dom', false), ('stary', true)) AS v (pl, archived)`,
 			wantPl: []string{"dom"}},
+		// After ANALYZE, PostgreSQL reads the small table in insert order, so the rows come in the reverse order of their IDs.
+		// https://www.postgresql.org/docs/16/sql-analyze.html
 		{name: "cards with one term are in the order of their IDs", sub: subOla, wantStatus: 200,
 			setup: `INSERT INTO cards (group_id, id, pl, ru, example_pl, example_ru, meaning_ru)
 				SELECT (SELECT id FROM groups WHERE name = 'Rodzina'), v.id, 'dom', 'дом', 'To jest dom.', 'Это дом.', 'здание'
-				FROM (VALUES ('00000000-0000-0000-0000-000000000002'::uuid), ('00000000-0000-0000-0000-000000000001'::uuid)) AS v (id)`,
+				FROM (VALUES ('00000000-0000-0000-0000-000000000002'::uuid), ('00000000-0000-0000-0000-000000000001'::uuid)) AS v (id); ANALYZE cards`,
 			want: []Card{dom("00000000-0000-0000-0000-000000000001"), dom("00000000-0000-0000-0000-000000000002")}},
 		{name: "the card has all its fields", sub: subOla, wantStatus: 200,
 			setup: `INSERT INTO cards (group_id, id, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru)
@@ -223,7 +225,7 @@ func TestListCards(t *testing.T) {
 				t.Fatalf("body %s: %v", resp.Body, err)
 			}
 			if tt.want != nil {
-				// reflect.DeepEqual tells a nil list from an empty one.
+				// reflect.DeepEqual treats a nil list and an empty list as different.
 				if !reflect.DeepEqual(list.Cards, tt.want) {
 					t.Errorf("cards = %+v, want %+v", list.Cards, tt.want)
 				}
