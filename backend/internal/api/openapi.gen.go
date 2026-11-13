@@ -297,6 +297,12 @@ type TooManyRequests = Error
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
 
+// ListCardsParams defines parameters for ListCards.
+type ListCardsParams struct {
+	// Q A part of the Polish or the Russian term. Upper and lower case, the marks of the Polish letters, and ё and е are equal in the search. Without q, or with a q of spaces only, the answer has all cards.
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+}
+
 // CreateGroupJSONRequestBody defines body for CreateGroup for application/json ContentType.
 type CreateGroupJSONRequestBody = GroupCreate
 

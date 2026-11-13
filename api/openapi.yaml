@@ -266,13 +266,22 @@ paths:
     get:
       operationId: listCards
       summary: The cards of the group.
+      parameters:
+        - name: q
+          in: query
+          description: A part of the Polish or the Russian term. Upper and lower case, the marks of the Polish letters, and ё and е are equal in the search. Without q, or with a q of spaces only, the answer has all cards.
+          schema:
+            type: string
+            maxLength: 200
       responses:
         "200":
-          description: The cards of the group that are not archived, in the Polish order of pl, then by ID.
+          description: "The cards of the group that are not archived, in the Polish order of pl, then by ID. With q: the cards whose Polish or Russian term contains q. First the cards with a term that is equal to q, then the cards with a term that starts with q, then the others."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Cards"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -408,7 +417,7 @@ components:
         type: string
   responses:
     BadRequest:
-      description: The request body is not valid.
+      description: The request is not valid.
       content:
         application/json:
           schema:
