@@ -24,6 +24,8 @@ final class FakeAPI: APIProtocol {
         var listCards: [Operations.ListCards.Output] = []
         var updateCard: [Operations.UpdateCard.Output] = []
         var archiveCard: [Operations.ArchiveCard.Output] = []
+        var createDraft: [Operations.CreateDraft.Output] = []
+        var getDraft: [Operations.GetDraft.Output] = []
         var previewInvitation: [Operations.PreviewInvitation.Output] = []
         var acceptInvitation: [Operations.AcceptInvitation.Output] = []
     }
@@ -184,6 +186,24 @@ final class FakeAPI: APIProtocol {
         }
     }
 
+    func createDraft(_ input: Operations.CreateDraft.Input) async throws -> Operations.CreateDraft.Output {
+        try state.withLock { s in
+            s.calls.append("createDraft")
+            if case let .json(draft) = input.body {
+                s.inputs.append("createDraft \(input.path.groupId) \(draft.text) \(draft.meaningRu ?? "-")")
+            }
+            return try Self.next(&s.answers.createDraft)
+        }
+    }
+
+    func getDraft(_ input: Operations.GetDraft.Input) async throws -> Operations.GetDraft.Output {
+        try state.withLock { s in
+            s.calls.append("getDraft")
+            s.inputs.append("getDraft \(input.path.groupId) \(input.path.draftId)")
+            return try Self.next(&s.answers.getDraft)
+        }
+    }
+
     func previewInvitation(_ input: Operations.PreviewInvitation.Input) async throws -> Operations.PreviewInvitation.Output {
         try state.withLock { s in
             s.calls.append("previewInvitation")
@@ -329,6 +349,10 @@ struct ErrorMessageCase: Sendable, CustomTestStringConvertible {
     ErrorMessageCase(name: "an address with a wrong form", error: CognitoError.service("InvalidParameterException"), message: "Nieprawidłowy adres e-mail."),
     ErrorMessageCase(name: "a refused card", error: CardError.rejected, message: "Sprawdź pola tekstowe."),
     ErrorMessageCase(name: "an archived card", error: CardError.gone, message: "Ta fiszka jest już w archiwum."),
+    ErrorMessageCase(name: "a draft that the model refused", error: DraftError.refused, message: "Model AI odmówił odpowiedzi. Zmień zapytanie."),
+    ErrorMessageCase(name: "an invalid draft", error: DraftError.invalid, message: "Model AI zwrócił nieprawidłową fiszkę. Spróbuj ponownie."),
+    ErrorMessageCase(name: "an unavailable model", error: DraftError.unavailable, message: "Model AI jest teraz niedostępny. Spróbuj ponownie."),
+    ErrorMessageCase(name: "a draft text that the server refuses", error: DraftError.badText, message: "Sprawdź pola tekstowe."),
     ErrorMessageCase(
         name: "no network through the API client",
         error: ClientError(operationID: "updateMe", operationInput: "", causeDescription: "transport", underlyingError: URLError(.notConnectedToInternet)),

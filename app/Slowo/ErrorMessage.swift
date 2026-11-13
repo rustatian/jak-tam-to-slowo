@@ -4,7 +4,7 @@ import OpenAPIRuntime
 /// The password rules of the user pool.
 let passwordRules = "Co najmniej 8 znaków, w tym wielka i mała litera, cyfra i znak specjalny."
 
-/// The Polish text for an error of a sign-in, sign-up, password reset, profile, group, invitation or card call.
+/// The Polish text for an error of a sign-in, sign-up, password reset, profile, group, invitation, card or draft call.
 func errorMessage(_ error: Error) -> String {
     // The generated API client wraps the transport error.
     let error = (error as? ClientError)?.underlyingError ?? error
@@ -27,10 +27,16 @@ func errorMessage(_ error: Error) -> String {
         return "To zaproszenie jest już nieważne."
     case InvitationError.tooManyTries:
         return "Zbyt wiele prób. Spróbuj ponownie później."
-    case CardError.rejected:
+    case CardError.rejected, DraftError.badText:
         return "Sprawdź pola tekstowe."
     case CardError.gone:
         return "Ta fiszka jest już w archiwum."
+    case DraftError.refused:
+        return "Model AI odmówił odpowiedzi. Zmień zapytanie."
+    case DraftError.invalid:
+        return "Model AI zwrócił nieprawidłową fiszkę. Spróbuj ponownie."
+    case DraftError.unavailable:
+        return "Model AI jest teraz niedostępny. Spróbuj ponownie."
     // The PreSignUp trigger gives "invitation not found" for a dead token.
     case CognitoError.trigger(let text) where text.contains("invitation not found"):
         return "To zaproszenie jest już nieważne."
