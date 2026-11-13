@@ -43,6 +43,51 @@ func (e Direction) Valid() bool {
 	}
 }
 
+// Defines values for DraftError.
+const (
+	Invalid     DraftError = "invalid"
+	Refused     DraftError = "refused"
+	Unavailable DraftError = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the DraftError enum.
+func (e DraftError) Valid() bool {
+	switch e {
+	case Invalid:
+		return true
+	case Refused:
+		return true
+	case Unavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DraftStatus.
+const (
+	Done    DraftStatus = "done"
+	Failed  DraftStatus = "failed"
+	Queued  DraftStatus = "queued"
+	Running DraftStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the DraftStatus enum.
+func (e DraftStatus) Valid() bool {
+	switch e {
+	case Done:
+		return true
+	case Failed:
+		return true
+	case Queued:
+		return true
+	case Running:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for InvitationFailure.
 const (
 	Bounce    InvitationFailure = "bounce"
@@ -132,6 +177,35 @@ type Cards struct {
 
 // Direction The translation direction of the learner's study.
 type Direction string
+
+// Draft defines model for Draft.
+type Draft struct {
+	// Card The draft, for done with one meaning.
+	Card *CardCreate `json:"card,omitempty"`
+
+	// Choices Short Russian meanings, for done when the text has more than one common meaning.
+	Choices *[]string `json:"choices,omitempty"`
+
+	// Error The cause, for failed.
+	Error  *DraftError `json:"error,omitempty"`
+	Id     string      `json:"id"`
+	Status DraftStatus `json:"status"`
+}
+
+// DraftError The cause, for failed.
+type DraftError string
+
+// DraftStatus defines model for Draft.Status.
+type DraftStatus string
+
+// DraftCreate defines model for DraftCreate.
+type DraftCreate struct {
+	// MeaningRu The Russian meaning that the learner picked from choices. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+	MeaningRu *string `json:"meaningRu,omitempty"`
+
+	// Text The word or the phrase, in Polish or in Russian. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+	Text string `json:"text"`
+}
 
 // Error defines model for Error.
 type Error struct {
@@ -277,6 +351,9 @@ type StudyQueue struct {
 // CardId defines model for CardId.
 type CardId = string
 
+// DraftId defines model for DraftId.
+type DraftId = string
+
 // GroupId defines model for GroupId.
 type GroupId = string
 
@@ -330,6 +407,9 @@ type CreateCardJSONRequestBody = CardCreate
 
 // UpdateCardJSONRequestBody defines body for UpdateCard for application/json ContentType.
 type UpdateCardJSONRequestBody = CardUpdate
+
+// CreateDraftJSONRequestBody defines body for CreateDraft for application/json ContentType.
+type CreateDraftJSONRequestBody = DraftCreate
 
 // CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
 type CreateInvitationJSONRequestBody = InvitationCreate

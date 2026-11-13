@@ -351,6 +351,59 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalError"
+  /v1/groups/{groupId}/drafts:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+    post:
+      operationId: createDraft
+      summary: Ask for an AI draft of a translation card.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DraftCreate"
+      responses:
+        "202":
+          description: The draft job is stored. Read the draft until its status is done or failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Draft"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The signed-in user is not a member of the group, or has not given the AI consent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/groups/{groupId}/drafts/{draftId}:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+      - $ref: "#/components/parameters/DraftId"
+    get:
+      operationId: getDraft
+      summary: The state of a draft of the signed-in user.
+      responses:
+        "200":
+          description: The draft.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Draft"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /v1/invitations/{token}:
     parameters:
       - $ref: "#/components/parameters/InvitationToken"
@@ -430,6 +483,12 @@ components:
         type: string
     CardId:
       name: cardId
+      in: path
+      required: true
+      schema:
+        type: string
+    DraftId:
+      name: draftId
       in: path
       required: true
       schema:
@@ -780,6 +839,43 @@ components:
           type: integer
           minimum: 0
           description: The version of the learner's progress for the card. 0 for a new card.
+    DraftCreate:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: The word or the phrase, in Polish or in Russian. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+        meaningRu:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: The Russian meaning that the learner picked from choices. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+    Draft:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, done, failed]
+        card:
+          $ref: "#/components/schemas/CardCreate"
+          description: The draft, for done with one meaning.
+        choices:
+          type: array
+          minItems: 2
+          maxItems: 8
+          items:
+            type: string
+          description: Short Russian meanings, for done when the text has more than one common meaning.
+        error:
+          type: string
+          enum: [refused, invalid, unavailable]
+          description: The cause, for failed.
     Error:
       type: object
       required: [message]
