@@ -70,7 +70,7 @@ struct CardEditView: View {
     }
 
     private func save() async {
-        guard fields.isValid, let change else { return }
+        guard let change else { return }
         await run { try await cards.update(card.id, change) }
     }
 
