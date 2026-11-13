@@ -242,6 +242,11 @@ func TestListCards(t *testing.T) {
 				VALUES ((SELECT id FROM groups WHERE name = 'Rodzina'), '00000000-0000-0000-0000-000000000001', 'źródło', 'источник', 'To jest źródło.', 'Это источник.', 'начало реки', '["zdrój"]', '[]')`,
 			want: []Card{{Id: "00000000-0000-0000-0000-000000000001", Kind: Translation, Pl: "źródło", Ru: "источник", ExamplePl: "To jest źródło.", ExampleRu: "Это источник.",
 				MeaningRu: "начало реки", AlternativesPl: []string{"zdrój"}, AlternativesRu: []string{}}}},
+		{name: "a card with an empty ru keeps its place in the list", sub: subOla, wantStatus: 200,
+			setup: `INSERT INTO cards (group_id, pl, ru, example_pl, example_ru, meaning_ru)
+				SELECT (SELECT id FROM groups WHERE name = 'Rodzina'), v.pl, v.ru, 'example', 'example', 'meaning'
+				FROM (VALUES ('żaba', ''), ('dom', 'дом'), ('ala', 'аля')) AS v (pl, ru)`,
+			wantPl: []string{"ala", "dom", "żaba"}},
 		{name: "a member of another group is refused", sub: subEwa, wantStatus: 403, wantBody: notMember},
 		{name: "a user without a group is refused", sub: subJan, wantStatus: 403, wantBody: notMember},
 	}
@@ -278,6 +283,119 @@ func TestListCards(t *testing.T) {
 					t.Errorf("cards = %+v, want %+v", list.Cards, tt.want)
 				}
 				return
+			}
+			var pl []string
+			for _, c := range list.Cards {
+				pl = append(pl, c.Pl)
+			}
+			if !slices.Equal(pl, tt.wantPl) {
+				t.Errorf("pl = %q, want %q", pl, tt.wantPl)
+			}
+		})
+	}
+}
+
+func TestSearchKey(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "upper case becomes lower case", in: "Dom", want: "dom"},
+		{name: "Polish letters lose their marks", in: "Zażółć gęślą jaźń", want: "zazolc gesla jazn"},
+		{name: "upper-case Polish letters lose their marks", in: "ŁÓDŹ", want: "lodz"},
+		{name: "ё becomes е", in: "Ёлка", want: "елка"},
+		{name: "й stays й", in: "Чай", want: "чай"},
+		{name: "runs of white space become one space", in: "  dobry \t wieczór  ", want: "dobry wieczor"},
+		{name: "a non-breaking space is white space", in: "dobry\u00a0wieczór", want: "dobry wieczor"},
+		{name: "a decomposed Polish letter", in: "mo\u0301j", want: "moj"},
+		{name: "a decomposed ё", in: "е\u0308лка", want: "елка"},
+		{name: "a decomposed й stays й", in: "чаи\u0306", want: "ча\u0439"},
+		{name: "punctuation stays", in: "Co to jest?", want: "co to jest?"},
+		{name: "only white space gives an empty key", in: "   ", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := searchKey(tt.in); got != tt.want {
+				t.Errorf("searchKey(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSearchCards(t *testing.T) {
+	// searchFixture adds the cards 0001 to 0010 to the groups of groupFixture. 0006 is archived, and 0007 is in Praca.
+	const searchFixture = `INSERT INTO cards (group_id, id, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru, archived)
+		SELECT (SELECT id FROM groups WHERE name = v.grp), v.id::uuid, v.pl, v.ru, 'p', 'r', 'm', v.alt_pl::jsonb, v.alt_ru::jsonb, v.archived
+		FROM (VALUES
+			('Rodzina', '00000000-0000-0000-0000-000000000001', 'wieczór', 'вечер', '[]', '[]', false),
+			('Rodzina', '00000000-0000-0000-0000-000000000002', 'dobry wieczór', 'добрый вечер', '[]', '[]', false),
+			('Rodzina', '00000000-0000-0000-0000-000000000003', 'wieczorek', 'вечерок', '[]', '[]', false),
+			('Rodzina', '00000000-0000-0000-0000-000000000004', 'żółw', 'черепаха', '[]', '[]', false),
+			('Rodzina', '00000000-0000-0000-0000-000000000005', 'jeż', 'ёж', '[]', '[]', false),
+			('Rodzina', '00000000-0000-0000-0000-000000000006', 'noc', 'вечер и ночь', '[]', '[]', true),
+			('Praca', '00000000-0000-0000-0000-000000000007', 'wieczór', 'вечер', '[]', '[]', false),
+			('Rodzina', '00000000-0000-0000-0000-000000000008', 'zmierzch', 'сумерки', '["wieczór"]', '["вечер"]', false),
+			('Rodzina', '00000000-0000-0000-0000-000000000009', 'to jest ok', 'ok', '[]', '[]', false),
+			('Rodzina', '00000000-0000-0000-0000-000000000010', 'oko', 'глаз', '[]', '[]', false)
+		) AS v (grp, id, pl, ru, alt_pl, alt_ru, archived)`
+	// Polish order: ó is a letter after o, and ż after z.
+	all := []string{"dobry wieczór", "jeż", "oko", "to jest ok", "wieczorek", "wieczór", "zmierzch", "żółw"}
+	tests := []struct {
+		name       string
+		sub        string
+		query      string // the raw query string of the request
+		wantStatus int
+		wantBody   string   // empty when the answer is checked by wantPl
+		wantPl     []string // the pl values of the answer in order
+	}{
+		{name: "an empty q lists all cards", sub: subOla, query: "q=", wantStatus: 200, wantPl: all},
+		{name: "a q of spaces lists all cards", sub: subOla, query: "q=%20%20", wantStatus: 200, wantPl: all},
+		{name: "a query without Polish marks", sub: subOla, query: "q=wieczor", wantStatus: 200, wantPl: []string{"wieczór", "wieczorek", "dobry wieczór"}},
+		// WIECZÓR
+		{name: "a query with Polish marks and upper case", sub: subAdam, query: "q=WIECZ%C3%93R", wantStatus: 200,
+			wantPl: []string{"wieczór", "wieczorek", "dobry wieczór"}},
+		// вечер
+		{name: "a Russian query", sub: subOla, query: "q=%D0%B2%D0%B5%D1%87%D0%B5%D1%80", wantStatus: 200, wantPl: []string{"wieczór", "wieczorek", "dobry wieczór"}},
+		// еж
+		{name: "ё and е are equal", sub: subOla, query: "q=%D0%B5%D0%B6", wantStatus: 200, wantPl: []string{"jeż"}},
+		{name: "cards of one rank are in the order of pl, not of the key", sub: subOla, query: "q=czor", wantStatus: 200,
+			wantPl: []string{"dobry wieczór", "wieczorek", "wieczór"}},
+		// The ru of "to jest ok" is equal to the query, and "oko" starts with it.
+		{name: "the better rank of the two terms counts", sub: subOla, query: "q=ok", wantStatus: 200, wantPl: []string{"to jest ok", "oko"}},
+		// %C5%BC is the letter ż.
+		{name: "a q of 200 letters passes", sub: subOla, query: "q=" + strings.Repeat("%C5%BC", 200), wantStatus: 200, wantBody: `{"cards":[]}`},
+		{name: "a q of 201 letters is rejected", sub: subOla, query: "q=" + strings.Repeat("%C5%BC", 201), wantStatus: 400,
+			wantBody: `{"message":"q must have at most 200 characters"}`},
+		{name: "a query string that is not valid is rejected", sub: subOla, query: "q=%zz", wantStatus: 400, wantBody: `{"message":"invalid query string"}`},
+		{name: "a member of another group is refused before the query is read", sub: subEwa, query: "q=%zz", wantStatus: 403, wantBody: notMember},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			pool, srv, rodzina, _ := groupFixture(t)
+			if _, err := pool.Exec(ctx, searchFixture); err != nil {
+				t.Fatal(err)
+			}
+			req := groupRequest("GET /v1/groups/{groupId}/cards", tt.sub, "", map[string]string{"groupId": rodzina})
+			req.RawQueryString = tt.query
+
+			resp, err := srv.Handle(ctx, req)
+			if err != nil {
+				t.Fatalf("Handle returned error %v", err)
+			}
+			if resp.StatusCode != tt.wantStatus {
+				t.Errorf("status = %d, want %d (body %s)", resp.StatusCode, tt.wantStatus, resp.Body)
+			}
+			if tt.wantBody != "" {
+				if resp.Body != tt.wantBody {
+					t.Errorf("body = %s, want %s", resp.Body, tt.wantBody)
+				}
+				return
+			}
+			var list Cards
+			if err := json.Unmarshal([]byte(resp.Body), &list); err != nil {
+				t.Fatalf("body %s: %v", resp.Body, err)
 			}
 			var pl []string
 			for _, c := range list.Cards {

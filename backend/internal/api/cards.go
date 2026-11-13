@@ -6,12 +6,16 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/db"
 )
@@ -55,11 +59,21 @@ func (s *Server) createCard(ctx context.Context, req events.APIGatewayV2HTTPRequ
 	return jsonResponse(http.StatusCreated, card)
 }
 
-// listCards answers the cards of the group in the path that are not archived, in the Polish order of pl, then by ID.
+// listCards answers the cards of the group in the path that are not archived and whose pl or ru key contains the key
+// of q. The order is the rank of the match, then the Polish order of pl, then the ID. When the key of q is empty, each
+// card has the rank 1.
 func (s *Server) listCards(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
 	sub, fail := s.member(ctx, req)
 	if fail != nil {
 		return *fail
+	}
+	query, err := url.ParseQuery(req.RawQueryString)
+	if err != nil {
+		return jsonResponse(http.StatusBadRequest, Error{Message: "invalid query string"})
+	}
+	q := query.Get("q")
+	if utf8.RuneCountInString(q) > 200 {
+		return jsonResponse(http.StatusBadRequest, Error{Message: "q must have at most 200 characters"})
 	}
 	rows, err := s.DB.Query(ctx, "SELECT "+cardColumns+" FROM cards WHERE group_id = $1 AND NOT archived", req.PathParameters["groupId"])
 	if err != nil {
@@ -69,13 +83,46 @@ func (s *Server) listCards(ctx context.Context, req events.APIGatewayV2HTTPReque
 	if err != nil {
 		return serverError(ctx, req, sub, err)
 	}
+	k := searchKey(q)
+	// termRank is the rank of one term for k. An empty term has the same key as an empty query, so the rank 0 needs
+	// a k that is not empty.
+	termRank := func(term string) int {
+		key := searchKey(term)
+		switch {
+		case k != "" && key == k:
+			return 0
+		case strings.HasPrefix(key, k):
+			return 1
+		case strings.Contains(key, k):
+			return 2
+		}
+		return 3
+	}
+	rank := make(map[string]int, len(cards))
+	cards = slices.DeleteFunc(cards, func(c Card) bool {
+		rank[c.Id] = min(termRank(c.Pl), termRank(c.Ru))
+		return rank[c.Id] == 3
+	})
 	// Aurora DSQL sorts text only by bytes, so the order is made here with a new Collator, as in listMembers.
 	// https://docs.aws.amazon.com/aurora-dsql/latest/userguide/working-with-postgresql-compatibility-migration-guide.html#working-with-postgresql-compatibility-unsupported-limitations
 	polish := collate.New(language.Polish)
 	slices.SortFunc(cards, func(a, b Card) int {
-		return cmp.Or(polish.CompareString(a.Pl, b.Pl), cmp.Compare(a.Id, b.Id))
+		return cmp.Or(cmp.Compare(rank[a.Id], rank[b.Id]), polish.CompareString(a.Pl, b.Pl), cmp.Compare(a.Id, b.Id))
 	})
 	return jsonResponse(http.StatusOK, Cards{Cards: cards})
+}
+
+// polishBase maps the nine Polish letters with a mark to their base letters.
+var polishBase = strings.NewReplacer("ą", "a", "ć", "c", "ę", "e", "ł", "l", "ń", "n", "ó", "o", "ś", "s", "ź", "z", "ż", "z")
+
+// searchKey is the form of a term or a query that the search compares. NFC makes a letter and its combining mark one
+// code point, so the replacements find a decomposed letter. й stays й.
+// https://www.unicode.org/reports/tr15/#Norm_Forms
+func searchKey(s string) string {
+	s = strings.ToLower(norm.NFC.String(s))
+	s = strings.ReplaceAll(s, "ё", "е")
+	s = strings.Join(strings.Fields(s), " ")
+	return polishBase.Replace(s)
 }
 
 // patchCard changes the card fields that the body names. A field that the body leaves out keeps its value.
