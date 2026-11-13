@@ -79,10 +79,10 @@ type CardKind string
 
 // CardCreate defines model for CardCreate.
 type CardCreate struct {
-	// AlternativesPl At most 8 other Polish terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. Absent is an empty list.
+	// AlternativesPl At most 8 other Polish terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. A list that the body does not have is an empty list.
 	AlternativesPl *[]string `json:"alternativesPl,omitempty"`
 
-	// AlternativesRu At most 8 other Russian terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. Absent is an empty list.
+	// AlternativesRu At most 8 other Russian terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. A list that the body does not have is an empty list.
 	AlternativesRu *[]string `json:"alternativesRu,omitempty"`
 
 	// ExamplePl A Polish example. Spaces at the ends are removed; then it has 1 to 500 characters, and no control, line-break or text-direction character.

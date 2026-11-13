@@ -67,6 +67,7 @@ func (s *Server) listCards(ctx context.Context, req events.APIGatewayV2HTTPReque
 		return serverError(ctx, req, sub, err)
 	}
 	// Aurora DSQL sorts text only by bytes, so the order is made here with a new Collator, as in listMembers.
+	// https://docs.aws.amazon.com/aurora-dsql/latest/userguide/working-with-postgresql-compatibility-migration-guide.html#working-with-postgresql-compatibility-unsupported-limitations
 	polish := collate.New(language.Polish)
 	slices.SortFunc(cards, func(a, b Card) int {
 		return cmp.Or(polish.CompareString(a.Pl, b.Pl), cmp.Compare(a.Id, b.Id))
@@ -104,6 +105,7 @@ func checkCard(body CardCreate) (card Card, msg string) {
 
 // trimmedTerms applies trimmedText with 200 characters to each term of a list of at most 8 terms. A missing list
 // is an empty list. The result is not nil: pgx sends a nil slice as SQL NULL, and the list columns are NOT NULL.
+// https://pkg.go.dev/github.com/jackc/pgx/v5/pgtype#hdr-Encoding_Typed_Nils
 func trimmedTerms(terms *[]string) (trimmed []string, ok bool) {
 	trimmed = []string{}
 	if terms == nil {

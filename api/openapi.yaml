@@ -618,7 +618,7 @@ components:
             type: string
             minLength: 1
             maxLength: 200
-          description: At most 8 other Polish terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. Absent is an empty list.
+          description: At most 8 other Polish terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. A list that the body does not have is an empty list.
         alternativesRu:
           type: array
           maxItems: 8
@@ -626,7 +626,7 @@ components:
             type: string
             minLength: 1
             maxLength: 200
-          description: At most 8 other Russian terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. Absent is an empty list.
+          description: At most 8 other Russian terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. A list that the body does not have is an empty list.
     Cards:
       type: object
       required: [cards]
