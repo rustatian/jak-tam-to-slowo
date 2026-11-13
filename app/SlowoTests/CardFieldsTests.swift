@@ -16,6 +16,39 @@ import Testing
     #expect(fields.alternativesRu == "")
 }
 
+let domDraft = Components.Schemas.CardCreate(pl: "Dom", ru: "Дом", examplePl: "To jest dom.", exampleRu: "Это дом.", meaningRu: "здание")
+
+struct DraftFieldsCase: Sendable, CustomTestStringConvertible {
+    let name: String
+    let draft: Components.Schemas.CardCreate
+    let alternativesPl: String
+    let alternativesRu: String
+
+    var testDescription: String { name }
+}
+
+let draftFieldsCases: [DraftFieldsCase] = [
+    DraftFieldsCase(name: "a draft with no lists has empty lists", draft: domDraft, alternativesPl: "", alternativesRu: ""),
+    DraftFieldsCase(
+        name: "the terms of a draft are lines",
+        draft: .init(
+            pl: "Dom", ru: "Дом", examplePl: "To jest dom.", exampleRu: "Это дом.", meaningRu: "здание",
+            alternativesPl: ["Domek", "Chata"], alternativesRu: ["Домик"]
+        ),
+        alternativesPl: "Domek\nChata", alternativesRu: "Домик"
+    ),
+]
+
+@Test(arguments: draftFieldsCases)
+func fieldsOfADraft(_ c: DraftFieldsCase) {
+    let fields = CardFields(c.draft)
+
+    #expect(fields.pl == "Dom")
+    #expect(fields.exampleRu == "Это дом.")
+    #expect(fields.alternativesPl == c.alternativesPl)
+    #expect(fields.alternativesRu == c.alternativesRu)
+}
+
 struct CardValidCase: Sendable, CustomTestStringConvertible {
     let name: String
     let change: @Sendable (inout CardFields) -> Void
@@ -93,4 +126,41 @@ func cardFieldsChange(_ c: CardChangeCase) {
     c.change(&fields)
 
     #expect(fields.changes(from: base) == c.update)
+}
+
+struct CardCreateCase: Sendable, CustomTestStringConvertible {
+    let name: String
+    let change: @Sendable (inout CardFields) -> Void
+    let create: Components.Schemas.CardCreate
+
+    var testDescription: String { name }
+}
+
+let createCases: [CardCreateCase] = [
+    CardCreateCase(
+        name: "the texts and the terms of the fields",
+        change: { _ in },
+        create: .init(pl: "Dom", ru: "Дом", examplePl: "To jest dom.", exampleRu: "Это дом.", meaningRu: "здание", alternativesPl: ["Domek"], alternativesRu: [])
+    ),
+    CardCreateCase(
+        name: "the texts are trimmed",
+        change: {
+            $0.pl = " Dom "
+            $0.exampleRu = "Это дом.\n"
+        },
+        create: .init(pl: "Dom", ru: "Дом", examplePl: "To jest dom.", exampleRu: "Это дом.", meaningRu: "здание", alternativesPl: ["Domek"], alternativesRu: [])
+    ),
+    CardCreateCase(
+        name: "blank lines are no terms",
+        change: { $0.alternativesPl = "\nDomek\n\n Chata " },
+        create: .init(pl: "Dom", ru: "Дом", examplePl: "To jest dom.", exampleRu: "Это дом.", meaningRu: "здание", alternativesPl: ["Domek", "Chata"], alternativesRu: [])
+    ),
+]
+
+@Test(arguments: createCases)
+func cardFieldsCreate(_ c: CardCreateCase) {
+    var fields = CardFields(dom)
+    c.change(&fields)
+
+    #expect(fields.create == c.create)
 }

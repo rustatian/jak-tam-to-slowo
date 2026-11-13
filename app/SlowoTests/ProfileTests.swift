@@ -149,6 +149,9 @@ final class FakeAPI: APIProtocol {
     func createCard(_ input: Operations.CreateCard.Input) async throws -> Operations.CreateCard.Output {
         try state.withLock { s in
             s.calls.append("createCard")
+            if case let .json(card) = input.body {
+                s.inputs.append("createCard \(input.path.groupId) \(card.pl)")
+            }
             return try Self.next(&s.answers.createCard)
         }
     }

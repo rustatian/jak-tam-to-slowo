@@ -67,6 +67,23 @@ final class Cards {
         }
     }
 
+    func create(_ card: Components.Schemas.CardCreate) async throws {
+        guard let groupId = profile.me?.groupId else { throw CardError.unexpected }
+        switch try await api.createCard(.init(path: .init(groupId: groupId), body: .json(card))) {
+        case .created:
+            // The card is stored. An error of this load makes the learner save again, and a second save makes a second card.
+            if cards != nil {
+                try? await load(query: query)
+            }
+        case .badRequest:
+            throw CardError.rejected
+        case .forbidden:
+            try await dropGroup()
+        default:
+            throw CardError.unexpected
+        }
+    }
+
     /// Archives a card. A card that is in the archive already is not an error.
     func archive(_ id: String) async throws {
         guard let groupId = profile.me?.groupId else { throw CardError.unexpected }
