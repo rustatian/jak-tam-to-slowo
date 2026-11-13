@@ -29,6 +29,8 @@ struct WordsView: View {
             }
         }
         .navigationTitle("Słówka")
+        // The destination sits outside the List, so the form stays open when a load removes the row of its card.
+        .navigationDestination(for: Components.Schemas.Card.self) { CardEditView(card: $0, cards: cards) }
         .task(id: LoadKey(groupId: profile.me?.groupId, query: query)) {
             // A new text cancels this task, so a load starts 300 ms after the last change of the text.
             if !query.isEmpty {
@@ -44,10 +46,12 @@ struct WordsView: View {
             List {
                 Section {
                     ForEach(list, id: \.id) { card in
-                        VStack(alignment: .leading) {
-                            Text(card.pl)
-                            Text(card.ru + " · " + card.meaningRu)
-                                .foregroundStyle(.secondary)
+                        NavigationLink(value: card) {
+                            VStack(alignment: .leading) {
+                                Text(card.pl)
+                                Text(card.ru + " · " + card.meaningRu)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 } footer: {

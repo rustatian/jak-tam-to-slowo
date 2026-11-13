@@ -22,6 +22,8 @@ final class FakeAPI: APIProtocol {
         var cancelInvitation: [Operations.CancelInvitation.Output] = []
         var createCard: [Operations.CreateCard.Output] = []
         var listCards: [Operations.ListCards.Output] = []
+        var updateCard: [Operations.UpdateCard.Output] = []
+        var archiveCard: [Operations.ArchiveCard.Output] = []
         var previewInvitation: [Operations.PreviewInvitation.Output] = []
         var acceptInvitation: [Operations.AcceptInvitation.Output] = []
     }
@@ -159,6 +161,24 @@ final class FakeAPI: APIProtocol {
         }
         await holdListCards?(call)
         return answer
+    }
+
+    func updateCard(_ input: Operations.UpdateCard.Input) async throws -> Operations.UpdateCard.Output {
+        try state.withLock { s in
+            s.calls.append("updateCard")
+            if case let .json(change) = input.body {
+                s.inputs.append("updateCard \(input.path.groupId) \(input.path.cardId) \(change.pl ?? "-")")
+            }
+            return try Self.next(&s.answers.updateCard)
+        }
+    }
+
+    func archiveCard(_ input: Operations.ArchiveCard.Input) async throws -> Operations.ArchiveCard.Output {
+        try state.withLock { s in
+            s.calls.append("archiveCard")
+            s.inputs.append("archiveCard \(input.path.groupId) \(input.path.cardId)")
+            return try Self.next(&s.answers.archiveCard)
+        }
     }
 
     func previewInvitation(_ input: Operations.PreviewInvitation.Input) async throws -> Operations.PreviewInvitation.Output {
@@ -304,6 +324,8 @@ struct ErrorMessageCase: Sendable, CustomTestStringConvertible {
     ErrorMessageCase(name: "a sign-up that the trigger cannot check", error: CognitoError.trigger("PreSignUp failed with error sign-up is not possible now."), message: "Rejestracja nie jest teraz możliwa. Spróbuj ponownie później."),
     ErrorMessageCase(name: "an address that has an account", error: CognitoError.service("UsernameExistsException"), message: "Konto z tym adresem już istnieje. Zaloguj się."),
     ErrorMessageCase(name: "an address with a wrong form", error: CognitoError.service("InvalidParameterException"), message: "Nieprawidłowy adres e-mail."),
+    ErrorMessageCase(name: "a refused card", error: CardError.rejected, message: "Sprawdź pola tekstowe."),
+    ErrorMessageCase(name: "an archived card", error: CardError.gone, message: "Ta fiszka jest już w archiwum."),
     ErrorMessageCase(
         name: "no network through the API client",
         error: ClientError(operationID: "updateMe", operationInput: "", causeDescription: "transport", underlyingError: URLError(.notConnectedToInternet)),

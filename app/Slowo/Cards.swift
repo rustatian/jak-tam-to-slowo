@@ -2,6 +2,10 @@ import Foundation
 import Observation
 
 enum CardError: Error, Equatable {
+    /// The server refused a text of the card.
+    case rejected
+    /// The card is in the archive.
+    case gone
     case unexpected
 }
 
@@ -39,12 +43,47 @@ final class Cards {
             cards = try ok.body.json.cards.filter { $0.kind == .translation }
             self.query = query
         case .forbidden:
-            // The user is not a member of the group. The profile loads again to get the current group ID.
-            try await profile.load()
-            clear()
+            try await dropGroup()
         default:
             throw CardError.unexpected
         }
+    }
+
+    func update(_ id: String, _ change: Components.Schemas.CardUpdate) async throws {
+        guard let groupId = profile.me?.groupId else { throw CardError.unexpected }
+        switch try await api.updateCard(.init(path: .init(groupId: groupId, cardId: id), body: .json(change))) {
+        case .ok:
+            try await load(query: query)
+        case .badRequest:
+            throw CardError.rejected
+        case .notFound:
+            // Another member archived the card, so its row goes away.
+            try await load(query: query)
+            throw CardError.gone
+        case .forbidden:
+            try await dropGroup()
+        default:
+            throw CardError.unexpected
+        }
+    }
+
+    /// Archives a card. A card that is in the archive already is not an error.
+    func archive(_ id: String) async throws {
+        guard let groupId = profile.me?.groupId else { throw CardError.unexpected }
+        switch try await api.archiveCard(.init(path: .init(groupId: groupId, cardId: id))) {
+        case .noContent, .notFound:
+            try await load(query: query)
+        case .forbidden:
+            try await dropGroup()
+        default:
+            throw CardError.unexpected
+        }
+    }
+
+    /// The user is not a member of the group. The profile loads again to get the current group ID.
+    private func dropGroup() async throws {
+        try await profile.load()
+        clear()
     }
 
     private func clear() {

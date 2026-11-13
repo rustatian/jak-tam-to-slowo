@@ -27,6 +27,10 @@ func errorMessage(_ error: Error) -> String {
         return "To zaproszenie jest już nieważne."
     case InvitationError.tooManyTries:
         return "Zbyt wiele prób. Spróbuj ponownie później."
+    case CardError.rejected:
+        return "Sprawdź pola tekstowe."
+    case CardError.gone:
+        return "Ta fiszka jest już w archiwum."
     // The PreSignUp trigger gives "invitation not found" for a dead token.
     case CognitoError.trigger(let text) where text.contains("invitation not found"):
         return "To zaproszenie jest już nieważne."
