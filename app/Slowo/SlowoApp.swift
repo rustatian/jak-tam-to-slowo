@@ -41,6 +41,7 @@ struct SignedInView: View {
     @State private var profile: Profile
     @State private var membership: Membership
     @State private var cards: Cards
+    @State private var draft: CardDraft
     @State private var failed = false
     @State private var offeringConsent = false
     @State private var tab = AppTab.study
@@ -56,6 +57,7 @@ struct SignedInView: View {
         _profile = State(initialValue: profile)
         _membership = State(initialValue: Membership(api: api, profile: profile))
         _cards = State(initialValue: Cards(api: api, profile: profile))
+        _draft = State(initialValue: CardDraft(api: api, profile: profile))
     }
 
     var body: some View {
@@ -70,7 +72,9 @@ struct SignedInView: View {
                     }
                 }
                 Tab("Dodaj", systemImage: "plus.circle", value: .add) {
-                    placeholder("Dodaj", systemImage: "plus.circle")
+                    NavigationStack {
+                        AddView(profile: profile, cards: cards, draft: draft) { offeringConsent = true }
+                    }
                 }
                 Tab("Zawody", systemImage: "flag.checkered", value: .contests) {
                     placeholder("Zawody", systemImage: "flag.checkered")

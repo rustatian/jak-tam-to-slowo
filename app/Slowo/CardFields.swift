@@ -1,7 +1,7 @@
 import Foundation
 
 /// The texts of a translation card in a form. Each list of other terms is one text with one term in each line.
-struct CardFields {
+struct CardFields: Hashable {
     var pl: String
     var ru: String
     var meaningRu: String
@@ -18,6 +18,17 @@ struct CardFields {
         exampleRu = card.exampleRu
         alternativesPl = card.alternativesPl.joined(separator: "\n")
         alternativesRu = card.alternativesRu.joined(separator: "\n")
+    }
+
+    /// A list that the draft does not have is an empty list.
+    init(_ draft: Components.Schemas.CardCreate) {
+        pl = draft.pl
+        ru = draft.ru
+        meaningRu = draft.meaningRu
+        examplePl = draft.examplePl
+        exampleRu = draft.exampleRu
+        alternativesPl = (draft.alternativesPl ?? []).joined(separator: "\n")
+        alternativesRu = (draft.alternativesRu ?? []).joined(separator: "\n")
     }
 
     /// The text rules of the server: `pl`, `ru` and `meaningRu` have 1 to 200 code points after the trim,
@@ -44,6 +55,14 @@ struct CardFields {
         )
         return update == .init() ? nil : update
     }
+
+    /// The body of a new card with the trimmed texts and the term lists.
+    var create: Components.Schemas.CardCreate {
+        .init(
+            pl: trimmed(pl), ru: trimmed(ru), examplePl: trimmed(examplePl), exampleRu: trimmed(exampleRu), meaningRu: trimmed(meaningRu),
+            alternativesPl: terms(alternativesPl), alternativesRu: terms(alternativesRu)
+        )
+    }
 }
 
 private func trimmed(_ text: String) -> String {
@@ -56,7 +75,7 @@ private func terms(_ text: String) -> [String] {
 }
 
 /// The server counts code points, and one grapheme cluster can have more than one code point.
-private func fits(_ text: String, _ max: Int) -> Bool {
+func fits(_ text: String, _ max: Int) -> Bool {
     (1...max).contains(trimmed(text).unicodeScalars.count)
 }
 

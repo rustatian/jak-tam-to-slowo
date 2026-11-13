@@ -265,6 +265,77 @@ let cardsCases: [CardsCase] = [
         },
         calls: ["getMe", "listCards", "archiveCard"], inputs: ["listCards g1 o", "archiveCard g1 c1"], error: .unexpected, cards: [cebula, dom], query: "o"
     ),
+    CardsCase(
+        name: "a new card loads the list again with the search text",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            createCard: [.created(.init(body: .json(dom)))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula])))), .ok(.init(body: .json(.init(cards: [cebula, dom]))))]
+        ),
+        action: { cards, _ in
+            try await cards.load(query: "o")
+            try await cards.create(CardFields(dom).create)
+        },
+        calls: ["getMe", "listCards", "createCard", "listCards"], inputs: ["listCards g1 o", "createCard g1 Dom", "listCards g1 o"], error: nil, cards: [cebula, dom], query: "o"
+    ),
+    CardsCase(
+        name: "a new card before the first load loads nothing",
+        answers: .init(getMe: [.ok(.init(body: .json(grouped)))], createCard: [.created(.init(body: .json(dom)))]),
+        action: { cards, _ in try await cards.create(CardFields(dom).create) },
+        calls: ["getMe", "createCard"], inputs: ["createCard g1 Dom"], error: nil, cards: nil, query: ""
+    ),
+    CardsCase(
+        name: "a failed reload after a new card is no error",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            createCard: [.created(.init(body: .json(dom)))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula])))), .internalServerError(.init(body: .json(.init(message: "internal error"))))]
+        ),
+        action: { cards, _ in
+            try await cards.load(query: "o")
+            try await cards.create(CardFields(dom).create)
+        },
+        calls: ["getMe", "listCards", "createCard", "listCards"], inputs: ["listCards g1 o", "createCard g1 Dom", "listCards g1 o"], error: nil, cards: [cebula], query: "o"
+    ),
+    CardsCase(
+        name: "a new card that the server refuses",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            createCard: [.badRequest(.init(body: .json(.init(message: "pl must have 1 to 200 characters"))))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula]))))]
+        ),
+        action: { cards, _ in
+            try await cards.load(query: "")
+            try await cards.create(CardFields(dom).create)
+        },
+        calls: ["getMe", "listCards", "createCard"], inputs: ["listCards g1 -", "createCard g1 Dom"], error: .rejected, cards: [cebula], query: ""
+    ),
+    CardsCase(
+        name: "a new card after a removal from the group shows no list",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped))), .ok(.init(body: .json(alone)))],
+            createCard: [.forbidden(.init(body: .json(.init(message: "not a member of this group"))))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula]))))]
+        ),
+        action: { cards, _ in
+            try await cards.load(query: "")
+            try await cards.create(CardFields(dom).create)
+        },
+        calls: ["getMe", "listCards", "createCard", "getMe"], inputs: ["listCards g1 -", "createCard g1 Dom"], error: nil, cards: nil, query: ""
+    ),
+    CardsCase(
+        name: "a failed create keeps the list",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            createCard: [.internalServerError(.init(body: .json(.init(message: "internal error"))))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula]))))]
+        ),
+        action: { cards, _ in
+            try await cards.load(query: "")
+            try await cards.create(CardFields(dom).create)
+        },
+        calls: ["getMe", "listCards", "createCard"], inputs: ["listCards g1 -", "createCard g1 Dom"], error: .unexpected, cards: [cebula], query: ""
+    ),
 ]
 
 @MainActor
