@@ -101,6 +101,30 @@ type CardCreate struct {
 	Ru string `json:"ru"`
 }
 
+// CardUpdate defines model for CardUpdate.
+type CardUpdate struct {
+	// AlternativesPl At most 8 other Polish terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. An empty list removes all terms.
+	AlternativesPl *[]string `json:"alternativesPl,omitempty"`
+
+	// AlternativesRu At most 8 other Russian terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. An empty list removes all terms.
+	AlternativesRu *[]string `json:"alternativesRu,omitempty"`
+
+	// ExamplePl A Polish example. Spaces at the ends are removed; then it has 1 to 500 characters, and no control, line-break or text-direction character.
+	ExamplePl *string `json:"examplePl,omitempty"`
+
+	// ExampleRu A Russian example. Spaces at the ends are removed; then it has 1 to 500 characters, and no control, line-break or text-direction character.
+	ExampleRu *string `json:"exampleRu,omitempty"`
+
+	// MeaningRu The meaning in Russian. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+	MeaningRu *string `json:"meaningRu,omitempty"`
+
+	// Pl The Polish term. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+	Pl *string `json:"pl,omitempty"`
+
+	// Ru The Russian term. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+	Ru *string `json:"ru,omitempty"`
+}
+
 // Cards defines model for Cards.
 type Cards struct {
 	Cards []Card `json:"cards"`
@@ -234,6 +258,9 @@ type Member struct {
 	Id string `json:"id"`
 }
 
+// CardId defines model for CardId.
+type CardId = string
+
 // GroupId defines model for GroupId.
 type GroupId = string
 
@@ -278,6 +305,9 @@ type UpdateGroupJSONRequestBody = GroupUpdate
 
 // CreateCardJSONRequestBody defines body for CreateCard for application/json ContentType.
 type CreateCardJSONRequestBody = CardCreate
+
+// UpdateCardJSONRequestBody defines body for UpdateCard for application/json ContentType.
+type UpdateCardJSONRequestBody = CardUpdate
 
 // CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
 type CreateInvitationJSONRequestBody = InvitationCreate

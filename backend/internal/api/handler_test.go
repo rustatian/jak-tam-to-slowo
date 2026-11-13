@@ -38,6 +38,7 @@ func TestHandle(t *testing.T) {
 		{name: "accept an invitation without an authorizer", routeKey: "POST /v1/invitations/{token}/acceptance", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
 		{name: "create a card without an authorizer", routeKey: "POST /v1/groups/{groupId}/cards", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
 		{name: "list cards without an authorizer", routeKey: "GET /v1/groups/{groupId}/cards", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
+		{name: "update a card without an authorizer", routeKey: "PATCH /v1/groups/{groupId}/cards/{cardId}", authorizer: nil, wantStatus: 401, wantBody: `{"message":"unauthorized"}`},
 		{name: "unknown route", routeKey: "GET /nope", authorizer: jwt(map[string]string{"sub": sub}), wantStatus: 404, wantBody: `{"message":"not found"}`},
 	}
 	for _, tt := range tests {
