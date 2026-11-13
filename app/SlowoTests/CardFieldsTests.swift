@@ -44,6 +44,9 @@ func fieldsOfADraft(_ c: DraftFieldsCase) {
     let fields = CardFields(c.draft)
 
     #expect(fields.pl == "Dom")
+    #expect(fields.ru == "Дом")
+    #expect(fields.meaningRu == "здание")
+    #expect(fields.examplePl == "To jest dom.")
     #expect(fields.exampleRu == "Это дом.")
     #expect(fields.alternativesPl == c.alternativesPl)
     #expect(fields.alternativesRu == c.alternativesRu)
