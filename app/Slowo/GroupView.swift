@@ -47,7 +47,7 @@ struct GroupView: View {
                             }
                         } message: {
                             if membership.members.count == 1 {
-                                Text("Jesteś jedyną osobą w grupie, więc grupa zostanie usunięta.")
+                                Text("Jesteś jedyną osobą w grupie, więc grupa zostanie usunięta razem ze słówkami.")
                             }
                         }
                 } footer: {

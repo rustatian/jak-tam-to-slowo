@@ -20,6 +20,8 @@ final class FakeAPI: APIProtocol {
         var createInvitation: [Operations.CreateInvitation.Output] = []
         var listInvitations: [Operations.ListInvitations.Output] = []
         var cancelInvitation: [Operations.CancelInvitation.Output] = []
+        var createCard: [Operations.CreateCard.Output] = []
+        var listCards: [Operations.ListCards.Output] = []
         var previewInvitation: [Operations.PreviewInvitation.Output] = []
         var acceptInvitation: [Operations.AcceptInvitation.Output] = []
     }
@@ -27,9 +29,12 @@ final class FakeAPI: APIProtocol {
     struct Empty: Error {}
 
     private let state: Mutex<(answers: Answers, calls: [String], updates: [Components.Schemas.MeUpdate], inputs: [String])>
+    /// Runs in `listCards` after the answer is taken, with the number of the `listCards` call, from 1.
+    private let holdListCards: (@Sendable (_ call: Int) async -> Void)?
 
-    init(_ answers: Answers) {
+    init(_ answers: Answers, holdListCards: (@Sendable (_ call: Int) async -> Void)? = nil) {
         state = Mutex((answers, [], [], []))
+        self.holdListCards = holdListCards
     }
 
     var calls: [String] { state.withLock { $0.calls } }
@@ -137,6 +142,23 @@ final class FakeAPI: APIProtocol {
             s.inputs.append("cancelInvitation \(input.path.groupId) \(input.path.invitationId)")
             return try Self.next(&s.answers.cancelInvitation)
         }
+    }
+
+    func createCard(_ input: Operations.CreateCard.Input) async throws -> Operations.CreateCard.Output {
+        try state.withLock { s in
+            s.calls.append("createCard")
+            return try Self.next(&s.answers.createCard)
+        }
+    }
+
+    func listCards(_ input: Operations.ListCards.Input) async throws -> Operations.ListCards.Output {
+        let (call, answer) = try state.withLock { s in
+            s.calls.append("listCards")
+            s.inputs.append("listCards \(input.path.groupId) \(input.query.q ?? "-")")
+            return (s.calls.count { $0 == "listCards" }, try Self.next(&s.answers.listCards))
+        }
+        await holdListCards?(call)
+        return answer
     }
 
     func previewInvitation(_ input: Operations.PreviewInvitation.Input) async throws -> Operations.PreviewInvitation.Output {
