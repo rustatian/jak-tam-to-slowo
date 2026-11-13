@@ -148,7 +148,8 @@ Resources:
         - Protocol: email
           Endpoint: !Ref AlarmEmail
 
-  # A failed run of the events function leaves expired invitations in the database or a bounce without its mark.
+  # A failed run of the events function leaves expired invitations or old job rows in the database, or a bounce
+  # without its mark.
   # The Errors metric has no value while the function does not run, so missing data counts as good.
   # Lambda runs a failed event two more times within 3 minutes, so with a period of 5 minutes one failed event
   # gives one alarm.

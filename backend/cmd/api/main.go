@@ -5,9 +5,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
-	"fmt"
 	"log"
-	"net/http"
 	"os"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -58,15 +56,8 @@ func main() {
 		if err != nil {
 			return err
 		}
-		out, err := functions.Invoke(ctx, &awslambda.InvokeInput{FunctionName: &jobsFunction, InvocationType: types.InvocationTypeEvent, Payload: payload})
-		if err != nil {
-			return err
-		}
-		// Lambda answers 202 when it accepts the event of an asynchronous call.
-		if out.StatusCode != http.StatusAccepted {
-			return fmt.Errorf("lambda answered %d to the start of the job", out.StatusCode)
-		}
-		return nil
+		_, err = functions.Invoke(ctx, &awslambda.InvokeInput{FunctionName: &jobsFunction, InvocationType: types.InvocationTypeEvent, Payload: payload})
+		return err
 	}}
 	lambda.Start(srv.Handle)
 }
