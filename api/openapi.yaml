@@ -382,6 +382,12 @@ paths:
                 $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
+        "502":
+          description: The draft job did not start.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/groups/{groupId}/drafts/{draftId}:
     parameters:
       - $ref: "#/components/parameters/GroupId"
