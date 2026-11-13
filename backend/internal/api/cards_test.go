@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -37,6 +38,34 @@ var (
 	cardK3 = Card{Id: "00000000-0000-0000-0000-000000000003", Kind: Translation, Pl: "praca", Ru: "работа", ExamplePl: "To jest praca.", ExampleRu: "Это работа.",
 		MeaningRu: "труд", AlternativesPl: []string{}, AlternativesRu: []string{}}
 )
+
+// cardRow is a row of the table cards.
+type cardRow struct {
+	card     Card
+	group    string
+	archived bool
+}
+
+// cardRows reads all card rows in ID order. Without ORDER BY, PostgreSQL returns a row that an UPDATE changed after
+// the other rows.
+// https://www.postgresql.org/docs/16/queries-order.html
+func cardRows(t *testing.T, pool *pgxpool.Pool) []cardRow {
+	t.Helper()
+	rows, err := pool.Query(context.Background(), "SELECT id, kind, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru, group_id, archived FROM cards ORDER BY id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (cardRow, error) {
+		var r cardRow
+		c := &r.card
+		err := row.Scan(&c.Id, &c.Kind, &c.Pl, &c.Ru, &c.ExamplePl, &c.ExampleRu, &c.MeaningRu, &c.AlternativesPl, &c.AlternativesRu, &r.group, &r.archived)
+		return r, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
 
 func TestCreateCard(t *testing.T) {
 	const baseBody = `{"pl":"dom","ru":"дом","examplePl":"To jest dom.","exampleRu":"Это дом.","meaningRu":"здание"}`
@@ -318,11 +347,6 @@ func TestPatchCard(t *testing.T) {
 		{name: "a user without a group is refused", sub: subJan, group: "rodzina", card: cardK1.Id, body: `{"pl":"nowy"}`, wantStatus: 403, wantBody: notMember},
 		{name: "a group ID that is not a UUID is refused", sub: subOla, group: "nope", card: cardK1.Id, body: `{"pl":"nowy"}`, wantStatus: 403, wantBody: notMember},
 	}
-	type cardRow struct {
-		card     Card
-		group    string
-		archived bool
-	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -359,22 +383,71 @@ func TestPatchCard(t *testing.T) {
 				}
 				k1 = tt.want
 			}
-			rows, err := pool.Query(ctx, "SELECT id, kind, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru, group_id, archived FROM cards ORDER BY id")
-			if err != nil {
-				t.Fatal(err)
-			}
-			got, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (cardRow, error) {
-				var r cardRow
-				c := &r.card
-				err := row.Scan(&c.Id, &c.Kind, &c.Pl, &c.Ru, &c.ExamplePl, &c.ExampleRu, &c.MeaningRu, &c.AlternativesPl, &c.AlternativesRu, &r.group, &r.archived)
-				return r, err
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
 			want := []cardRow{{k1, rodzina, false}, {cardK2, rodzina, true}, {cardK3, praca, false}}
-			if !reflect.DeepEqual(got, want) {
+			if got := cardRows(t, pool); !reflect.DeepEqual(got, want) {
 				t.Errorf("rows = %+v, want %+v", got, want)
+			}
+		})
+	}
+}
+
+func TestArchiveCard(t *testing.T) {
+	tests := []struct {
+		name         string
+		sub          string
+		group        string // the group ID of the path; "rodzina" for the ID of Rodzina
+		card         string // the card ID of the path
+		wantStatus   int
+		wantBody     string
+		wantArchived []string // the IDs of the archived cards after the call, in ID order
+	}{
+		{name: "archives a card", sub: subOla, group: "rodzina", card: cardK1.Id, wantStatus: 204, wantArchived: []string{cardK1.Id, cardK2.Id}},
+		{name: "an archived card is not found", sub: subAdam, group: "rodzina", card: cardK2.Id, wantStatus: 404, wantBody: cardNotFound, wantArchived: []string{cardK2.Id}},
+		{name: "a card of another group is not found", sub: subOla, group: "rodzina", card: cardK3.Id, wantStatus: 404, wantBody: cardNotFound, wantArchived: []string{cardK2.Id}},
+		{name: "a card ID that is not a UUID is not found", sub: subOla, group: "rodzina", card: "nope", wantStatus: 404, wantBody: cardNotFound, wantArchived: []string{cardK2.Id}},
+		{name: "an unknown card ID is not found", sub: subOla, group: "rodzina", card: "00000000-0000-0000-0000-000000000009", wantStatus: 404, wantBody: cardNotFound,
+			wantArchived: []string{cardK2.Id}},
+		{name: "a member of another group is refused", sub: subEwa, group: "rodzina", card: cardK1.Id, wantStatus: 403, wantBody: notMember, wantArchived: []string{cardK2.Id}},
+		{name: "a user without a group is refused", sub: subJan, group: "rodzina", card: cardK1.Id, wantStatus: 403, wantBody: notMember, wantArchived: []string{cardK2.Id}},
+		{name: "a group ID that is not a UUID is refused", sub: subOla, group: "nope", card: cardK1.Id, wantStatus: 403, wantBody: notMember, wantArchived: []string{cardK2.Id}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			pool, srv, rodzina, _ := groupFixture(t)
+			if _, err := pool.Exec(ctx, cardFixture); err != nil {
+				t.Fatal(err)
+			}
+			groupID := tt.group
+			if groupID == "rodzina" {
+				groupID = rodzina
+			}
+
+			resp, err := srv.Handle(ctx, groupRequest("DELETE /v1/groups/{groupId}/cards/{cardId}", tt.sub, "",
+				map[string]string{"groupId": groupID, "cardId": tt.card}))
+			if err != nil {
+				t.Fatalf("Handle returned error %v", err)
+			}
+			if resp.StatusCode != tt.wantStatus {
+				t.Errorf("status = %d, want %d (body %s)", resp.StatusCode, tt.wantStatus, resp.Body)
+			}
+			if resp.Body != tt.wantBody {
+				t.Errorf("body = %q, want %q", resp.Body, tt.wantBody)
+			}
+			var archived []string
+			var cards []Card
+			for _, r := range cardRows(t, pool) {
+				if r.archived {
+					archived = append(archived, r.card.Id)
+				}
+				cards = append(cards, r.card)
+			}
+			if !slices.Equal(archived, tt.wantArchived) {
+				t.Errorf("archived = %q, want %q", archived, tt.wantArchived)
+			}
+			// An archive changes only archived. reflect.DeepEqual treats a nil list and an empty list as different.
+			if want := []Card{cardK1, cardK2, cardK3}; !reflect.DeepEqual(cards, want) {
+				t.Errorf("cards = %+v, want %+v", cards, want)
 			}
 		})
 	}

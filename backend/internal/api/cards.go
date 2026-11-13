@@ -113,6 +113,30 @@ func (s *Server) patchCard(ctx context.Context, req events.APIGatewayV2HTTPReque
 	return jsonResponse(http.StatusOK, card)
 }
 
+// archiveCard archives the card in the path. The row stays, and no route returns it.
+func (s *Server) archiveCard(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	sub, fail := s.member(ctx, req)
+	if fail != nil {
+		return *fail
+	}
+	var archived bool
+	err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
+		// The ID is compared as text: PostgreSQL refuses a uuid parameter that is not a UUID (SQLSTATE 22P02).
+		// https://www.postgresql.org/docs/16/errcodes-appendix.html
+		tag, err := tx.Exec(ctx, "UPDATE cards SET archived = true WHERE group_id = $1 AND id::text = $2 AND NOT archived",
+			req.PathParameters["groupId"], req.PathParameters["cardId"])
+		archived = tag.RowsAffected() == 1
+		return err
+	})
+	if err != nil {
+		return serverError(ctx, req, sub, err)
+	}
+	if !archived {
+		return jsonResponse(http.StatusNotFound, Error{Message: "card not found"})
+	}
+	return noContent()
+}
+
 // checkCard trims each text and each term that u has, in place. msg is the 400 text of the first broken rule, in
 // the order of the fields. It is empty when u passes. A field that u does not have stays nil.
 func checkCard(u *CardUpdate) (msg string) {
