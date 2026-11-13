@@ -12,6 +12,10 @@ The app is in development. These screens exist today:
 |---|---|---|
 | <img src="docs/screenshots/group.png" width="240" alt="The Grupa tab with a group and its members"> | <img src="docs/screenshots/invitation.png" width="240" alt="The invitation of a link, with the button to join the group"> | <img src="docs/screenshots/sign-up.png" width="240" alt="The sign-up sheet with the fields for the e-mail and the password"> |
 
+| Words | Card |
+|---|---|
+| <img src="docs/screenshots/words.png" width="240" alt="The Słówka tab with the cards of the group"> | <img src="docs/screenshots/card.png" width="240" alt="The form of a card with its fields"> |
+
 ## Parts
 
 - `app/`: the SwiftUI app for iOS 26.
