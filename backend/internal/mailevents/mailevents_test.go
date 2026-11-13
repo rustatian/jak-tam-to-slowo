@@ -150,3 +150,50 @@ func TestHandleSchedule(t *testing.T) {
 		})
 	}
 }
+
+func TestHandleScheduleJobs(t *testing.T) {
+	tests := []struct {
+		name     string
+		age      string // the age of the job row, as an interval
+		wantKept bool
+	}{
+		{name: "a job of 61 minutes is deleted", age: "61 minutes"},
+		{name: "a job of 59 minutes stays", age: "59 minutes", wantKept: true},
+	}
+	raw, err := os.ReadFile("testdata/schedule.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var event events.EventBridgeEvent
+	if err := json.Unmarshal(raw, &event); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			pool := dbtest.New(t)
+			if _, err := db.Migrate(ctx, pool, migrations.FS); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := pool.Exec(ctx, "INSERT INTO users (id, email) VALUES ('u1', 'a@example.com')"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := pool.Exec(ctx, `INSERT INTO jobs (user_id, kind, input, created_at) VALUES ('u1', 'draft', '{"text":"słowo"}', now() - $1::interval)`,
+				tt.age); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := (&Handler{DB: pool}).Handle(ctx, event); err != nil {
+				t.Fatalf("Handle returned error %v, want none", err)
+			}
+
+			var kept bool
+			if err := pool.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM jobs)").Scan(&kept); err != nil {
+				t.Fatal(err)
+			}
+			if kept != tt.wantKept {
+				t.Errorf("the job is kept = %v, want %v", kept, tt.wantKept)
+			}
+		})
+	}
+}
