@@ -121,12 +121,12 @@ func TestStudyQueue(t *testing.T) {
 			rows: []studyRow{
 				row("a", a.createdAt, progress{0, 1, nil, new(t0.Add(-time.Minute)), 1}),
 				row("b", b.createdAt, progress{1, 0, new(t0.Add(-24*time.Hour + 5*time.Minute)), nil, 1}),
-				c,
+				row("c", c.createdAt, progress{1, 0, new(t0.Add(-time.Hour)), nil, 1}),
 				d,
 			},
 			now:          t0,
-			wantIDs:      []string{"d", "c"},
-			wantVersions: []int{0, 0},
+			wantIDs:      []string{"d"},
+			wantVersions: []int{0},
 			wantNext:     new(t0.Add(5 * time.Minute)),
 		},
 	}
