@@ -53,7 +53,7 @@ func (s *Server) createGroup(ctx context.Context, req events.APIGatewayV2HTTPReq
 	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
 		return jsonResponse(http.StatusBadRequest, Error{Message: "invalid JSON body"})
 	}
-	name, ok := trimmedName(body.Name)
+	name, ok := trimmedText(body.Name, 40)
 	if !ok {
 		return jsonResponse(http.StatusBadRequest, Error{Message: "name must have 1 to 40 characters"})
 	}
@@ -110,7 +110,7 @@ func (s *Server) patchGroup(ctx context.Context, req events.APIGatewayV2HTTPRequ
 		return jsonResponse(http.StatusBadRequest, Error{Message: "invalid JSON body"})
 	}
 	if update.Name != nil {
-		name, ok := trimmedName(*update.Name)
+		name, ok := trimmedText(*update.Name, 40)
 		if !ok {
 			return jsonResponse(http.StatusBadRequest, Error{Message: "name must have 1 to 40 characters"})
 		}

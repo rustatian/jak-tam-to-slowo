@@ -57,6 +57,8 @@ func (s *Server) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 		return s.previewInvitation(ctx, req), nil
 	case "POST /v1/invitations/{token}/acceptance":
 		return s.acceptInvitation(ctx, req), nil
+	case "POST /v1/groups/{groupId}/cards":
+		return s.createCard(ctx, req), nil
 	default:
 		return jsonResponse(http.StatusNotFound, Error{Message: "not found"}), nil
 	}

@@ -254,7 +254,7 @@ func (s *Server) acceptInvitation(ctx context.Context, req events.APIGatewayV2HT
 				return errGroupName
 			}
 			var ok bool
-			if newName, ok = trimmedName(*body.GroupName); !ok {
+			if newName, ok = trimmedText(*body.GroupName, 40); !ok {
 				return errGroupName
 			}
 		}

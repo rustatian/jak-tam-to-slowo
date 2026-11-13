@@ -301,6 +301,12 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /v1/invitations/{token}/acceptance
             Method: POST
+        CreateCard:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/groups/{groupId}/cards
+            Method: POST
 
   # Cognito calls this function before each sign-up and waits at most 5 seconds for its answer.
   # https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-working-with-lambda-triggers.html#important-lambda-considerations
