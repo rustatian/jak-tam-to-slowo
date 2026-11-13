@@ -1,11 +1,16 @@
 package api
 
 import (
+	"cmp"
 	"context"
+	_ "embed"
 	"encoding/json/v2"
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
+	"strings"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/jackc/pgx/v5"
@@ -76,37 +81,163 @@ func (s *Server) getDraft(ctx context.Context, req events.APIGatewayV2HTTPReques
 	return jsonResponse(http.StatusOK, draft)
 }
 
+// draftSchema is the JSON schema of the answer of a draft job: the meanings of the text, or a draft of a card.
+// https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+var draftSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"result": map[string]any{"anyOf": []any{
+			map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"kind":    map[string]any{"type": "string", "enum": []any{"choices"}},
+					"choices": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				},
+				"required":             []any{"kind", "choices"},
+				"additionalProperties": false,
+			},
+			map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"kind": map[string]any{"type": "string", "enum": []any{"draft"}},
+					"card": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"pl":             map[string]any{"type": "string"},
+							"ru":             map[string]any{"type": "string"},
+							"examplePl":      map[string]any{"type": "string"},
+							"exampleRu":      map[string]any{"type": "string"},
+							"meaningRu":      map[string]any{"type": "string"},
+							"alternativesPl": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1},
+							"alternativesRu": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						},
+						"required":             []any{"pl", "ru", "examplePl", "exampleRu", "meaningRu", "alternativesPl", "alternativesRu"},
+						"additionalProperties": false,
+					},
+				},
+				"required":             []any{"kind", "card"},
+				"additionalProperties": false,
+			},
+		}},
+	},
+	"required":             []any{"result"},
+	"additionalProperties": false,
+}
+
+// draftPrompt is the system prompt of a draft job: the prompt file of the old app, byte for byte.
+//
+//go:embed draft_prompt.txt
+var draftPrompt string
+
 // JobEvent is the event of the job function: a stored job of a user.
 type JobEvent struct {
 	UserID string `json:"userId"`
 	JobID  string `json:"jobId"`
 }
 
-// claimJob sets a queued job of the user to running and reports whether it did. A job of 60 seconds or more stays
-// queued, so no job ends after the poll shows it as failed at 120 seconds.
-func (s *Server) claimJob(ctx context.Context, userID, jobID string) (claimed bool, err error) {
+// claimJob sets a queued job of the user to running, reports whether it did, and returns the input of the job. A job
+// of 60 seconds or more stays queued, so no job ends after the poll shows it as failed at 120 seconds.
+func (s *Server) claimJob(ctx context.Context, userID, jobID string) (input DraftCreate, claimed bool, err error) {
 	err = db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
+		// Each run sets input and claimed: on Aurora DSQL a second claim fails at the commit, and db.Tx runs this
+		// function again.
+		input, claimed = DraftCreate{}, false
 		// The ID is compared as text: PostgreSQL refuses a uuid parameter that is not a UUID (SQLSTATE 22P02).
 		// https://www.postgresql.org/docs/16/errcodes-appendix.html
-		tag, err := tx.Exec(ctx, "UPDATE jobs SET status = 'running' WHERE user_id = $1 AND id::text = $2 AND status = 'queued' AND created_at > now() - interval '60 seconds'",
-			userID, jobID)
-		// Each run sets claimed: on Aurora DSQL a second claim fails at the commit, and db.Tx runs this function again.
-		claimed = tag.RowsAffected() == 1
+		err := tx.QueryRow(ctx, "UPDATE jobs SET status = 'running' WHERE user_id = $1 AND id::text = $2 AND status = 'queued' AND created_at > now() - interval '60 seconds' RETURNING input",
+			userID, jobID).Scan(&input)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		claimed = err == nil
 		return err
 	})
-	return claimed, err
+	return input, claimed, err
 }
 
-// RunJob claims the job of the event and ends it as failed with the error unavailable. A job that it does not claim
-// stays as it is. It returns an error only when a database call fails.
+// RunJob claims the job of the event, asks the AI model for a draft, and ends the job as done with the checked answer
+// or as failed with the cause. A job that it does not claim stays as it is. It returns an error when a database call
+// fails, and when the API answers with a status that needs the operator.
 func (s *Server) RunJob(ctx context.Context, event JobEvent) error {
-	claimed, err := s.claimJob(ctx, event.UserID, event.JobID)
+	input, claimed, err := s.claimJob(ctx, event.UserID, event.JobID)
 	if err != nil || !claimed {
 		return err
 	}
-	return db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, "UPDATE jobs SET status = 'failed', error = 'unavailable' WHERE user_id = $1 AND id::text = $2 AND status = 'running'",
-			event.UserID, event.JobID)
+	// The input of a stored job always marshals.
+	text, _ := json.Marshal(input)
+	callCtx, cancel := context.WithTimeout(ctx, 50*time.Second)
+	start := time.Now()
+	resp, callErr := s.AI(callCtx, AIRequest{Model: "claude-sonnet-5-5", Effort: "high", MaxTokens: 16000, System: draftPrompt, Schema: draftSchema, Input: string(text)})
+	duration := time.Since(start)
+	cancel()
+	result, fail := draftOutcome(input, resp, callErr)
+	// The end write uses the context of the event, because the call can use all 50 seconds of its own context.
+	err = db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
+		const running = " WHERE user_id = $1 AND id::text = $2 AND status = 'running'"
+		if fail != "" {
+			_, err := tx.Exec(ctx, "UPDATE jobs SET status = 'failed', error = $3"+running, event.UserID, event.JobID, fail)
+			return err
+		}
+		_, err := tx.Exec(ctx, "UPDATE jobs SET status = 'done', result = $3"+running, event.UserID, event.JobID, result)
 		return err
 	})
+	// The line has no text of the learner and no text of the answer.
+	level, args := slog.LevelInfo, []any{"jobId", event.JobID, "userId", event.UserID, "outcome", cmp.Or(string(fail), "done"), "model", resp.Model,
+		"stopReason", resp.StopReason, "duration", duration, "requestId", resp.RequestID, "inferenceGeo", resp.InferenceGeo, "attempts", resp.Attempts}
+	if callErr != nil {
+		level, args = slog.LevelError, append(args, "error", callErr)
+	}
+	slog.Log(ctx, level, "draft job", args...)
+	if err != nil {
+		return err
+	}
+	// The statuses 400 to 404 need the operator: a bad request, the spend limit, the API key, the billing, the
+	// permission or the model. The error of the function makes its alarm send an email.
+	// https://platform.claude.com/docs/en/api/errors#http-errors
+	if apiErr, ok := errors.AsType[*AIError](callErr); ok && apiErr.Status >= 400 && apiErr.Status <= 404 {
+		return callErr
+	}
+	return nil
+}
+
+// draftOutcome checks the answer of the call for the input of a draft job. fail is the cause of a failed job; when it
+// is empty, the job is done with result.
+// https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons
+func draftOutcome(input DraftCreate, resp AIResponse, callErr error) (result map[string]any, fail DraftError) {
+	switch {
+	case callErr != nil:
+		return nil, Unavailable
+	// A refusal can come with a text, so the stop reason is read first.
+	case resp.StopReason == "refusal":
+		return nil, Refused
+	case resp.StopReason != "end_turn":
+		return nil, Invalid
+	}
+	var answer struct {
+		Result struct {
+			Kind    string      `json:"kind"`
+			Card    *CardUpdate `json:"card"`
+			Choices []string    `json:"choices"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(resp.Text), &answer, json.RejectUnknownMembers(true)); err != nil {
+		return nil, Invalid
+	}
+	r := answer.Result
+	switch {
+	case strings.EqualFold(r.Kind, "draft") && r.Card != nil && r.Choices == nil:
+		c := r.Card
+		// checkCard lets a nil field pass, and a card needs each of the seven fields.
+		if c.Pl == nil || c.Ru == nil || c.ExamplePl == nil || c.ExampleRu == nil || c.MeaningRu == nil || c.AlternativesPl == nil || c.AlternativesRu == nil ||
+			checkCard(c) != "" {
+			return nil, Invalid
+		}
+		return map[string]any{"card": c}, ""
+	// Meanings are only for a text without a picked meaning. checkTerms trims each meaning and allows at most 8. The
+	// sorted list without repeats is shorter when two trimmed meanings are equal.
+	case strings.EqualFold(r.Kind, "choices") && r.Card == nil && input.MeaningRu == nil && len(r.Choices) >= 2 && checkTerms(&r.Choices) &&
+		len(slices.Compact(slices.Sorted(slices.Values(r.Choices)))) == len(r.Choices):
+		return map[string]any{"choices": r.Choices}, ""
+	}
+	return nil, Invalid
 }

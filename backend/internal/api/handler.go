@@ -26,6 +26,9 @@ type Server struct {
 	Send func(ctx context.Context, m Mail) error
 	// StartJob starts the job function for a stored job. An error means that Lambda did not accept the event.
 	StartJob func(ctx context.Context, userID, jobID string) error
+	// AI calls the AI model. An error means that the model gave no answer: an *AIError is an answer of the API with a
+	// status outside 2xx.
+	AI func(ctx context.Context, req AIRequest) (AIResponse, error)
 }
 
 // Handle picks the route by its route key.
