@@ -79,6 +79,7 @@ let changeCases: [CardChangeCase] = [
         update: .init(ru: "Домик", meaningRu: "маленький дом")
     ),
     CardChangeCase(name: "a new term in a list", change: { $0.alternativesPl = "Domek\n Chata " }, update: .init(alternativesPl: ["Domek", "Chata"])),
+    CardChangeCase(name: "a line end of two characters ends a term", change: { $0.alternativesPl = "Domek\r\nChata" }, update: .init(alternativesPl: ["Domek", "Chata"])),
     CardChangeCase(name: "a first term in an empty list", change: { $0.alternativesRu = "Домик" }, update: .init(alternativesRu: ["Домик"])),
     CardChangeCase(name: "a list that is now empty", change: { $0.alternativesPl = "" }, update: .init(alternativesPl: [])),
 ]
