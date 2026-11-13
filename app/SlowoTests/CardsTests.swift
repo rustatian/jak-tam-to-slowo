@@ -49,6 +49,12 @@ let cardsCases: [CardsCase] = [
         calls: ["getMe", "listCards"], inputs: ["listCards g1 do m"], error: nil, cards: [dom], query: "do m"
     ),
     CardsCase(
+        name: "the list keeps the order of the answer",
+        answers: .init(getMe: [.ok(.init(body: .json(grouped)))], listCards: [.ok(.init(body: .json(.init(cards: [dom, cebula]))))]),
+        action: { cards, _ in try await cards.load(query: "d") },
+        calls: ["getMe", "listCards"], inputs: ["listCards g1 d"], error: nil, cards: [dom, cebula], query: "d"
+    ),
+    CardsCase(
         name: "a text of spaces is no search",
         answers: .init(getMe: [.ok(.init(body: .json(grouped)))], listCards: [.ok(.init(body: .json(.init(cards: [cebula]))))]),
         action: { cards, _ in try await cards.load(query: " \n ") },
@@ -177,7 +183,7 @@ struct DroppedAnswerCase: Sendable, CustomTestStringConvertible {
 }
 
 @MainActor
-@Test(arguments: [
+@Test(.timeLimit(.minutes(1)), arguments: [
     DroppedAnswerCase(name: "another search text", first: "c", between: { _ in }, second: "do", inputs: ["listCards g1 c", "listCards g1 do"]),
     DroppedAnswerCase(name: "another group", first: "", between: { try await $0.load() }, second: "", inputs: ["listCards g1 -", "listCards g2 -"]),
 ])
