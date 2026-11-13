@@ -7,6 +7,24 @@ import (
 	"time"
 )
 
+// Defines values for CardKind.
+const (
+	Grammar     CardKind = "grammar"
+	Translation CardKind = "translation"
+)
+
+// Valid indicates whether the value is a known member of the CardKind enum.
+func (e CardKind) Valid() bool {
+	switch e {
+	case Grammar:
+		return true
+	case Translation:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Direction.
 const (
 	PlRu Direction = "pl-ru"
@@ -41,6 +59,51 @@ func (e InvitationFailure) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// Card defines model for Card.
+type Card struct {
+	AlternativesPl []string `json:"alternativesPl"`
+	AlternativesRu []string `json:"alternativesRu"`
+	ExamplePl      string   `json:"examplePl"`
+	ExampleRu      string   `json:"exampleRu"`
+	Id             string   `json:"id"`
+	Kind           CardKind `json:"kind"`
+	MeaningRu      string   `json:"meaningRu"`
+	Pl             string   `json:"pl"`
+	Ru             string   `json:"ru"`
+}
+
+// CardKind defines model for Card.Kind.
+type CardKind string
+
+// CardCreate defines model for CardCreate.
+type CardCreate struct {
+	// AlternativesPl At most 8 other Polish terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. Absent is an empty list.
+	AlternativesPl *[]string `json:"alternativesPl,omitempty"`
+
+	// AlternativesRu At most 8 other Russian terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. Absent is an empty list.
+	AlternativesRu *[]string `json:"alternativesRu,omitempty"`
+
+	// ExamplePl A Polish example. Spaces at the ends are removed; then it has 1 to 500 characters, and no control, line-break or text-direction character.
+	ExamplePl string `json:"examplePl"`
+
+	// ExampleRu A Russian example. Spaces at the ends are removed; then it has 1 to 500 characters, and no control, line-break or text-direction character.
+	ExampleRu string `json:"exampleRu"`
+
+	// MeaningRu The meaning in Russian. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+	MeaningRu string `json:"meaningRu"`
+
+	// Pl The Polish term. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+	Pl string `json:"pl"`
+
+	// Ru The Russian term. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+	Ru string `json:"ru"`
+}
+
+// Cards defines model for Cards.
+type Cards struct {
+	Cards []Card `json:"cards"`
 }
 
 // Direction The translation direction of the learner's study.
@@ -212,6 +275,9 @@ type CreateGroupJSONRequestBody = GroupCreate
 
 // UpdateGroupJSONRequestBody defines body for UpdateGroup for application/json ContentType.
 type UpdateGroupJSONRequestBody = GroupUpdate
+
+// CreateCardJSONRequestBody defines body for CreateCard for application/json ContentType.
+type CreateCardJSONRequestBody = CardCreate
 
 // CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
 type CreateInvitationJSONRequestBody = InvitationCreate

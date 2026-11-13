@@ -112,6 +112,24 @@ func TestMigrateRealFiles(t *testing.T) {
 	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
 		t.Errorf("a second invitation with the same token hash: error = %v, want a unique violation (23505)", err)
 	}
+
+	var groupID2 string
+	if err := pool.QueryRow(ctx, "INSERT INTO groups (name) VALUES ('g2') RETURNING id").Scan(&groupID2); err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.Exec(ctx, "INSERT INTO cards (group_id, kind, pl, ru, example_pl, example_ru, meaning_ru) VALUES ($1, 'x', 'dom', 'дом', 'To jest dom.', 'Это дом.', 'здание')", groupID)
+	if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
+		t.Errorf("card kind x: error = %v, want a check violation (23514)", err)
+	}
+	var cardID string
+	if err := pool.QueryRow(ctx, "INSERT INTO cards (group_id, pl, ru, example_pl, example_ru, meaning_ru) VALUES ($1, 'dom', 'дом', 'To jest dom.', 'Это дом.', 'здание') RETURNING id", groupID).Scan(&cardID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.Exec(ctx, "INSERT INTO cards (group_id, id, pl, ru, example_pl, example_ru, meaning_ru) VALUES ($1, $2, 'dom', 'дом', 'To jest dom.', 'Это дом.', 'здание')", groupID2, cardID)
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		t.Errorf("the same card ID in a second group: error = %v, want a unique violation (23505)", err)
+	}
+
 	if _, err := pool.Exec(ctx, "DELETE FROM groups WHERE id = $1", groupID); err != nil {
 		t.Fatal(err)
 	}
@@ -121,6 +139,13 @@ func TestMigrateRealFiles(t *testing.T) {
 	}
 	if invitations != 0 {
 		t.Errorf("invitations after the deletion of their group = %d, want 0", invitations)
+	}
+	var cards int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM cards").Scan(&cards); err != nil {
+		t.Fatal(err)
+	}
+	if cards != 0 {
+		t.Errorf("cards after the deletion of their group = %d, want 0", cards)
 	}
 }
 
