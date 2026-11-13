@@ -7,10 +7,15 @@ import (
 	"log"
 	"os"
 
+	"github.com/anthropics/anthropic-sdk-go/v2"
+	"github.com/anthropics/anthropic-sdk-go/v2/option"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/api"
+	"github.com/rustatian/jak-tam-to-slowo/backend/internal/claude"
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/db"
 )
 
@@ -25,5 +30,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	lambda.Start((&api.Server{DB: pool}).RunJob)
+	// The key is a SecureString parameter, so the read needs decryption.
+	param, err := ssm.NewFromConfig(cfg).GetParameter(ctx, &ssm.GetParameterInput{Name: aws.String(os.Getenv("ANTHROPIC_KEY_PARAMETER")), WithDecryption: aws.Bool(true)})
+	if err != nil {
+		log.Fatal(err)
+	}
+	client := anthropic.NewClient(option.WithAPIKey(aws.ToString(param.Parameter.Value)))
+	lambda.Start((&api.Server{DB: pool, AI: claude.Caller(client)}).RunJob)
 }

@@ -464,6 +464,7 @@ Resources:
       Environment:
         Variables:
           DSQL_ENDPOINT: !GetAtt Cluster.Endpoint
+          ANTHROPIC_KEY_PARAMETER: /slowo/anthropic-api-key
       # The function has its own role, because the role of the API function names this function for the start.
       # cmd/migrate maps the database role app to this role too.
       Policies:
@@ -471,6 +472,14 @@ Resources:
             - Effect: Allow
               Action: dsql:DbConnect
               Resource: !GetAtt Cluster.ResourceArn
+            # CloudFormation cannot make a SecureString parameter, so the operator makes the parameter one time.
+            # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ssm-parameter.html
+            # The parameter uses the AWS managed key aws/ssm. Each IAM principal of the account can decrypt with that
+            # key, so the role needs no KMS statement.
+            # https://docs.aws.amazon.com/systems-manager/latest/userguide/ps-restrict-decryption.html
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/slowo/anthropic-api-key
       # The poll route shows a job as failed after 120 seconds, so an event that waited longer than 60 seconds and a
       # second run of a failed event have no use. The age can be 60 to 21,600 seconds, and the retries can be 0 to 2.
       # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-lambda-eventinvokeconfig.html
