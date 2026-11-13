@@ -44,6 +44,7 @@ let validCases: [CardValidCase] = [
     CardValidCase(name: "501 letters of the Russian example are refused", change: { $0.exampleRu = String(repeating: "я", count: 501) }, valid: false),
     CardValidCase(name: "8 terms pass", change: { $0.alternativesPl = "a1\na2\na3\na4\na5\na6\na7\na8" }, valid: true),
     CardValidCase(name: "9 terms are refused", change: { $0.alternativesRu = "a1\na2\na3\na4\na5\na6\na7\na8\na9" }, valid: false),
+    CardValidCase(name: "9 Polish terms are refused", change: { $0.alternativesPl = "a1\na2\na3\na4\na5\na6\na7\na8\na9" }, valid: false),
     CardValidCase(name: "blank lines are no terms", change: { $0.alternativesPl = "\na1\n\na2\n\na3\n\na4\n\na5\n\na6\n\na7\n\na8\n   " }, valid: true),
     CardValidCase(name: "a term of 201 letters is refused", change: { $0.alternativesRu = String(repeating: "a", count: 201) }, valid: false),
 ]
@@ -70,6 +71,7 @@ let changeCases: [CardChangeCase] = [
     CardChangeCase(name: "blank lines in a list give no update", change: { $0.alternativesPl = "\nDomek\n\n" }, update: nil),
     CardChangeCase(name: "one changed text", change: { $0.pl = "Domek" }, update: .init(pl: "Domek")),
     CardChangeCase(name: "a changed text is trimmed", change: { $0.examplePl = " To mój dom. " }, update: .init(examplePl: "To mój dom.")),
+    CardChangeCase(name: "a changed Russian example", change: { $0.exampleRu = "Это мой дом." }, update: .init(exampleRu: "Это мой дом.")),
     CardChangeCase(
         name: "two changed texts",
         change: {
