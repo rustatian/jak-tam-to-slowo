@@ -59,9 +59,9 @@ func (s *Server) createCard(ctx context.Context, req events.APIGatewayV2HTTPRequ
 	return jsonResponse(http.StatusCreated, card)
 }
 
-// listCards answers the cards of the group in the path that are not archived and whose pl or ru contains the query q.
-// The order is the rank of the match, then the Polish order of pl, then the ID. When the key of q is empty, each card
-// has the rank 1.
+// listCards answers the cards of the group in the path that are not archived and whose pl or ru key contains the key
+// of q. The order is the rank of the match, then the Polish order of pl, then the ID. When the key of q is empty, each
+// card has the rank 1.
 func (s *Server) listCards(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
 	sub, fail := s.member(ctx, req)
 	if fail != nil {
@@ -84,11 +84,12 @@ func (s *Server) listCards(ctx context.Context, req events.APIGatewayV2HTTPReque
 		return serverError(ctx, req, sub, err)
 	}
 	k := searchKey(q)
-	// termRank is 0 when the key of the term is equal to k, 1 when it starts with k, 2 when it contains k, else 3.
+	// termRank is the rank of one term for k. An empty term has the same key as an empty query, so the rank 0 needs
+	// a k that is not empty.
 	termRank := func(term string) int {
 		key := searchKey(term)
 		switch {
-		case key == k:
+		case k != "" && key == k:
 			return 0
 		case strings.HasPrefix(key, k):
 			return 1

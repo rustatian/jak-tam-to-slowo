@@ -242,6 +242,11 @@ func TestListCards(t *testing.T) {
 				VALUES ((SELECT id FROM groups WHERE name = 'Rodzina'), '00000000-0000-0000-0000-000000000001', 'źródło', 'источник', 'To jest źródło.', 'Это источник.', 'начало реки', '["zdrój"]', '[]')`,
 			want: []Card{{Id: "00000000-0000-0000-0000-000000000001", Kind: Translation, Pl: "źródło", Ru: "источник", ExamplePl: "To jest źródło.", ExampleRu: "Это источник.",
 				MeaningRu: "начало реки", AlternativesPl: []string{"zdrój"}, AlternativesRu: []string{}}}},
+		{name: "a card with an empty ru keeps its place in the list", sub: subOla, wantStatus: 200,
+			setup: `INSERT INTO cards (group_id, pl, ru, example_pl, example_ru, meaning_ru)
+				SELECT (SELECT id FROM groups WHERE name = 'Rodzina'), v.pl, v.ru, 'example', 'example', 'meaning'
+				FROM (VALUES ('żaba', ''), ('dom', 'дом'), ('ala', 'аля')) AS v (pl, ru)`,
+			wantPl: []string{"ala", "dom", "żaba"}},
 		{name: "a member of another group is refused", sub: subEwa, wantStatus: 403, wantBody: notMember},
 		{name: "a user without a group is refused", sub: subJan, wantStatus: 403, wantBody: notMember},
 	}
