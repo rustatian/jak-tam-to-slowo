@@ -12,7 +12,7 @@ struct ConsentView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    Text("Aplikacja korzysta z AI, gdy dodajesz karty, sprawdzasz odpowiedzi i dyktujesz.")
+                    Text("Aplikacja korzysta z AI, gdy dodajesz fiszki, sprawdzasz odpowiedzi i dyktujesz.")
                     Label {
                         Text("Tekst: słowa, zdania i Twoje odpowiedzi wysyłamy do firmy Anthropic w USA. Ten tekst jest przetwarzany poza Unią Europejską.")
                     } icon: {
