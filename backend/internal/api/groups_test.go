@@ -213,6 +213,7 @@ func TestGroup(t *testing.T) {
 		{name: "an ID that is not a group is refused", routeKey: get, sub: subOla, groupID: "nope", wantStatus: 403, wantBody: notMember, wantName: "Rodzina"},
 		{name: "a member renames the group, trimmed", routeKey: patch, sub: subOla, body: `{"name":"  Dom  "}`, wantStatus: 200, wantName: "Dom"},
 		{name: "an empty body keeps the name", routeKey: patch, sub: subOla, body: `{}`, wantStatus: 200, wantName: "Rodzina"},
+		{name: "41 letters are rejected", routeKey: patch, sub: subOla, body: `{"name":"` + strings.Repeat("ż", 41) + `"}`, wantStatus: 400, wantBody: nameRule, wantName: "Rodzina"},
 		{name: "a blank name is rejected", routeKey: patch, sub: subOla, body: `{"name":"   "}`, wantStatus: 400, wantBody: nameRule, wantName: "Rodzina"},
 		{name: "a name with a line break is rejected", routeKey: patch, sub: subOla, body: `{"name":"Dom\nKliknij tu"}`, wantStatus: 400, wantBody: nameRule, wantName: "Rodzina"},
 		{name: "a body that is not JSON is rejected", routeKey: patch, sub: subOla, body: `{"name":`, wantStatus: 400, wantBody: notJSON, wantName: "Rodzina"},

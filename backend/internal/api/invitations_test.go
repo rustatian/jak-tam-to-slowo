@@ -576,6 +576,8 @@ func TestAcceptInvitation(t *testing.T) {
 			wantStatus: 400, wantBody: groupNameRule, wantGroups: both, wantKept: true, wantInvitations: 3},
 		{name: "a new group name with a line break is rejected", setup: newGroup, sub: subJan, token: tokenNew, body: `{"groupName":"No\nwa"}`,
 			wantStatus: 400, wantBody: groupNameRule, wantGroups: both, wantKept: true, wantInvitations: 3},
+		{name: "a new group name of 41 letters is rejected", setup: newGroup, sub: subJan, token: tokenNew, body: `{"groupName":"` + strings.Repeat("ż", 41) + `"}`,
+			wantStatus: 400, wantBody: groupNameRule, wantGroups: both, wantKept: true, wantInvitations: 3},
 		{name: "a member of a group needs the confirmation for a new group", setup: newGroup, sub: subEwa, token: tokenNew, body: `{"groupName":"Nowa"}`,
 			wantStatus: 409, wantBody: inOtherGroup, wantGroup: "Praca", wantGroups: both, wantKept: true, wantInvitations: 3},
 		{name: "with the confirmation a member leaves and starts the new group", setup: newGroup, sub: subAdam, token: tokenNew, body: `{"groupName":"Nowa","leaveGroup":true}`,

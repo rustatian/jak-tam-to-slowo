@@ -236,6 +236,49 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /v1/groups/{groupId}/cards:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+    post:
+      operationId: createCard
+      summary: Add a translation card to the group.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CardCreate"
+      responses:
+        "201":
+          description: The new card.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Card"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      operationId: listCards
+      summary: The cards of the group.
+      responses:
+        "200":
+          description: The cards of the group that are not archived, in the Polish order of pl, then by ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cards"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /v1/invitations/{token}:
     parameters:
       - $ref: "#/components/parameters/InvitationToken"
@@ -512,6 +555,86 @@ components:
           minLength: 1
           maxLength: 40
           description: The name of the new group, with the rule of the group name. Needed for an invitation that starts a new group.
+    Card:
+      type: object
+      required: [id, kind, pl, ru, examplePl, exampleRu, meaningRu, alternativesPl, alternativesRu]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [translation, grammar]
+        pl:
+          type: string
+        ru:
+          type: string
+        examplePl:
+          type: string
+        exampleRu:
+          type: string
+        meaningRu:
+          type: string
+        alternativesPl:
+          type: array
+          items:
+            type: string
+        alternativesRu:
+          type: array
+          items:
+            type: string
+    CardCreate:
+      type: object
+      required: [pl, ru, examplePl, exampleRu, meaningRu]
+      properties:
+        pl:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: The Polish term. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+        ru:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: The Russian term. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+        examplePl:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: A Polish example. Spaces at the ends are removed; then it has 1 to 500 characters, and no control, line-break or text-direction character.
+        exampleRu:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: A Russian example. Spaces at the ends are removed; then it has 1 to 500 characters, and no control, line-break or text-direction character.
+        meaningRu:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: The meaning in Russian. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+        alternativesPl:
+          type: array
+          maxItems: 8
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+          description: At most 8 other Polish terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. A list that the body does not have is an empty list.
+        alternativesRu:
+          type: array
+          maxItems: 8
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+          description: At most 8 other Russian terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. A list that the body does not have is an empty list.
+    Cards:
+      type: object
+      required: [cards]
+      properties:
+        cards:
+          type: array
+          items:
+            $ref: "#/components/schemas/Card"
     Error:
       type: object
       required: [message]

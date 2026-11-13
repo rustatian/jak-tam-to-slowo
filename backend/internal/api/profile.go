@@ -14,13 +14,13 @@ import (
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/db"
 )
 
-// trimmedName removes the spaces at the ends of a name. ok reports that the result has 1 to 40 characters and
+// trimmedText removes the spaces at the ends of a text. ok reports that the result has 1 to max characters and
 // no character that breaks a line or changes the direction of text: a name goes into the invitation email as
-// plain text.
-func trimmedName(s string) (name string, ok bool) {
-	name = strings.TrimSpace(s)
-	n := utf8.RuneCountInString(name)
-	return name, n >= 1 && n <= 40 && !strings.ContainsFunc(name, func(r rune) bool {
+// plain text, and a card text is shown to the other members of the group.
+func trimmedText(s string, max int) (text string, ok bool) {
+	text = strings.TrimSpace(s)
+	n := utf8.RuneCountInString(text)
+	return text, n >= 1 && n <= max && !strings.ContainsFunc(text, func(r rune) bool {
 		return unicode.IsControl(r) || unicode.In(r, unicode.Zl, unicode.Zp, unicode.Bidi_Control)
 	})
 }
@@ -36,7 +36,7 @@ func (s *Server) patchMe(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		return jsonResponse(http.StatusBadRequest, Error{Message: "invalid JSON body"})
 	}
 	if update.DisplayName != nil {
-		name, ok := trimmedName(*update.DisplayName)
+		name, ok := trimmedText(*update.DisplayName, 40)
 		if !ok {
 			return jsonResponse(http.StatusBadRequest, Error{Message: "displayName must have 1 to 40 characters"})
 		}
