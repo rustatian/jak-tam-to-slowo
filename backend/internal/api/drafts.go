@@ -81,47 +81,51 @@ func (s *Server) getDraft(ctx context.Context, req events.APIGatewayV2HTTPReques
 	return jsonResponse(http.StatusOK, draft)
 }
 
-// draftSchema is the JSON schema of the answer of a draft job: the meanings of the text, or a draft of a card.
+// choicesForm and draftForm are the two forms of the result of a draft job: the meanings of the text, or a draft of
+// a card.
+var (
+	choicesForm = map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"kind":    map[string]any{"type": "string", "enum": []any{"choices"}},
+			"choices": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		},
+		"required":             []any{"kind", "choices"},
+		"additionalProperties": false,
+	}
+	draftForm = map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"kind": map[string]any{"type": "string", "enum": []any{"draft"}},
+			"card": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"pl":             map[string]any{"type": "string"},
+					"ru":             map[string]any{"type": "string"},
+					"examplePl":      map[string]any{"type": "string"},
+					"exampleRu":      map[string]any{"type": "string"},
+					"meaningRu":      map[string]any{"type": "string"},
+					"alternativesPl": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1},
+					"alternativesRu": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				},
+				"required":             []any{"pl", "ru", "examplePl", "exampleRu", "meaningRu", "alternativesPl", "alternativesRu"},
+				"additionalProperties": false,
+			},
+		},
+		"required":             []any{"kind", "card"},
+		"additionalProperties": false,
+	}
+)
+
+// draftSchema is the JSON schema of the answer of a draft job for the input. An input with a picked meaning allows
+// only a draft: in some calls the model answers with meanings again when the schema allows them.
 // https://platform.claude.com/docs/en/build-with-claude/structured-outputs
-var draftSchema = map[string]any{
-	"type": "object",
-	"properties": map[string]any{
-		"result": map[string]any{"anyOf": []any{
-			map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"kind":    map[string]any{"type": "string", "enum": []any{"choices"}},
-					"choices": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-				},
-				"required":             []any{"kind", "choices"},
-				"additionalProperties": false,
-			},
-			map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"kind": map[string]any{"type": "string", "enum": []any{"draft"}},
-					"card": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"pl":             map[string]any{"type": "string"},
-							"ru":             map[string]any{"type": "string"},
-							"examplePl":      map[string]any{"type": "string"},
-							"exampleRu":      map[string]any{"type": "string"},
-							"meaningRu":      map[string]any{"type": "string"},
-							"alternativesPl": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1},
-							"alternativesRu": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-						},
-						"required":             []any{"pl", "ru", "examplePl", "exampleRu", "meaningRu", "alternativesPl", "alternativesRu"},
-						"additionalProperties": false,
-					},
-				},
-				"required":             []any{"kind", "card"},
-				"additionalProperties": false,
-			},
-		}},
-	},
-	"required":             []any{"result"},
-	"additionalProperties": false,
+func draftSchema(input DraftCreate) map[string]any {
+	result := map[string]any{"anyOf": []any{choicesForm, draftForm}}
+	if input.MeaningRu != nil {
+		result = draftForm
+	}
+	return map[string]any{"type": "object", "properties": map[string]any{"result": result}, "required": []any{"result"}, "additionalProperties": false}
 }
 
 // draftPrompt is the system prompt of a draft job: the prompt file of the old app, byte for byte.
@@ -167,7 +171,7 @@ func (s *Server) RunJob(ctx context.Context, event JobEvent) error {
 	text, _ := json.Marshal(input)
 	callCtx, cancel := context.WithTimeout(ctx, 50*time.Second)
 	start := time.Now()
-	resp, callErr := s.AI(callCtx, AIRequest{Model: "claude-sonnet-5-5", Effort: "high", MaxTokens: 16000, System: draftPrompt, Schema: draftSchema, Input: string(text)})
+	resp, callErr := s.AI(callCtx, AIRequest{Model: "claude-sonnet-5-5", Effort: "high", MaxTokens: 16000, System: draftPrompt, Schema: draftSchema(input), Input: string(text)})
 	duration := time.Since(start)
 	cancel()
 	result, fail := draftOutcome(input, resp, callErr)

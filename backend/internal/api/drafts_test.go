@@ -382,21 +382,24 @@ func TestRunJob(t *testing.T) {
 }
 
 func TestRunJobRequest(t *testing.T) {
-	const schema = `{"type":"object","properties":{"result":{"anyOf":[
-    {"type":"object","properties":{"kind":{"type":"string","enum":["choices"]},"choices":{"type":"array","items":{"type":"string"}}},"required":["kind","choices"],"additionalProperties":false},
-    {"type":"object","properties":{"kind":{"type":"string","enum":["draft"]},"card":{"type":"object","properties":{"pl":{"type":"string"},"ru":{"type":"string"},"examplePl":{"type":"string"},"exampleRu":{"type":"string"},"meaningRu":{"type":"string"},"alternativesPl":{"type":"array","items":{"type":"string"},"minItems":1},"alternativesRu":{"type":"array","items":{"type":"string"}}},"required":["pl","ru","examplePl","exampleRu","meaningRu","alternativesPl","alternativesRu"],"additionalProperties":false}},"required":["kind","card"],"additionalProperties":false}
-  ]}},"required":["result"],"additionalProperties":false}`
-	var wantSchema any
-	if err := json.Unmarshal([]byte(schema), &wantSchema); err != nil {
-		t.Fatal(err)
+	// The two forms of the result, and the schema of an answer with the result form.
+	const (
+		choicesForm = `{"type":"object","properties":{"kind":{"type":"string","enum":["choices"]},"choices":{"type":"array","items":{"type":"string"}}},"required":["kind","choices"],"additionalProperties":false}`
+		draftForm   = `{"type":"object","properties":{"kind":{"type":"string","enum":["draft"]},"card":{"type":"object","properties":{"pl":{"type":"string"},"ru":{"type":"string"},"examplePl":{"type":"string"},"exampleRu":{"type":"string"},"meaningRu":{"type":"string"},"alternativesPl":{"type":"array","items":{"type":"string"},"minItems":1},"alternativesRu":{"type":"array","items":{"type":"string"}}},"required":["pl","ru","examplePl","exampleRu","meaningRu","alternativesPl","alternativesRu"],"additionalProperties":false}},"required":["kind","card"],"additionalProperties":false}`
+	)
+	answerSchema := func(result string) string {
+		return `{"type":"object","properties":{"result":` + result + `},"required":["result"],"additionalProperties":false}`
 	}
 	tests := []struct {
-		name      string
-		input     string // the stored input of j1
-		wantInput string // the user message
+		name       string
+		input      string // the stored input of j1
+		wantInput  string // the user message
+		wantSchema string
 	}{
-		{name: "a text", input: `{"text":"słowo"}`, wantInput: `{"text":"słowo"}`},
-		{name: "a text with a meaning", input: `{"text":"лук","meaningRu":"овощ"}`, wantInput: `{"meaningRu":"овощ","text":"лук"}`},
+		{name: "a text", input: `{"text":"słowo"}`, wantInput: `{"text":"słowo"}`,
+			wantSchema: answerSchema(`{"anyOf":[` + choicesForm + `,` + draftForm + `]}`)},
+		{name: "a text with a meaning", input: `{"text":"лук","meaningRu":"овощ"}`, wantInput: `{"meaningRu":"овощ","text":"лук"}`,
+			wantSchema: answerSchema(draftForm)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -427,12 +430,15 @@ func TestRunJobRequest(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var gotSchemaValue any
+			var gotSchemaValue, wantSchema any
 			if err := json.Unmarshal(gotSchema, &gotSchemaValue); err != nil {
 				t.Fatal(err)
 			}
+			if err := json.Unmarshal([]byte(tt.wantSchema), &wantSchema); err != nil {
+				t.Fatal(err)
+			}
 			if !reflect.DeepEqual(gotSchemaValue, wantSchema) {
-				t.Errorf("schema = %s, want %s", gotSchema, schema)
+				t.Errorf("schema = %s, want %s", gotSchema, tt.wantSchema)
 			}
 			got.Schema = nil
 			if want := (AIRequest{Model: "claude-sonnet-5-5", Effort: "high", MaxTokens: 16000, System: draftPrompt, Input: tt.wantInput}); !reflect.DeepEqual(got, want) {
