@@ -40,6 +40,7 @@ struct SignedInView: View {
 
     @State private var profile: Profile
     @State private var membership: Membership
+    @State private var cards: Cards
     @State private var failed = false
     @State private var offeringConsent = false
     @State private var tab = AppTab.study
@@ -54,6 +55,7 @@ struct SignedInView: View {
         let profile = Profile(api: api)
         _profile = State(initialValue: profile)
         _membership = State(initialValue: Membership(api: api, profile: profile))
+        _cards = State(initialValue: Cards(api: api, profile: profile))
     }
 
     var body: some View {
@@ -63,7 +65,9 @@ struct SignedInView: View {
                     placeholder("Nauka", systemImage: "graduationcap")
                 }
                 Tab("Słówka", systemImage: "books.vertical", value: .words) {
-                    placeholder("Słówka", systemImage: "books.vertical")
+                    NavigationStack {
+                        WordsView(profile: profile, cards: cards)
+                    }
                 }
                 Tab("Dodaj", systemImage: "plus.circle", value: .add) {
                     placeholder("Dodaj", systemImage: "plus.circle")

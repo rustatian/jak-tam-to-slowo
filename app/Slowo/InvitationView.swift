@@ -100,9 +100,9 @@ struct InvitationView: View {
                 }
             } message: {
                 if newGroup {
-                    Text("Gdy założysz nową grupę, opuścisz obecną. Jeśli jesteś w niej jedyną osobą, grupa zostanie usunięta.")
+                    Text("Gdy założysz nową grupę, opuścisz obecną. Jeśli jesteś w niej jedyną osobą, grupa zostanie usunięta razem ze słówkami.")
                 } else {
-                    Text("Gdy dołączysz, opuścisz obecną grupę. Jeśli jesteś w niej jedyną osobą, grupa zostanie usunięta.")
+                    Text("Gdy dołączysz, opuścisz obecną grupę. Jeśli jesteś w niej jedyną osobą, grupa zostanie usunięta razem ze słówkami.")
                 }
             }
         } footer: {
