@@ -131,6 +131,11 @@ Resources:
     Properties:
       RetentionInDays: 30
 
+  JobsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 30
+
   # The subscription sends a confirmation email first. Alarms reach the address only after the confirmation.
   # SNS deletes a subscription that is not confirmed in 48 hours, and a stack update without changes does not
   # make it again.
@@ -167,6 +172,28 @@ Resources:
       AlarmActions:
         - !Ref AlarmTopic
 
+  # A failed run of the job function leaves a job that the poll route shows as failed after 120 seconds.
+  # The Errors metric has no value while the function does not run, so missing data counts as good.
+  # Lambda does not run a failed event of this function again, so one failed event gives one error.
+  JobsErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub slowo-${Stage}-jobs-errors
+      AlarmDescription: The job function returned an error.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref JobsFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
+
   Cluster:
     Type: AWS::DSQL::Cluster
     Properties:
@@ -191,6 +218,7 @@ Resources:
           USER_POOL_ID: !Ref UserPool
           MAIL_FROM: noreply@slowo.rustatian.me
           MAIL_CONFIGURATION_SET: !Ref MailConfigurationSet
+          JOBS_FUNCTION: !Ref JobsFunction
       # The database role app maps to this role (cmd/migrate); dsql:DbConnect allows no admin connection.
       Policies:
         - Statement:
@@ -208,6 +236,9 @@ Resources:
               Resource:
                 - !Sub arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/slowo.rustatian.me
                 - !Sub arn:aws:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${MailConfigurationSet}
+            - Effect: Allow
+              Action: lambda:InvokeFunction
+              Resource: !GetAtt JobsFunction.Arn
       Events:
         GetMe:
           Type: HttpApi
@@ -416,6 +447,38 @@ Resources:
             ScheduleExpression: rate(1 day)
             Input: '{"detail-type": "Scheduled Event"}'
 
+  JobsFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: go1.x
+    Properties:
+      CodeUri: ../backend/cmd/jobs
+      Handler: bootstrap
+      Runtime: provided.al2023
+      Architectures: [arm64]
+      MemorySize: 128
+      Timeout: 60
+      LoggingConfig:
+        LogGroup: !Ref JobsLogGroup
+      Environment:
+        Variables:
+          DSQL_ENDPOINT: !GetAtt Cluster.Endpoint
+      # The function has its own role, because the role of the API function names this function for the start.
+      # cmd/migrate maps the database role app to this role too.
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dsql:DbConnect
+              Resource: !GetAtt Cluster.ResourceArn
+      # The poll route shows a job as failed after 120 seconds, so an event that waited longer than 60 seconds and a
+      # second run of a failed event have no use. The age can be 60 to 21,600 seconds, and the retries can be 0 to 2.
+      # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-lambda-eventinvokeconfig.html
+      # Lambda runs a failed event again, and it can send one event two times.
+      # https://docs.aws.amazon.com/lambda/latest/dg/invocation-async-error-handling.html
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 60
+        MaximumRetryAttempts: 0
+
 Outputs:
   UserPoolId:
     Value: !Ref UserPool
@@ -431,3 +494,5 @@ Outputs:
     Value: !GetAtt ApiFunctionRole.Arn
   PreSignUpFunctionRoleArn:
     Value: !GetAtt PreSignUpFunctionRole.Arn
+  JobsFunctionRoleArn:
+    Value: !GetAtt JobsFunctionRole.Arn

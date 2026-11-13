@@ -3,14 +3,19 @@ package main
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
+	awslambda "github.com/aws/aws-sdk-go-v2/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/api"
@@ -34,6 +39,8 @@ func main() {
 	from := os.Getenv("MAIL_FROM")
 	// The configuration set of the stage publishes the bounces and the complaints of the emails.
 	configurationSet := os.Getenv("MAIL_CONFIGURATION_SET")
+	functions := awslambda.NewFromConfig(cfg)
+	jobsFunction := os.Getenv("JOBS_FUNCTION")
 	srv := &api.Server{DB: pool, EmailOf: func(ctx context.Context, sub string) (string, error) {
 		// The pool uses email as the username attribute, so AdminGetUser takes the sub as the username.
 		out, err := users.AdminGetUser(ctx, &cognitoidentityprovider.AdminGetUserInput{UserPoolId: &poolID, Username: &sub})
@@ -46,6 +53,20 @@ func main() {
 			}
 		}
 		return "", errors.New("the user has no email attribute")
-	}, Send: sesmail.Sender(mailer, from, configurationSet)}
+	}, Send: sesmail.Sender(mailer, from, configurationSet), StartJob: func(ctx context.Context, userID, jobID string) error {
+		payload, err := json.Marshal(api.JobEvent{UserID: userID, JobID: jobID})
+		if err != nil {
+			return err
+		}
+		out, err := functions.Invoke(ctx, &awslambda.InvokeInput{FunctionName: &jobsFunction, InvocationType: types.InvocationTypeEvent, Payload: payload})
+		if err != nil {
+			return err
+		}
+		// Lambda answers 202 when it accepts the event of an asynchronous call.
+		if out.StatusCode != http.StatusAccepted {
+			return fmt.Errorf("lambda answered %d to the start of the job", out.StatusCode)
+		}
+		return nil
+	}}
 	lambda.Start(srv.Handle)
 }

@@ -20,7 +20,7 @@ func main() {
 	endpoint := flag.String("endpoint", "", "DSQL cluster endpoint (stack output ClusterEndpoint)")
 	region := flag.String("region", "eu-central-1", "DSQL cluster region")
 	url := flag.String("database-url", "", "PostgreSQL connection string, instead of -endpoint")
-	roleARN := flag.String("app-role-arn", "", "IAM role of a Lambda function that uses the database (stack outputs ApiFunctionRoleArn and PreSignUpFunctionRoleArn, one run for each); DSQL only")
+	roleARN := flag.String("app-role-arn", "", "IAM role of a Lambda function that uses the database (stack outputs ApiFunctionRoleArn, PreSignUpFunctionRoleArn and JobsFunctionRoleArn, one run for each); DSQL only")
 	flag.Parse()
 	if (*endpoint == "") == (*url == "") {
 		log.Fatal("give exactly one of -endpoint and -database-url")
