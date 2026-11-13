@@ -1,7 +1,7 @@
 import Foundation
 
 /// The texts of a translation card in a form. Each list of other terms is one text with one term in each line.
-struct CardFields: Equatable {
+struct CardFields {
     var pl: String
     var ru: String
     var meaningRu: String
@@ -55,7 +55,7 @@ private func terms(_ text: String) -> [String] {
     text.split(whereSeparator: \.isNewline).map { trimmed(String($0)) }.filter { !$0.isEmpty }
 }
 
-/// The server counts code points, so `String.count` (grapheme clusters) would pass texts that it refuses.
+/// The server counts code points, and one grapheme cluster can have more than one code point.
 private func fits(_ text: String, _ max: Int) -> Bool {
     (1...max).contains(trimmed(text).unicodeScalars.count)
 }
