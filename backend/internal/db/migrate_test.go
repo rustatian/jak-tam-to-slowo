@@ -166,6 +166,24 @@ func TestMigrateRealFiles(t *testing.T) {
 	if progressRows != 0 {
 		t.Errorf("progress rows after the deletion of the group of their card = %d, want 0", progressRows)
 	}
+
+	_, err = pool.Exec(ctx, "INSERT INTO jobs (user_id, kind, status, input) VALUES ('u2', 'draft', 'x', '{}')")
+	if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
+		t.Errorf("job status x: error = %v, want a check violation (23514)", err)
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO jobs (user_id, kind, input) VALUES ('u2', 'draft', '{}')"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "DELETE FROM users WHERE id = 'u2'"); err != nil {
+		t.Fatal(err)
+	}
+	var jobs int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM jobs").Scan(&jobs); err != nil {
+		t.Fatal(err)
+	}
+	if jobs != 0 {
+		t.Errorf("jobs after the deletion of their user = %d, want 0", jobs)
+	}
 }
 
 func TestSetupAppRoleRejectsBadARN(t *testing.T) {
