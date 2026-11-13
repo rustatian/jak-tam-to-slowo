@@ -85,3 +85,48 @@ struct CardEditView: View {
         }
     }
 }
+
+/// The form of an AI draft: the save makes a new card.
+struct CardCheckView: View {
+    let cards: Cards
+    let saved: () -> Void
+
+    @State private var fields: CardFields
+    @State private var working = false
+    @State private var error = ""
+    @State private var failed = false
+
+    init(fields: CardFields, cards: Cards, saved: @escaping () -> Void) {
+        self.cards = cards
+        self.saved = saved
+        _fields = State(initialValue: fields)
+    }
+
+    var body: some View {
+        Form {
+            CardFieldsForm(fields: $fields)
+        }
+        .alert(error, isPresented: $failed) {}
+        .navigationTitle("Sprawdź fiszkę")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Zapisz") { Task { await save() } }
+                    .disabled(working || !fields.isValid)
+            }
+        }
+    }
+
+    /// `saved` closes the form. A save also ends with no error when the user is not a member of the group any more.
+    private func save() async {
+        working = true
+        defer { working = false }
+        do {
+            try await cards.create(fields.create)
+            saved()
+        } catch {
+            self.error = errorMessage(error)
+            failed = true
+        }
+    }
+}
