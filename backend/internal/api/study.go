@@ -2,8 +2,13 @@ package api
 
 import (
 	"cmp"
+	"context"
+	"net/http"
 	"slices"
 	"time"
+
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/jackc/pgx/v5"
 )
 
 // progress is the progress row of one learner for one card. The version 0 means that the learner has no row.
@@ -62,4 +67,31 @@ func studyQueue(rows []studyRow, now time.Time) StudyQueue {
 		q.Cards = append(q.Cards, StudyCard{Card: r.card, ProgressVersion: r.progress.version})
 	}
 	return q
+}
+
+// getStudyQueue answers the study queue of the signed-in learner in the group in the path.
+func (s *Server) getStudyQueue(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	sub, fail := s.member(ctx, req)
+	if fail != nil {
+		return *fail
+	}
+	// A new card has no progress row, so the join gives NULL in each progress column, and pgx refuses NULL for an int.
+	rows, err := s.DB.Query(ctx, "SELECT "+cardColumns+", created_at, COALESCE(correct, 0), COALESCE(incorrect, 0), last_correct_at, last_incorrect_at, COALESCE(version, 0) "+
+		"FROM cards LEFT JOIN card_progress ON card_progress.card_id = cards.id AND card_progress.user_id = $2 "+
+		"WHERE group_id = $1 AND NOT archived AND kind = 'translation'",
+		req.PathParameters["groupId"], sub)
+	if err != nil {
+		return serverError(ctx, req, sub, err)
+	}
+	list, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (studyRow, error) {
+		var r studyRow
+		p := &r.progress
+		var err error
+		r.card, err = scanCard(row, &r.createdAt, &p.correct, &p.incorrect, &p.lastCorrectAt, &p.lastIncorrectAt, &p.version)
+		return r, err
+	})
+	if err != nil {
+		return serverError(ctx, req, sub, err)
+	}
+	return jsonResponse(http.StatusOK, studyQueue(list, time.Now()))
 }

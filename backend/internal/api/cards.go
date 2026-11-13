@@ -23,9 +23,10 @@ import (
 // cardColumns are the columns of a card in the order of scanCard.
 const cardColumns = "id, kind, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru"
 
-func scanCard(row pgx.Row) (Card, error) {
+// scanCard scans the columns of cardColumns, then the next columns of the row into more.
+func scanCard(row pgx.Row, more ...any) (Card, error) {
 	var c Card
-	err := row.Scan(&c.Id, &c.Kind, &c.Pl, &c.Ru, &c.ExamplePl, &c.ExampleRu, &c.MeaningRu, &c.AlternativesPl, &c.AlternativesRu)
+	err := row.Scan(append([]any{&c.Id, &c.Kind, &c.Pl, &c.Ru, &c.ExamplePl, &c.ExampleRu, &c.MeaningRu, &c.AlternativesPl, &c.AlternativesRu}, more...)...)
 	return c, err
 }
 
