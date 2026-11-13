@@ -28,7 +28,8 @@ struct CardEditView: View {
 
     @State private var fields: CardFields
     @State private var working = false
-    @State private var error: String?
+    @State private var error = ""
+    @State private var failed = false
     @State private var confirmArchive = false
     @Environment(\.dismiss) private var dismiss
 
@@ -53,12 +54,9 @@ struct CardEditView: View {
                     } message: {
                         Text("Fiszka zniknie u wszystkich osób w grupie. Tej czynności nie można cofnąć.")
                     }
-            } footer: {
-                if let error {
-                    Text(error).foregroundStyle(.red)
-                }
             }
         }
+        .alert(error, isPresented: $failed) {}
         .navigationTitle("Fiszka")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -83,6 +81,7 @@ struct CardEditView: View {
             dismiss()
         } catch {
             self.error = errorMessage(error)
+            failed = true
         }
     }
 }
