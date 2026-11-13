@@ -15,5 +15,6 @@ filter:
     - /v1/groups/{groupId}/invitations
     - /v1/groups/{groupId}/invitations/{invitationId}
     - /v1/groups/{groupId}/cards
+    - /v1/groups/{groupId}/cards/{cardId}
     - /v1/invitations/{token}
     - /v1/invitations/{token}/acceptance

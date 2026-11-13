@@ -22,6 +22,8 @@ final class FakeAPI: APIProtocol {
         var cancelInvitation: [Operations.CancelInvitation.Output] = []
         var createCard: [Operations.CreateCard.Output] = []
         var listCards: [Operations.ListCards.Output] = []
+        var updateCard: [Operations.UpdateCard.Output] = []
+        var archiveCard: [Operations.ArchiveCard.Output] = []
         var previewInvitation: [Operations.PreviewInvitation.Output] = []
         var acceptInvitation: [Operations.AcceptInvitation.Output] = []
     }
@@ -159,6 +161,24 @@ final class FakeAPI: APIProtocol {
         }
         await holdListCards?(call)
         return answer
+    }
+
+    func updateCard(_ input: Operations.UpdateCard.Input) async throws -> Operations.UpdateCard.Output {
+        try state.withLock { s in
+            s.calls.append("updateCard")
+            if case let .json(change) = input.body {
+                s.inputs.append("updateCard \(input.path.groupId) \(input.path.cardId) \(change.pl ?? "-")")
+            }
+            return try Self.next(&s.answers.updateCard)
+        }
+    }
+
+    func archiveCard(_ input: Operations.ArchiveCard.Input) async throws -> Operations.ArchiveCard.Output {
+        try state.withLock { s in
+            s.calls.append("archiveCard")
+            s.inputs.append("archiveCard \(input.path.groupId) \(input.path.cardId)")
+            return try Self.next(&s.answers.archiveCard)
+        }
     }
 
     func previewInvitation(_ input: Operations.PreviewInvitation.Input) async throws -> Operations.PreviewInvitation.Output {
