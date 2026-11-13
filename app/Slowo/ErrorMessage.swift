@@ -4,7 +4,7 @@ import OpenAPIRuntime
 /// The password rules of the user pool.
 let passwordRules = "Co najmniej 8 znaków, w tym wielka i mała litera, cyfra i znak specjalny."
 
-/// The Polish text for an error of a sign-in, sign-up, password reset, profile, group or invitation call.
+/// The Polish text for an error of a sign-in, sign-up, password reset, profile, group, invitation or card call.
 func errorMessage(_ error: Error) -> String {
     // The generated API client wraps the transport error.
     let error = (error as? ClientError)?.underlyingError ?? error
