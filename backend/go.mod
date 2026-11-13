@@ -11,6 +11,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.75.11
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.114.4
 	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.79.9
+	github.com/aws/aws-sdk-go-v2/service/ssm v1.82.1
 	github.com/jackc/pgx/v5 v5.12.0
 	golang.org/x/text v0.41.0
 )
