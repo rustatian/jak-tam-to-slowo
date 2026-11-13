@@ -46,8 +46,7 @@ type cardRow struct {
 	archived bool
 }
 
-// cardRows reads all card rows in ID order. Without ORDER BY, PostgreSQL returns a row that an UPDATE changed after
-// the other rows.
+// cardRows reads all card rows in ID order. Without ORDER BY, the order of the rows is not specified.
 // https://www.postgresql.org/docs/16/queries-order.html
 func cardRows(t *testing.T, pool *pgxpool.Pool) []cardRow {
 	t.Helper()

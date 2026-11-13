@@ -169,10 +169,11 @@ func checkText(p *string, max int) bool {
 	return ok
 }
 
-// checkTerms applies trimmedText with 200 characters to each term of the list that p points to, in place. It
+// checkTerms applies checkText with 200 characters to each term of the list that p points to, in place. It
 // reports that the list has at most 8 terms and that each term passes. A nil p passes. The slice stays the same, so
 // a decoded list stays not nil: pgx encodes jsonb with json.Marshal, which encodes a nil slice as the JSON value null.
 // https://pkg.go.dev/encoding/json#Marshal
+// https://github.com/jackc/pgx/blob/v5.12.0/pgtype/pgtype_default.go#L69
 func checkTerms(p *[]string) bool {
 	if p == nil {
 		return true
@@ -180,9 +181,8 @@ func checkTerms(p *[]string) bool {
 	if len(*p) > 8 {
 		return false
 	}
-	for i, term := range *p {
-		var ok bool
-		if (*p)[i], ok = trimmedText(term, 200); !ok {
+	for i := range *p {
+		if !checkText(&(*p)[i], 200) {
 			return false
 		}
 	}
