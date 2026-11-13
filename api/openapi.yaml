@@ -332,6 +332,25 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /v1/groups/{groupId}/study:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+    get:
+      operationId: getStudyQueue
+      summary: The study queue of the signed-in learner.
+      responses:
+        "200":
+          description: At most 10 translation cards of the group that are not archived and that are new or due. First the cards with more misses for each correct answer, then the earlier due time (the creation time for a new card), then by ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyQueue"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /v1/invitations/{token}:
     parameters:
       - $ref: "#/components/parameters/InvitationToken"
@@ -738,6 +757,29 @@ components:
             minLength: 1
             maxLength: 200
           description: At most 8 other Russian terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. An empty list removes all terms.
+    StudyQueue:
+      type: object
+      required: [cards]
+      properties:
+        cards:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/StudyCard"
+        nextDueAt:
+          type: string
+          format: date-time
+          description: The earliest due time that is later than the time of the request. Absent when no card of the group is due later.
+    StudyCard:
+      type: object
+      required: [card, progressVersion]
+      properties:
+        card:
+          $ref: "#/components/schemas/Card"
+        progressVersion:
+          type: integer
+          minimum: 0
+          description: The version of the learner's progress for the card. 0 for a new card.
     Error:
       type: object
       required: [message]
