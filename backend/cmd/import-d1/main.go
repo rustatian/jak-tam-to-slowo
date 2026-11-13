@@ -20,7 +20,7 @@ import (
 func main() {
 	endpoint := flag.String("endpoint", "", "DSQL cluster endpoint (stack output ClusterEndpoint)")
 	region := flag.String("region", "eu-central-1", "DSQL cluster region")
-	dir := flag.String("dir", "", "folder of the export files users.json, cards.json and card_progress.json")
+	dir := flag.String("dir", "", "folder of the export files cards.json and card_progress.json")
 	group := flag.String("group", "", "ID of the target group")
 	write := flag.Bool("write", false, "keep the rows; without it the transaction rolls back")
 	users := map[string]string{}

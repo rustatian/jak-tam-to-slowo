@@ -60,14 +60,10 @@ type progress struct {
 // errDryRun ends the transaction of a dry run after the inserts, so that it rolls back.
 var errDryRun = errors.New("dry run")
 
-// Run reads users.json, cards.json and card_progress.json from files. In one transaction it writes the translation
+// Run reads cards.json and card_progress.json from files. In one transaction it writes the translation
 // cards into the group opts.Group and each progress row to the new user ID of its old user. The grammar cards are
 // left out. With an error, the report is the zero Report.
 func Run(ctx context.Context, pool *pgxpool.Pool, files fs.FS, opts Options) (Report, error) {
-	// users.json is read only for its form: the import takes no value of an old user.
-	if _, err := readRows[struct{}](files, "users.json"); err != nil {
-		return Report{}, err
-	}
 	cards, err := readRows[card](files, "cards.json")
 	if err != nil {
 		return Report{}, err
