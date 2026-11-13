@@ -129,6 +129,18 @@ func TestMigrateRealFiles(t *testing.T) {
 	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
 		t.Errorf("the same card ID in a second group: error = %v, want a unique violation (23505)", err)
 	}
+	const progress = "INSERT INTO card_progress (user_id, card_id, correct, incorrect, version) VALUES ('u2', $1, 1, 0, 1)"
+	if _, err := pool.Exec(ctx, progress, cardID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.Exec(ctx, progress, cardID)
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		t.Errorf("a second progress row of the same learner and card: error = %v, want a unique violation (23505)", err)
+	}
+	_, err = pool.Exec(ctx, "DELETE FROM users WHERE id = 'u2'")
+	if !errors.As(err, &pgErr) || pgErr.Code != "23503" {
+		t.Errorf("the deletion of a user with a progress row: error = %v, want a foreign key violation (23503)", err)
+	}
 
 	if _, err := pool.Exec(ctx, "DELETE FROM groups WHERE id = $1", groupID); err != nil {
 		t.Fatal(err)
@@ -146,6 +158,13 @@ func TestMigrateRealFiles(t *testing.T) {
 	}
 	if cards != 0 {
 		t.Errorf("cards after the deletion of their group = %d, want 0", cards)
+	}
+	var progressRows int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM card_progress").Scan(&progressRows); err != nil {
+		t.Fatal(err)
+	}
+	if progressRows != 0 {
+		t.Errorf("progress rows after the deletion of the group of their card = %d, want 0", progressRows)
 	}
 }
 

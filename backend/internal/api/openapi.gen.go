@@ -258,6 +258,22 @@ type Member struct {
 	Id string `json:"id"`
 }
 
+// StudyCard defines model for StudyCard.
+type StudyCard struct {
+	Card Card `json:"card"`
+
+	// ProgressVersion The version of the learner's progress for the card. 0 for a new card.
+	ProgressVersion int `json:"progressVersion"`
+}
+
+// StudyQueue defines model for StudyQueue.
+type StudyQueue struct {
+	Cards []StudyCard `json:"cards"`
+
+	// NextDueAt The earliest due time that is later than the time of the request. Absent when no card of the group is due later.
+	NextDueAt *time.Time `json:"nextDueAt,omitempty"`
+}
+
 // CardId defines model for CardId.
 type CardId = string
 

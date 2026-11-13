@@ -65,6 +65,8 @@ func (s *Server) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 		return s.patchCard(ctx, req), nil
 	case "DELETE /v1/groups/{groupId}/cards/{cardId}":
 		return s.archiveCard(ctx, req), nil
+	case "GET /v1/groups/{groupId}/study":
+		return s.getStudyQueue(ctx, req), nil
 	default:
 		return jsonResponse(http.StatusNotFound, Error{Message: "not found"}), nil
 	}
