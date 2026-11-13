@@ -313,6 +313,18 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /v1/groups/{groupId}/cards
             Method: GET
+        PatchCard:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/groups/{groupId}/cards/{cardId}
+            Method: PATCH
+        ArchiveCard:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/groups/{groupId}/cards/{cardId}
+            Method: DELETE
 
   # Cognito calls this function before each sign-up and waits at most 5 seconds for its answer.
   # https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-working-with-lambda-triggers.html#important-lambda-considerations
