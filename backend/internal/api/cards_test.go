@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -151,6 +152,89 @@ func TestCreateCard(t *testing.T) {
 			}
 			if n := countRows(t, pool, "cards"); n != 1 {
 				t.Errorf("cards = %d, want 1", n)
+			}
+		})
+	}
+}
+
+func TestListCards(t *testing.T) {
+	dom := func(id string) Card {
+		return Card{Id: id, Kind: Translation, Pl: "dom", Ru: "дом", ExamplePl: "To jest dom.", ExampleRu: "Это дом.", MeaningRu: "здание", AlternativesPl: []string{}, AlternativesRu: []string{}}
+	}
+	tests := []struct {
+		name       string
+		setup      string // one statement that adds cards to the fixture; it finds a group by its name
+		sub        string
+		wantStatus int
+		wantBody   string   // empty when the answer is checked by wantPl or want
+		wantPl     []string // the pl values of the answer in order
+		want       []Card   // the full cards, when the row checks all fields
+	}{
+		{name: "a group without cards has an empty list", sub: subOla, wantStatus: 200, wantBody: `{"cards":[]}`},
+		// Polish order: ą is a letter after a, ł after l, and ż after z. Byte order gives adam, lato, zamek, Ąb, łódź, żaba.
+		{name: "lists the cards in the Polish order", sub: subAdam, wantStatus: 200,
+			setup: `INSERT INTO cards (group_id, pl, ru, example_pl, example_ru, meaning_ru)
+				SELECT (SELECT id FROM groups WHERE name = v.grp), v.pl, 'ru', 'example', 'example', 'meaning'
+				FROM (VALUES ('Rodzina', 'żaba'), ('Rodzina', 'zamek'), ('Rodzina', 'Ąb'), ('Rodzina', 'adam'), ('Rodzina', 'łódź'), ('Rodzina', 'lato'), ('Praca', 'obcy')) AS v (grp, pl)`,
+			wantPl: []string{"adam", "Ąb", "lato", "łódź", "zamek", "żaba"}},
+		{name: "archived cards are not in the list", sub: subOla, wantStatus: 200,
+			setup: `INSERT INTO cards (group_id, pl, ru, example_pl, example_ru, meaning_ru, archived)
+				SELECT (SELECT id FROM groups WHERE name = 'Rodzina'), v.pl, 'ru', 'example', 'example', 'meaning', v.archived
+				FROM (VALUES ('dom', false), ('stary', true)) AS v (pl, archived)`,
+			wantPl: []string{"dom"}},
+		{name: "cards with one term are in the order of their IDs", sub: subOla, wantStatus: 200,
+			setup: `INSERT INTO cards (group_id, id, pl, ru, example_pl, example_ru, meaning_ru)
+				SELECT (SELECT id FROM groups WHERE name = 'Rodzina'), v.id, 'dom', 'дом', 'To jest dom.', 'Это дом.', 'здание'
+				FROM (VALUES ('00000000-0000-0000-0000-000000000002'::uuid), ('00000000-0000-0000-0000-000000000001'::uuid)) AS v (id)`,
+			want: []Card{dom("00000000-0000-0000-0000-000000000001"), dom("00000000-0000-0000-0000-000000000002")}},
+		{name: "the card has all its fields", sub: subOla, wantStatus: 200,
+			setup: `INSERT INTO cards (group_id, id, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru)
+				VALUES ((SELECT id FROM groups WHERE name = 'Rodzina'), '00000000-0000-0000-0000-000000000001', 'źródło', 'источник', 'To jest źródło.', 'Это источник.', 'начало реки', '["zdrój"]', '[]')`,
+			want: []Card{{Id: "00000000-0000-0000-0000-000000000001", Kind: Translation, Pl: "źródło", Ru: "источник", ExamplePl: "To jest źródło.", ExampleRu: "Это источник.",
+				MeaningRu: "начало реки", AlternativesPl: []string{"zdrój"}, AlternativesRu: []string{}}}},
+		{name: "a member of another group is refused", sub: subEwa, wantStatus: 403, wantBody: notMember},
+		{name: "a user without a group is refused", sub: subJan, wantStatus: 403, wantBody: notMember},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			pool, srv, rodzina, _ := groupFixture(t)
+			if tt.setup != "" {
+				if _, err := pool.Exec(ctx, tt.setup); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			resp, err := srv.Handle(ctx, groupRequest("GET /v1/groups/{groupId}/cards", tt.sub, "", map[string]string{"groupId": rodzina}))
+			if err != nil {
+				t.Fatalf("Handle returned error %v", err)
+			}
+			if resp.StatusCode != tt.wantStatus {
+				t.Errorf("status = %d, want %d (body %s)", resp.StatusCode, tt.wantStatus, resp.Body)
+			}
+			if tt.wantBody != "" {
+				if resp.Body != tt.wantBody {
+					t.Errorf("body = %s, want %s", resp.Body, tt.wantBody)
+				}
+				return
+			}
+			var list Cards
+			if err := json.Unmarshal([]byte(resp.Body), &list); err != nil {
+				t.Fatalf("body %s: %v", resp.Body, err)
+			}
+			if tt.want != nil {
+				// reflect.DeepEqual tells a nil list from an empty one.
+				if !reflect.DeepEqual(list.Cards, tt.want) {
+					t.Errorf("cards = %+v, want %+v", list.Cards, tt.want)
+				}
+				return
+			}
+			var pl []string
+			for _, c := range list.Cards {
+				pl = append(pl, c.Pl)
+			}
+			if !slices.Equal(pl, tt.wantPl) {
+				t.Errorf("pl = %q, want %q", pl, tt.wantPl)
 			}
 		})
 	}

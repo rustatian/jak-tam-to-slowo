@@ -1,12 +1,16 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"net/http"
+	"slices"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/jackc/pgx/v5"
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
 
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/db"
 )
@@ -46,6 +50,28 @@ func (s *Server) createCard(ctx context.Context, req events.APIGatewayV2HTTPRequ
 		return serverError(ctx, req, sub, err)
 	}
 	return jsonResponse(http.StatusCreated, card)
+}
+
+// listCards answers the cards of the group in the path that are not archived, in the Polish order of pl, then by ID.
+func (s *Server) listCards(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
+	sub, fail := s.member(ctx, req)
+	if fail != nil {
+		return *fail
+	}
+	rows, err := s.DB.Query(ctx, "SELECT "+cardColumns+" FROM cards WHERE group_id = $1 AND NOT archived", req.PathParameters["groupId"])
+	if err != nil {
+		return serverError(ctx, req, sub, err)
+	}
+	cards, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Card, error) { return scanCard(row) })
+	if err != nil {
+		return serverError(ctx, req, sub, err)
+	}
+	// Aurora DSQL sorts text only by bytes, so the order is made here with a new Collator, as in listMembers.
+	polish := collate.New(language.Polish)
+	slices.SortFunc(cards, func(a, b Card) int {
+		return cmp.Or(polish.CompareString(a.Pl, b.Pl), cmp.Compare(a.Id, b.Id))
+	})
+	return jsonResponse(http.StatusOK, Cards{Cards: cards})
 }
 
 // checkCard returns the trimmed texts and terms of the body in a card without ID and kind. msg is the 400 text of
