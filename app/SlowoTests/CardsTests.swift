@@ -148,6 +148,123 @@ let cardsCases: [CardsCase] = [
         },
         calls: ["getMe", "listCards", "getMe", "listCards"], inputs: ["listCards g1 ceb", "listCards g2 ceb"], error: .unexpected, cards: nil, query: ""
     ),
+    CardsCase(
+        name: "an edit loads the list again with its search text",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula, dom])))), .ok(.init(body: .json(.init(cards: [dom]))))],
+            updateCard: [.ok(.init(body: .json(dom)))]
+        ),
+        action: { cards, _ in
+            try await cards.load(query: "o")
+            try await cards.update("c1", .init(pl: "Cebulka"))
+        },
+        calls: ["getMe", "listCards", "updateCard", "listCards"], inputs: ["listCards g1 o", "updateCard g1 c1 Cebulka", "listCards g1 o"], error: nil, cards: [dom], query: "o"
+    ),
+    CardsCase(
+        name: "a refused edit keeps the list",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula]))))],
+            updateCard: [.badRequest(.init(body: .json(.init(message: "pl must have 1 to 200 characters"))))]
+        ),
+        action: { cards, _ in
+            try await cards.load(query: "o")
+            try await cards.update("c1", .init(pl: "x"))
+        },
+        calls: ["getMe", "listCards", "updateCard"], inputs: ["listCards g1 o", "updateCard g1 c1 x"], error: .rejected, cards: [cebula], query: "o"
+    ),
+    CardsCase(
+        name: "an edit of an archived card loads the list again",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula, dom])))), .ok(.init(body: .json(.init(cards: [dom]))))],
+            updateCard: [.notFound(.init(body: .json(.init(message: "card not found"))))]
+        ),
+        action: { cards, _ in
+            try await cards.load(query: "o")
+            try await cards.update("c1", .init(pl: "x"))
+        },
+        calls: ["getMe", "listCards", "updateCard", "listCards"], inputs: ["listCards g1 o", "updateCard g1 c1 x", "listCards g1 o"], error: .gone, cards: [dom], query: "o"
+    ),
+    CardsCase(
+        name: "an edit after a removal from the group shows no list",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped))), .ok(.init(body: .json(alone)))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula]))))],
+            updateCard: [.forbidden(.init(body: .json(.init(message: "not a member of this group"))))]
+        ),
+        action: { cards, _ in
+            try await cards.load(query: "o")
+            try await cards.update("c1", .init(pl: "x"))
+        },
+        calls: ["getMe", "listCards", "updateCard", "getMe"], inputs: ["listCards g1 o", "updateCard g1 c1 x"], error: nil, cards: nil, query: ""
+    ),
+    CardsCase(
+        name: "a failed edit keeps the list",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula]))))],
+            updateCard: [.internalServerError(.init(body: .json(.init(message: "internal error"))))]
+        ),
+        action: { cards, _ in
+            try await cards.load(query: "o")
+            try await cards.update("c1", .init(pl: "x"))
+        },
+        calls: ["getMe", "listCards", "updateCard"], inputs: ["listCards g1 o", "updateCard g1 c1 x"], error: .unexpected, cards: [cebula], query: "o"
+    ),
+    CardsCase(
+        name: "an archive loads the list again",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula, dom])))), .ok(.init(body: .json(.init(cards: [dom]))))],
+            archiveCard: [.noContent(.init())]
+        ),
+        action: { cards, _ in
+            try await cards.load(query: "o")
+            try await cards.archive("c1")
+        },
+        calls: ["getMe", "listCards", "archiveCard", "listCards"], inputs: ["listCards g1 o", "archiveCard g1 c1", "listCards g1 o"], error: nil, cards: [dom], query: "o"
+    ),
+    CardsCase(
+        name: "an archive of an archived card is no error",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula, dom])))), .ok(.init(body: .json(.init(cards: [dom]))))],
+            archiveCard: [.notFound(.init(body: .json(.init(message: "card not found"))))]
+        ),
+        action: { cards, _ in
+            try await cards.load(query: "o")
+            try await cards.archive("c1")
+        },
+        calls: ["getMe", "listCards", "archiveCard", "listCards"], inputs: ["listCards g1 o", "archiveCard g1 c1", "listCards g1 o"], error: nil, cards: [dom], query: "o"
+    ),
+    CardsCase(
+        name: "an archive after a removal from the group shows no list",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped))), .ok(.init(body: .json(alone)))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula]))))],
+            archiveCard: [.forbidden(.init(body: .json(.init(message: "not a member of this group"))))]
+        ),
+        action: { cards, _ in
+            try await cards.load(query: "o")
+            try await cards.archive("c1")
+        },
+        calls: ["getMe", "listCards", "archiveCard", "getMe"], inputs: ["listCards g1 o", "archiveCard g1 c1"], error: nil, cards: nil, query: ""
+    ),
+    CardsCase(
+        name: "a failed archive keeps the list",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula, dom]))))],
+            archiveCard: [.internalServerError(.init(body: .json(.init(message: "internal error"))))]
+        ),
+        action: { cards, _ in
+            try await cards.load(query: "o")
+            try await cards.archive("c1")
+        },
+        calls: ["getMe", "listCards", "archiveCard"], inputs: ["listCards g1 o", "archiveCard g1 c1"], error: .unexpected, cards: [cebula, dom], query: "o"
+    ),
 ]
 
 @MainActor

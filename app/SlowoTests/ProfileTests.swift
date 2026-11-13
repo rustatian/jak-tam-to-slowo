@@ -324,6 +324,8 @@ struct ErrorMessageCase: Sendable, CustomTestStringConvertible {
     ErrorMessageCase(name: "a sign-up that the trigger cannot check", error: CognitoError.trigger("PreSignUp failed with error sign-up is not possible now."), message: "Rejestracja nie jest teraz możliwa. Spróbuj ponownie później."),
     ErrorMessageCase(name: "an address that has an account", error: CognitoError.service("UsernameExistsException"), message: "Konto z tym adresem już istnieje. Zaloguj się."),
     ErrorMessageCase(name: "an address with a wrong form", error: CognitoError.service("InvalidParameterException"), message: "Nieprawidłowy adres e-mail."),
+    ErrorMessageCase(name: "a refused card", error: CardError.rejected, message: "Sprawdź pola tekstowe."),
+    ErrorMessageCase(name: "an archived card", error: CardError.gone, message: "Ta fiszka jest już w archiwum."),
     ErrorMessageCase(
         name: "no network through the API client",
         error: ClientError(operationID: "updateMe", operationInput: "", causeDescription: "transport", underlyingError: URLError(.notConnectedToInternet)),
