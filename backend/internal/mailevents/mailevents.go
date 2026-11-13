@@ -1,5 +1,5 @@
 // Package mailevents records what Amazon SES reports about the invitation emails, and deletes the expired
-// invitations on a schedule.
+// invitations and the old job rows on a schedule.
 package mailevents
 
 import (
@@ -28,9 +28,9 @@ type detail struct {
 	} `json:"mail"`
 }
 
-// Handle marks the invitation of a bounce or a complaint event, and deletes the expired invitations on the event
-// of the schedule. It writes no part of an event into the log, because a mail event has the address of the
-// invited person.
+// Handle marks the invitation of a bounce or a complaint event, and deletes the expired invitations and the job
+// rows that are older than 1 hour on the event of the schedule. It writes no part of an event into the log,
+// because a mail event has the address of the invited person.
 func (h *Handler) Handle(ctx context.Context, event events.EventBridgeEvent) error {
 	var failure string
 	switch event.DetailType {
@@ -38,8 +38,17 @@ func (h *Handler) Handle(ctx context.Context, event events.EventBridgeEvent) err
 		// shortcut: one transaction deletes all expired invitations, and Aurora DSQL lets a transaction change
 		// 3,000 rows. Delete in parts when more than 150 members can each send their 20 invitations on one day.
 		// https://docs.aws.amazon.com/aurora-dsql/latest/userguide/CHAP_quotas.html#SECTION_database-limits
-		return db.Tx(ctx, h.DB, func(tx pgx.Tx) error {
+		if err := db.Tx(ctx, h.DB, func(tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, "DELETE FROM invitations WHERE expires_at <= now()")
+			return err
+		}); err != nil {
+			return err
+		}
+		// shortcut: one transaction deletes all old job rows, and Aurora DSQL lets a transaction change 3,000 rows.
+		// Delete in parts when one day can have more than 3,000 draft requests.
+		// https://docs.aws.amazon.com/aurora-dsql/latest/userguide/CHAP_quotas.html#SECTION_database-limits
+		return db.Tx(ctx, h.DB, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, "DELETE FROM jobs WHERE created_at < now() - interval '1 hour'")
 			return err
 		})
 	case "Email Bounced":

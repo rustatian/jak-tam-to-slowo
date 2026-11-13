@@ -24,6 +24,8 @@ type Server struct {
 	EmailOf func(ctx context.Context, sub string) (string, error)
 	// Send sends an email. An error means that the email service did not accept the message.
 	Send func(ctx context.Context, m Mail) error
+	// StartJob starts the job function for a stored job. An error means that Lambda did not accept the event.
+	StartJob func(ctx context.Context, userID, jobID string) error
 }
 
 // Handle picks the route by its route key.

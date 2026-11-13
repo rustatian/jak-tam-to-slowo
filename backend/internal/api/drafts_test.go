@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"maps"
 	"reflect"
 	"slices"
@@ -14,15 +15,25 @@ import (
 
 const needsConsent = `{"message":"AI consent is required"}`
 
+// The jobs of the job tests: j1 of Ola and j2 of Adam.
+const (
+	j1 = "00000000-0000-0000-0000-0000000000a1"
+	j2 = "00000000-0000-0000-0000-0000000000a2"
+	// addJob takes the rows (user, ID, kind, status, input, result, error, created_at).
+	addJob        = "INSERT INTO jobs (user_id, id, kind, status, input, result, error, created_at) VALUES "
+	choicesResult = `{"choices":["овощ","оружие"]}`
+)
+
 func TestCreateDraft(t *testing.T) {
 	const textRule = `{"message":"text must have 1 to 200 characters"}`
 	tests := []struct {
 		name       string
 		sub        string
 		body       string
+		startErr   error // the error of the fake StartJob
 		wantStatus int
 		wantBody   string // the exact error body; empty for 202
-		wantInput  string // the JSON object that a 202 row stores
+		wantInput  string // the JSON object of the stored queued job; empty when no job is stored
 	}{
 		{name: "creates a queued job with the trimmed input", sub: subOla, body: `{"text":"  słowo  "}`, wantStatus: 202, wantInput: `{"text":"słowo"}`},
 		{name: "stores the picked meaning", sub: subOla, body: `{"text":"лук","meaningRu":"  овощ  "}`, wantStatus: 202, wantInput: `{"text":"лук","meaningRu":"овощ"}`},
@@ -45,6 +56,8 @@ func TestCreateDraft(t *testing.T) {
 		{name: "the consent is checked before the body", sub: subAdam, body: `{"text":`, wantStatus: 403, wantBody: needsConsent},
 		{name: "a member of another group is refused", sub: subEwa, body: `{"text":"słowo"}`, wantStatus: 403, wantBody: notMember},
 		{name: "a user without a group and without consent is refused as not a member", sub: subJan, body: `{"text":"słowo"}`, wantStatus: 403, wantBody: notMember},
+		{name: "a start that fails answers 502 and keeps the queued job", sub: subOla, body: `{"text":"słowo"}`, startErr: errors.New("Lambda throttled the call"),
+			wantStatus: 502, wantBody: `{"message":"the draft job did not start"}`, wantInput: `{"text":"słowo"}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -52,6 +65,20 @@ func TestCreateDraft(t *testing.T) {
 			pool, srv, rodzina, _ := groupFixture(t)
 			if _, err := pool.Exec(ctx, "UPDATE users SET ai_consent_at = now() WHERE id IN ($1, $2)", subOla, subEwa); err != nil {
 				t.Fatal(err)
+			}
+			// stored tells whether the pool, on another connection than the route, saw the job row at the call.
+			type start struct {
+				userID, jobID string
+				stored        bool
+			}
+			var starts []start
+			srv.StartJob = func(ctx context.Context, userID, jobID string) error {
+				var stored bool
+				if err := pool.QueryRow(ctx, "SELECT EXISTS (SELECT FROM jobs WHERE user_id = $1 AND id::text = $2)", userID, jobID).Scan(&stored); err != nil {
+					t.Fatal(err)
+				}
+				starts = append(starts, start{userID: userID, jobID: jobID, stored: stored})
+				return tt.startErr
 			}
 
 			resp, err := srv.Handle(ctx, groupRequest("POST /v1/groups/{groupId}/drafts", tt.sub, tt.body, map[string]string{"groupId": rodzina}))
@@ -61,30 +88,41 @@ func TestCreateDraft(t *testing.T) {
 			if resp.StatusCode != tt.wantStatus {
 				t.Errorf("status = %d, want %d (body %s)", resp.StatusCode, tt.wantStatus, resp.Body)
 			}
-			if tt.wantBody != "" {
-				if resp.Body != tt.wantBody {
-					t.Errorf("body = %s, want %s", resp.Body, tt.wantBody)
-				}
+			if tt.wantBody != "" && resp.Body != tt.wantBody {
+				t.Errorf("body = %s, want %s", resp.Body, tt.wantBody)
+			}
+			if tt.wantInput == "" {
 				if n := countRows(t, pool, "jobs"); n != 0 {
 					t.Errorf("jobs = %d, want 0", n)
 				}
+				if len(starts) != 0 {
+					t.Errorf("starts = %+v, want none", starts)
+				}
 				return
 			}
-			var got map[string]any
-			if err := json.Unmarshal([]byte(resp.Body), &got); err != nil {
-				t.Fatalf("body %s: %v", resp.Body, err)
+			if len(starts) != 1 {
+				t.Fatalf("starts = %+v, want 1", starts)
 			}
-			id, _ := got["id"].(string)
-			if len(got) != 2 || id == "" || got["status"] != "queued" {
-				t.Fatalf("body = %s, want exactly an id that is not empty and the status queued", resp.Body)
+			started := starts[0]
+			if started.userID != tt.sub || !started.stored {
+				t.Errorf("start = %+v, want the user %s and a job row that is committed at the call", started, tt.sub)
+			}
+			if tt.wantBody == "" {
+				var got map[string]any
+				if err := json.Unmarshal([]byte(resp.Body), &got); err != nil {
+					t.Fatalf("body %s: %v", resp.Body, err)
+				}
+				if len(got) != 2 || got["id"] != started.jobID || got["status"] != "queued" {
+					t.Errorf("body = %s, want exactly the id %s of the start and the status queued", resp.Body, started.jobID)
+				}
 			}
 			var n int
-			if err := pool.QueryRow(ctx, "SELECT count(*) FROM jobs WHERE id::text = $1 AND user_id = $2 AND kind = 'draft' AND input = $3::jsonb",
-				id, tt.sub, tt.wantInput).Scan(&n); err != nil {
+			if err := pool.QueryRow(ctx, "SELECT count(*) FROM jobs WHERE id::text = $1 AND user_id = $2 AND kind = 'draft' AND input = $3::jsonb AND status = 'queued'",
+				started.jobID, tt.sub, tt.wantInput).Scan(&n); err != nil {
 				t.Fatal(err)
 			}
 			if n != 1 {
-				t.Errorf("jobs with the ID %s, the user %s, the kind draft and the input %s = %d, want 1", id, tt.sub, tt.wantInput, n)
+				t.Errorf("queued jobs with the ID %s, the user %s, the kind draft and the input %s = %d, want 1", started.jobID, tt.sub, tt.wantInput, n)
 			}
 		})
 	}
@@ -93,12 +131,7 @@ func TestCreateDraft(t *testing.T) {
 func TestGetDraft(t *testing.T) {
 	const (
 		draftNotFound = `{"message":"draft not found"}`
-		j1            = "00000000-0000-0000-0000-0000000000a1"
-		j2            = "00000000-0000-0000-0000-0000000000a2"
-		// addJob takes the rows (user, ID, kind, status, input, result, error, created_at).
-		addJob        = "INSERT INTO jobs (user_id, id, kind, status, input, result, error, created_at) VALUES "
 		cardResult    = `{"card":{"pl":"Słowo","ru":"Слово","examplePl":"Nie znam tego słowa.","exampleRu":"Я не знаю этого слова.","meaningRu":"Единица речи","alternativesPl":["Wyraz"],"alternativesRu":[]}}`
-		choicesResult = `{"choices":["овощ","оружие"]}`
 	)
 	choices := &[]string{"овощ", "оружие"}
 	tests := []struct {
@@ -209,5 +242,107 @@ func TestGetDraft(t *testing.T) {
 				t.Errorf("members = %q, want %q (body %s)", keys, wantKeys, resp.Body)
 			}
 		})
+	}
+}
+
+func TestRunJob(t *testing.T) {
+	const input = `'{"text":"słowo"}'`
+	tests := []struct {
+		name  string
+		setup string // the SQL text that adds job rows after groupFixture
+		event JobEvent
+		// The job row of the setup after the call.
+		wantStatus string
+		wantError  string // empty for NULL
+		wantResult string // empty for NULL
+	}{
+		{name: "claims a queued job and ends it", setup: addJob + `('sub-ola', '` + j1 + `', 'draft', 'queued', ` + input + `, NULL, NULL, now())`,
+			event: JobEvent{UserID: subOla, JobID: j1}, wantStatus: "failed", wantError: "unavailable"},
+		{name: "a job of 50 seconds is claimed", setup: addJob + `('sub-ola', '` + j1 + `', 'draft', 'queued', ` + input + `, NULL, NULL, now() - interval '50 seconds')`,
+			event: JobEvent{UserID: subOla, JobID: j1}, wantStatus: "failed", wantError: "unavailable"},
+		{name: "a job of 61 seconds is not claimed", setup: addJob + `('sub-ola', '` + j1 + `', 'draft', 'queued', ` + input + `, NULL, NULL, now() - interval '61 seconds')`,
+			event: JobEvent{UserID: subOla, JobID: j1}, wantStatus: "queued"},
+		{name: "a running job is not claimed", setup: addJob + `('sub-ola', '` + j1 + `', 'draft', 'running', ` + input + `, NULL, NULL, now())`,
+			event: JobEvent{UserID: subOla, JobID: j1}, wantStatus: "running"},
+		{name: "a done job keeps its result", setup: addJob + `('sub-ola', '` + j1 + `', 'draft', 'done', ` + input + `, '` + choicesResult + `', NULL, now())`,
+			event: JobEvent{UserID: subOla, JobID: j1}, wantStatus: "done", wantResult: choicesResult},
+		{name: "the job of another user is not claimed", setup: addJob + `('sub-adam', '` + j2 + `', 'draft', 'queued', ` + input + `, NULL, NULL, now())`,
+			event: JobEvent{UserID: subOla, JobID: j2}, wantStatus: "queued"},
+		{name: "an ID that is not a UUID is no error", setup: addJob + `('sub-ola', '` + j1 + `', 'draft', 'queued', ` + input + `, NULL, NULL, now())`,
+			event: JobEvent{UserID: subOla, JobID: "nope"}, wantStatus: "queued"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			pool, srv, _, _ := groupFixture(t)
+			if _, err := pool.Exec(ctx, tt.setup); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := srv.RunJob(ctx, tt.event); err != nil {
+				t.Errorf("RunJob returned error %v", err)
+			}
+			var status, jobErr, result string
+			var sameResult bool
+			if err := pool.QueryRow(ctx, "SELECT status, coalesce(error, ''), coalesce(result::text, ''), result IS NOT DISTINCT FROM nullif($1, '')::jsonb FROM jobs",
+				tt.wantResult).Scan(&status, &jobErr, &result, &sameResult); err != nil {
+				t.Fatal(err)
+			}
+			if status != tt.wantStatus {
+				t.Errorf("status = %s, want %s", status, tt.wantStatus)
+			}
+			if jobErr != tt.wantError {
+				t.Errorf("error = %q, want %q", jobErr, tt.wantError)
+			}
+			if !sameResult {
+				t.Errorf("result = %q, want %q", result, tt.wantResult)
+			}
+		})
+	}
+}
+
+// TestClaimJobAtTheSameInstant makes two claims of one queued job start from the state before the other one.
+func TestClaimJobAtTheSameInstant(t *testing.T) {
+	ctx := context.Background()
+	pool, srv, _, _ := groupFixture(t)
+	if _, err := pool.Exec(ctx, addJob+`('sub-ola', '`+j1+`', 'draft', 'queued', '{"text":"słowo"}', NULL, NULL, now())`); err != nil {
+		t.Fatal(err)
+	}
+
+	// The lock on the job row stops both updates after they have read the queued row. The second update then fails
+	// with 40001, and db.Tx runs it again. The rollback at the end frees an update that still waits.
+	held, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = held.Rollback(ctx) }()
+	if _, err := held.Exec(ctx, "SELECT id FROM jobs WHERE id = $1 FOR UPDATE", j1); err != nil {
+		t.Fatal(err)
+	}
+	claims := make(chan bool, 2)
+	for range 2 {
+		go func() {
+			claimed, err := srv.claimJob(ctx, subOla, j1)
+			if err != nil {
+				t.Errorf("claimJob returned error %v", err)
+			}
+			claims <- claimed
+		}()
+	}
+	waitForLockWaits(t, pool, 2)
+	if err := held.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	got := []bool{<-claims, <-claims}
+	if !slices.Contains(got, true) || !slices.Contains(got, false) {
+		t.Errorf("claims = %v, want one true and one false", got)
+	}
+	var status string
+	if err := pool.QueryRow(ctx, "SELECT status FROM jobs WHERE id = $1", j1).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "running" {
+		t.Errorf("status = %s, want running", status)
 	}
 }
