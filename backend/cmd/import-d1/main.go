@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -55,12 +56,7 @@ func main() {
 	}
 	fmt.Println("translation cards written:", rep.Cards)
 	fmt.Println("grammar cards left out:", rep.Grammar)
-	oldIDs := make([]string, 0, len(rep.Progress))
-	for id := range rep.Progress {
-		oldIDs = append(oldIDs, id)
-	}
-	slices.Sort(oldIDs)
-	for _, id := range oldIDs {
+	for _, id := range slices.Sorted(maps.Keys(rep.Progress)) {
 		fmt.Printf("progress rows written for %s: %d\n", id, rep.Progress[id])
 	}
 	if *write {
