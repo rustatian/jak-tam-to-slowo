@@ -357,6 +357,7 @@ paths:
     post:
       operationId: createReview
       summary: Grade an answer of the signed-in learner to a card and count it.
+      description: An answer that matches no term of the card goes to the AI model when the learner has AI consent. Without consent, its grade is again.
       requestBody:
         required: true
         content:
@@ -388,6 +389,8 @@ paths:
           $ref: "#/components/responses/Conflict"
         "500":
           $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/groups/{groupId}/drafts:
     parameters:
       - $ref: "#/components/parameters/GroupId"
@@ -581,6 +584,12 @@ components:
             $ref: "#/components/schemas/Error"
     BadGateway:
       description: The email service did not accept the message.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ServiceUnavailable:
+      description: The AI model gave no grade. No count changes. The app can send the request again with the same attemptId.
       content:
         application/json:
           schema:
@@ -915,7 +924,11 @@ components:
           $ref: "#/components/schemas/Grade"
         correction:
           type: string
-          description: The term of the answer side of the card. For the grade almost, it is the term that the answer matched.
+          description: The term of the answer side of the card. For a grade almost that the server gave without the AI model, it is the term that the answer matched.
+        explanation:
+          type: string
+          maxLength: 500
+          description: A short reason in simple Polish from the AI model. Only a grade that the model gave has it. A repeat of a stored attempt has none.
     DraftCreate:
       type: object
       required: [text]

@@ -358,8 +358,11 @@ type Member struct {
 
 // Review defines model for Review.
 type Review struct {
-	// Correction The term of the answer side of the card. For the grade almost, it is the term that the answer matched.
+	// Correction The term of the answer side of the card. For a grade almost that the server gave without the AI model, it is the term that the answer matched.
 	Correction string `json:"correction"`
+
+	// Explanation A short reason in simple Polish from the AI model. Only a grade that the model gave has it. A repeat of a stored attempt has none.
+	Explanation *string `json:"explanation,omitempty"`
 
 	// Grade The result of an answer. Each grade that is not correct counts as a miss.
 	Grade Grade `json:"grade"`
@@ -434,6 +437,9 @@ type InternalError = Error
 
 // NotFound defines model for NotFound.
 type NotFound = Error
+
+// ServiceUnavailable defines model for ServiceUnavailable.
+type ServiceUnavailable = Error
 
 // TooManyRequests defines model for TooManyRequests.
 type TooManyRequests = Error

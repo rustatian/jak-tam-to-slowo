@@ -23,6 +23,7 @@ import (
 var (
 	errNotCurrent = errors.New("the progress version is not current")
 	errOtherCard  = errors.New("the attempt ID is stored for another card")
+	errAskModel   = errors.New("the model must grade the answer")
 )
 
 // createReview grades an answer of the signed-in learner to a translation card of the group in the path, and counts
@@ -51,11 +52,9 @@ func (s *Server) createReview(ctx context.Context, req events.APIGatewayV2HTTPRe
 	now := time.Now()
 	var review Review
 	var status int
-	// The reads and the writes use one transaction. When another request writes the progress row after the reads,
-	// the transaction fails with SQLSTATE 40001 and db.Tx runs the function again. The second run answers 200 when
-	// the other request stored the same attempt, and 409 when it had another attempt. So each run sets review and
-	// status.
-	err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
+	var model *aiGrade // the grade of the AI model, nil before the call
+	var asked Card     // the card for the call of the model
+	count := func(tx pgx.Tx) error {
 		// A stored attempt gets its stored grade and counts nothing. The card ID is compared as text, as in the read
 		// below.
 		var stored Grade
@@ -93,6 +92,20 @@ func (s *Server) createReview(ctx context.Context, req events.APIGatewayV2HTTPRe
 		}
 		review = grade(card, body.Direction, body.Answer)
 		status = http.StatusCreated
+		switch {
+		// The grade of the model counts only while no term matches the answer.
+		case review.Grade == Again && model != nil:
+			review.Grade, review.Explanation = model.grade, &model.explanation
+		case review.Grade == Again && answerKey(body.Answer) != "":
+			var consent bool
+			if err := tx.QueryRow(ctx, "SELECT ai_consent_at IS NOT NULL FROM users WHERE id = $1", sub).Scan(&consent); err != nil {
+				return err
+			}
+			if consent {
+				asked = card
+				return errAskModel
+			}
+		}
 		// add is the counts and the time of this answer. Each grade that is not correct counts as a miss.
 		add := progress{incorrect: 1, lastIncorrectAt: &now}
 		if review.Grade == Correct {
@@ -114,7 +127,21 @@ func (s *Server) createReview(ctx context.Context, req events.APIGatewayV2HTTPRe
 		_, err = tx.Exec(ctx, "INSERT INTO reviews (user_id, attempt_id, card_id, grade) VALUES ($1, $2, $3, $4)",
 			sub, attempt, card.Id, review.Grade)
 		return err
-	})
+	}
+	// The reads and the writes use one transaction. When another request writes the progress row after the reads,
+	// the transaction fails with SQLSTATE 40001 and db.Tx runs the function again. The second run answers 200 when
+	// the other request stored the same attempt, and 409 when it had another attempt. The call of the model runs
+	// outside the transaction, because db.Tx can run the function again. So for an answer that the model grades, the
+	// handler runs the function one more time after the call. Each run sets review and status.
+	err := db.Tx(ctx, s.DB, count)
+	if errors.Is(err, errAskModel) {
+		g, ok := s.gradeWithAI(ctx, sub, asked, body.Direction, body.Answer)
+		if !ok {
+			return jsonResponse(http.StatusServiceUnavailable, Error{Message: "AI grading is not available"})
+		}
+		model = &g
+		err = db.Tx(ctx, s.DB, count)
+	}
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return jsonResponse(http.StatusNotFound, Error{Message: "card not found"})
