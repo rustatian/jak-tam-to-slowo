@@ -59,6 +59,7 @@ final class Reminder {
     func turnOn() async throws {
         let status = await center.authorizationStatus()
         if status == .notDetermined {
+            // iOS asks only one time, so this question also asks for the sound of the race pushes.
             // https://developer.apple.com/documentation/usernotifications/asking-permission-to-use-notifications#Explicitly-request-authorization-in-context
             allowed = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
         } else {

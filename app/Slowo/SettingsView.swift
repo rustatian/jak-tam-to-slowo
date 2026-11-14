@@ -56,7 +56,12 @@ struct SettingsView: View {
                 }
             }
         }
-        .task { await reminder.refresh() }
+        // SwiftUI runs this task again when a sign-out removes the views. A refresh then adds the removed notification again.
+        .task {
+            if session.isSignedIn {
+                await reminder.refresh()
+            }
+        }
         .navigationTitle("Ustawienia")
         .sheet(isPresented: $givingConsent) {
             ConsentView(profile: profile)

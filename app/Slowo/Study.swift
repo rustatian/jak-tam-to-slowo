@@ -22,12 +22,11 @@ final class Study {
 
     private let api: any APIProtocol
     private let profile: Profile
+    private let reminder: Reminder
     /// The group ID of the last queue call.
     private var groupId: String?
     /// The body of the last review that got no final answer.
     private var attempt: Components.Schemas.ReviewCreate?
-
-    private let reminder: Reminder
 
     init(api: any APIProtocol, profile: Profile, reminder: Reminder) {
         self.api = api
