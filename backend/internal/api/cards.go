@@ -116,14 +116,19 @@ func (s *Server) listCards(ctx context.Context, req events.APIGatewayV2HTTPReque
 // polishBase maps the nine Polish letters with a mark to their base letters.
 var polishBase = strings.NewReplacer("ą", "a", "ć", "c", "ę", "e", "ł", "l", "ń", "n", "ó", "o", "ś", "s", "ź", "z", "ż", "z")
 
-// searchKey is the form of a term or a query that the search compares. NFC makes a letter and its combining mark one
+// answerKey is the form of an answer or a term that the grade compares. NFC makes a letter and its combining mark one
 // code point, so the replacements find a decomposed letter. й stays й.
 // https://www.unicode.org/reports/tr15/#Norm_Forms
-func searchKey(s string) string {
+func answerKey(s string) string {
 	s = strings.ToLower(norm.NFC.String(s))
 	s = strings.ReplaceAll(s, "ё", "е")
-	s = strings.Join(strings.Fields(s), " ")
-	return polishBase.Replace(s)
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// searchKey is the form of a term or a query that the search compares: the answer key without the marks of the Polish
+// letters.
+func searchKey(s string) string {
+	return polishBase.Replace(answerKey(s))
 }
 
 // patchCard changes the card fields that the body names. A field that the body leaves out keeps its value.

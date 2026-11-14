@@ -323,6 +323,24 @@ func TestSearchKey(t *testing.T) {
 	}
 }
 
+func TestAnswerKey(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "Polish letters keep their marks", in: "Zażółć gęślą jaźń", want: "zażółć gęślą jaźń"},
+		{name: "upper-case Polish letters keep their marks", in: "ŁÓDŹ", want: "łódź"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := answerKey(tt.in); got != tt.want {
+				t.Errorf("answerKey(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSearchCards(t *testing.T) {
 	// searchFixture adds the cards 0001 to 0010 to the groups of groupFixture. 0006 is archived, and 0007 is in Praca.
 	const searchFixture = `INSERT INTO cards (group_id, id, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru, archived)

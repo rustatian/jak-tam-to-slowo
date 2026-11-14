@@ -363,6 +363,12 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /v1/groups/{groupId}/study
             Method: GET
+        CreateReview:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/groups/{groupId}/reviews
+            Method: POST
         CreateDraft:
           Type: HttpApi
           Properties:
