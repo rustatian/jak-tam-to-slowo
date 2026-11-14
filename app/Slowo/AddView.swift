@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The field of a new word, its AI draft and the meanings of the draft, or the text for a user with no group.
+/// The field of a new word, its AI draft, the meanings of the draft and the similar cards of the group, or the text for a user with no group.
 struct AddView: View {
     let profile: Profile
     let cards: Cards
@@ -9,7 +9,22 @@ struct AddView: View {
 
     @State private var text = ""
     @State private var error: String?
-    @State private var saved = false
+    @State private var saved: Components.Schemas.Card?
+    @State private var similar: Similar?
+
+    /// The last answer of the search of similar cards.
+    private enum Similar {
+        case cards([Components.Schemas.Card])
+        case failed
+    }
+
+    private struct SearchKey: Equatable {
+        let groupId: String?
+        let query: String
+    }
+
+    /// The text of the field as the model sends it, so that a space at an end does not start a search.
+    private var query: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private var waiting: Bool { draft.step == .waiting }
 
@@ -36,17 +51,35 @@ struct AddView: View {
         .navigationTitle("Dodaj słówko")
         // The destination sits outside the Form and outside the branch for no group, so a change of the branch does not close the check screen.
         .navigationDestination(item: checked) {
-            CardCheckView(fields: $0, cards: cards) {
+            CardCheckView(fields: $0, cards: cards) { card in
                 text = ""
-                saved = true
+                saved = card
                 draft.reset()
             }
         }
-        // The save clears the field, so an empty text keeps the line "Fiszka zapisana.".
+        .navigationDestination(for: Components.Schemas.Card.self) { CardEditView(card: $0, cards: cards) }
+        .task(id: SearchKey(groupId: profile.me?.groupId, query: query)) {
+            guard !query.isEmpty else {
+                similar = nil
+                return
+            }
+            // A new text cancels this task, so a search starts 300 ms after the last key, and the answer of a cancelled search changes nothing.
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            do {
+                let found = try await cards.similar(to: query)
+                guard !Task.isCancelled else { return }
+                similar = .cards(found)
+            } catch {
+                guard !Task.isCancelled else { return }
+                similar = .failed
+            }
+        }
+        // The save clears the field, so an empty text keeps the line "Fiszka zapisana." and the link to the card.
         .onChange(of: text) { _, new in
             draft.reset()
             error = nil
-            if !new.isEmpty { saved = false }
+            if !new.isEmpty { saved = nil }
         }
     }
 
@@ -54,6 +87,8 @@ struct AddView: View {
         Form {
             Section {
                 TextField("Słowo lub wyrażenie", text: $text)
+                    // The keyboard applies a pending correction when a card form opens, and that changes the text and its similar cards.
+                    .autocorrectionDisabled()
                     .disabled(waiting)
                     .onSubmit { if canRequest { request() } }
             } header: {
@@ -72,10 +107,13 @@ struct AddView: View {
                         ProgressView("Proszę czekać…")
                     }
                 }
+                if let saved {
+                    NavigationLink("Otwórz fiszkę", value: saved)
+                }
             } footer: {
                 if let error {
                     Text(error).foregroundStyle(.red)
-                } else if saved {
+                } else if saved != nil {
                     Text("Fiszka zapisana.")
                 }
             }
@@ -86,6 +124,32 @@ struct AddView: View {
                     }
                 }
             }
+            similarSection
+        }
+    }
+
+    @ViewBuilder private var similarSection: some View {
+        switch similar {
+        case let .cards(found) where !found.isEmpty:
+            Section("Już w kolekcji") {
+                ForEach(found, id: \.id) { card in
+                    NavigationLink(value: card) {
+                        Text(card.pl + " / " + card.ru)
+                    }
+                    // The draft cannot end under an open card form.
+                    .disabled(waiting)
+                }
+            }
+        case .cards:
+            Section {
+                Text("Brak podobnych słówek.").foregroundStyle(.secondary)
+            }
+        case .failed:
+            Section {
+                Text("Nie udało się wyszukać podobnych słówek. Sprawdź kolekcję na karcie „Słówka”.").foregroundStyle(.secondary)
+            }
+        case nil:
+            EmptyView()
         }
     }
 

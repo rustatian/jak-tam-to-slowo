@@ -15,6 +15,22 @@ let rule = Components.Schemas.Card(
     id: "c3", kind: .grammar, pl: "Dom", ru: "Дом", examplePl: "To jest dom.", exampleRu: "Это дом.", meaningRu: "здание",
     alternativesPl: ["Domek"], alternativesRu: []
 )
+let luk = Components.Schemas.Card(
+    id: "c4", kind: .translation, pl: "Łuk", ru: "Лук", examplePl: "To jest łuk.", exampleRu: "Это лук.", meaningRu: "оружие",
+    alternativesPl: [], alternativesRu: []
+)
+let slowo = Components.Schemas.Card(
+    id: "c5", kind: .translation, pl: "Słowo", ru: "Слово", examplePl: "To jest słowo.", exampleRu: "Это слово.", meaningRu: "единица языка",
+    alternativesPl: [], alternativesRu: []
+)
+let zaba = Components.Schemas.Card(
+    id: "c6", kind: .translation, pl: "Żaba", ru: "Лягушка", examplePl: "To jest żaba.", exampleRu: "Это лягушка.", meaningRu: "животное",
+    alternativesPl: [], alternativesRu: []
+)
+let zamek = Components.Schemas.Card(
+    id: "c7", kind: .translation, pl: "Zamek", ru: "Замок", examplePl: "To jest zamek.", exampleRu: "Это замок.", meaningRu: "крепость",
+    alternativesPl: [], alternativesRu: []
+)
 
 struct CardsCase: Sendable, CustomTestStringConvertible {
     let name: String
@@ -274,14 +290,14 @@ let cardsCases: [CardsCase] = [
         ),
         action: { cards, _ in
             try await cards.load(query: "o")
-            try await cards.create(CardFields(dom).create)
+            _ = try await cards.create(CardFields(dom).create)
         },
         calls: ["getMe", "listCards", "createCard", "listCards"], inputs: ["listCards g1 o", "createCard g1 Dom", "listCards g1 o"], error: nil, cards: [cebula, dom], query: "o"
     ),
     CardsCase(
         name: "a new card before the first load loads nothing",
         answers: .init(getMe: [.ok(.init(body: .json(grouped)))], createCard: [.created(.init(body: .json(dom)))]),
-        action: { cards, _ in try await cards.create(CardFields(dom).create) },
+        action: { cards, _ in _ = try await cards.create(CardFields(dom).create) },
         calls: ["getMe", "createCard"], inputs: ["createCard g1 Dom"], error: nil, cards: nil, query: ""
     ),
     CardsCase(
@@ -293,7 +309,7 @@ let cardsCases: [CardsCase] = [
         ),
         action: { cards, _ in
             try await cards.load(query: "o")
-            try await cards.create(CardFields(dom).create)
+            _ = try await cards.create(CardFields(dom).create)
         },
         calls: ["getMe", "listCards", "createCard", "listCards"], inputs: ["listCards g1 o", "createCard g1 Dom", "listCards g1 o"], error: nil, cards: [cebula], query: "o"
     ),
@@ -306,7 +322,7 @@ let cardsCases: [CardsCase] = [
         ),
         action: { cards, _ in
             try await cards.load(query: "")
-            try await cards.create(CardFields(dom).create)
+            _ = try await cards.create(CardFields(dom).create)
         },
         calls: ["getMe", "listCards", "createCard"], inputs: ["listCards g1 -", "createCard g1 Dom"], error: .rejected, cards: [cebula], query: ""
     ),
@@ -319,7 +335,7 @@ let cardsCases: [CardsCase] = [
         ),
         action: { cards, _ in
             try await cards.load(query: "")
-            try await cards.create(CardFields(dom).create)
+            _ = try await cards.create(CardFields(dom).create)
         },
         calls: ["getMe", "listCards", "createCard", "getMe"], inputs: ["listCards g1 -", "createCard g1 Dom"], error: nil, cards: nil, query: ""
     ),
@@ -332,7 +348,7 @@ let cardsCases: [CardsCase] = [
         ),
         action: { cards, _ in
             try await cards.load(query: "")
-            try await cards.create(CardFields(dom).create)
+            _ = try await cards.create(CardFields(dom).create)
         },
         calls: ["getMe", "listCards", "createCard"], inputs: ["listCards g1 -", "createCard g1 Dom"], error: .unexpected, cards: [cebula], query: ""
     ),
@@ -358,6 +374,144 @@ func cards(_ c: CardsCase) async throws {
     #expect(api.inputs == c.inputs)
     #expect(cards.cards == c.cards)
     #expect(cards.query == c.query)
+}
+
+struct SimilarCase: Sendable, CustomTestStringConvertible {
+    let name: String
+    let answers: FakeAPI.Answers
+    let before: @Sendable @MainActor (Cards) async throws -> Void
+    let text: String
+    let calls: [String]
+    let inputs: [String]
+    let error: CardError?
+    let result: [Components.Schemas.Card]?
+    let cards: [Components.Schemas.Card]?
+    let query: String
+
+    var testDescription: String { name }
+}
+
+let similarCases: [SimilarCase] = [
+    SimilarCase(
+        name: "the first 5 translation cards of the answer",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula, rule, dom, luk, slowo, zaba, zamek]))))]
+        ),
+        before: { _ in },
+        text: "o",
+        calls: ["getMe", "listCards"], inputs: ["listCards g1 o"], error: nil, result: [cebula, dom, luk, slowo, zaba], cards: nil, query: ""
+    ),
+    SimilarCase(
+        name: "a search sends the trimmed text",
+        answers: .init(getMe: [.ok(.init(body: .json(grouped)))], listCards: [.ok(.init(body: .json(.init(cards: [dom]))))]),
+        before: { _ in },
+        text: " dom \n",
+        calls: ["getMe", "listCards"], inputs: ["listCards g1 dom"], error: nil, result: [dom], cards: nil, query: ""
+    ),
+    SimilarCase(
+        name: "a search keeps the list of Słówka",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula])))), .ok(.init(body: .json(.init(cards: [dom]))))]
+        ),
+        before: { try await $0.load(query: "ceb") },
+        text: "dom",
+        calls: ["getMe", "listCards", "listCards"], inputs: ["listCards g1 ceb", "listCards g1 dom"], error: nil, result: [dom], cards: [cebula], query: "ceb"
+    ),
+    SimilarCase(
+        name: "a failed search throws",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            listCards: [
+                .ok(.init(body: .json(.init(cards: [cebula])))),
+                .internalServerError(.init(body: .json(.init(message: "internal error")))),
+            ]
+        ),
+        before: { try await $0.load(query: "ceb") },
+        text: "dom",
+        calls: ["getMe", "listCards", "listCards"], inputs: ["listCards g1 ceb", "listCards g1 dom"], error: .unexpected, result: nil, cards: [cebula], query: "ceb"
+    ),
+    SimilarCase(
+        name: "a search after a removal from the group",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped))), .ok(.init(body: .json(alone)))],
+            listCards: [
+                .ok(.init(body: .json(.init(cards: [cebula])))),
+                .forbidden(.init(body: .json(.init(message: "not a member of this group")))),
+            ]
+        ),
+        before: { try await $0.load(query: "ceb") },
+        text: "dom",
+        calls: ["getMe", "listCards", "listCards", "getMe"], inputs: ["listCards g1 ceb", "listCards g1 dom"], error: nil, result: [], cards: nil, query: ""
+    ),
+    SimilarCase(
+        name: "a search with no group makes no call",
+        answers: .init(getMe: [.ok(.init(body: .json(alone)))]),
+        before: { _ in },
+        text: "dom",
+        calls: ["getMe"], inputs: [], error: nil, result: [], cards: nil, query: ""
+    ),
+]
+
+@MainActor
+@Test(arguments: similarCases)
+func similar(_ c: SimilarCase) async throws {
+    let api = FakeAPI(c.answers)
+    let profile = Profile(api: api)
+    try await profile.load()
+    let cards = Cards(api: api, profile: profile)
+    try await c.before(cards)
+
+    var result: [Components.Schemas.Card]?
+    var thrown: CardError?
+    do {
+        result = try await cards.similar(to: c.text)
+    } catch let error as CardError {
+        thrown = error
+    }
+
+    #expect(thrown == c.error)
+    #expect(result == c.result)
+    #expect(api.calls == c.calls)
+    #expect(api.inputs == c.inputs)
+    #expect(cards.cards == c.cards)
+    #expect(cards.query == c.query)
+}
+
+struct CreateResultCase: Sendable, CustomTestStringConvertible {
+    let name: String
+    let answers: FakeAPI.Answers
+    let result: Components.Schemas.Card?
+
+    var testDescription: String { name }
+}
+
+let createResultCases: [CreateResultCase] = [
+    CreateResultCase(
+        name: "the new card is the result",
+        answers: .init(getMe: [.ok(.init(body: .json(grouped)))], createCard: [.created(.init(body: .json(dom)))]),
+        result: dom
+    ),
+    CreateResultCase(
+        name: "a removal from the group gives no card",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped))), .ok(.init(body: .json(alone)))],
+            createCard: [.forbidden(.init(body: .json(.init(message: "not a member of this group"))))]
+        ),
+        result: nil
+    ),
+]
+
+@MainActor
+@Test(arguments: createResultCases)
+func createResult(_ c: CreateResultCase) async throws {
+    let api = FakeAPI(c.answers)
+    let profile = Profile(api: api)
+    try await profile.load()
+    let cards = Cards(api: api, profile: profile)
+
+    #expect(try await cards.create(CardFields(dom).create) == c.result)
 }
 
 struct DroppedAnswerCase: Sendable, CustomTestStringConvertible {
@@ -402,4 +556,36 @@ func anOlderAnswerIsDropped(_ c: DroppedAnswerCase) async throws {
 
     #expect(api.inputs == c.inputs)
     #expect(cards.cards == [dom])
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func aSearchOfSimilarCardsKeepsTheAnswerOfARunningLoad() async throws {
+    let (signal, release) = AsyncStream<Void>.makeStream()
+    let api = FakeAPI(
+        .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula])))), .ok(.init(body: .json(.init(cards: [dom]))))]
+        ),
+        holdListCards: { call in
+            guard call == 1 else { return }
+            for await _ in signal {}
+        }
+    )
+    let profile = Profile(api: api)
+    try await profile.load()
+    let cards = Cards(api: api, profile: profile)
+
+    let first = Task { try await cards.load(query: "ceb") }
+    while !api.calls.contains("listCards") {
+        await Task.yield()
+    }
+    let result = try await cards.similar(to: "dom")
+    release.finish()
+    try await first.value
+
+    #expect(result == [dom])
+    #expect(api.inputs == ["listCards g1 ceb", "listCards g1 dom"])
+    #expect(cards.cards == [cebula])
+    #expect(cards.query == "ceb")
 }

@@ -89,14 +89,14 @@ struct CardEditView: View {
 /// The form of an AI draft: the save makes a new card.
 struct CardCheckView: View {
     let cards: Cards
-    let saved: () -> Void
+    let saved: (Components.Schemas.Card?) -> Void
 
     @State private var fields: CardFields
     @State private var working = false
     @State private var error = ""
     @State private var failed = false
 
-    init(fields: CardFields, cards: Cards, saved: @escaping () -> Void) {
+    init(fields: CardFields, cards: Cards, saved: @escaping (Components.Schemas.Card?) -> Void) {
         self.cards = cards
         self.saved = saved
         _fields = State(initialValue: fields)
@@ -122,8 +122,7 @@ struct CardCheckView: View {
         working = true
         defer { working = false }
         do {
-            try await cards.create(fields.create)
-            saved()
+            saved(try await cards.create(fields.create))
         } catch {
             self.error = errorMessage(error)
             failed = true
