@@ -8,6 +8,8 @@ import (
 	"log"
 	"os"
 
+	"github.com/anthropics/anthropic-sdk-go/v2"
+	"github.com/anthropics/anthropic-sdk-go/v2/option"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -15,8 +17,10 @@ import (
 	awslambda "github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/api"
+	"github.com/rustatian/jak-tam-to-slowo/backend/internal/claude"
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/db"
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/sesmail"
 )
@@ -39,7 +43,13 @@ func main() {
 	configurationSet := os.Getenv("MAIL_CONFIGURATION_SET")
 	functions := awslambda.NewFromConfig(cfg)
 	jobsFunction := os.Getenv("JOBS_FUNCTION")
-	srv := &api.Server{DB: pool, EmailOf: func(ctx context.Context, sub string) (string, error) {
+	// The key is a SecureString parameter, so the read needs decryption.
+	param, err := ssm.NewFromConfig(cfg).GetParameter(ctx, &ssm.GetParameterInput{Name: aws.String(os.Getenv("ANTHROPIC_KEY_PARAMETER")), WithDecryption: aws.Bool(true)})
+	if err != nil {
+		log.Fatal(err)
+	}
+	client := anthropic.NewClient(option.WithAPIKey(aws.ToString(param.Parameter.Value)))
+	srv := &api.Server{DB: pool, AI: claude.Caller(client), EmailOf: func(ctx context.Context, sub string) (string, error) {
 		// The pool uses email as the username attribute, so AdminGetUser takes the sub as the username.
 		out, err := users.AdminGetUser(ctx, &cognitoidentityprovider.AdminGetUserInput{UserPoolId: &poolID, Username: &sub})
 		if err != nil {

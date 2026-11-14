@@ -2,10 +2,14 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json/v2"
 	"maps"
 	"net/http"
+	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -56,11 +60,120 @@ func TestGrade(t *testing.T) {
 	}
 }
 
+// TestGradePrompt checks that the embedded prompt is the prompt file of the old app, byte for byte.
+func TestGradePrompt(t *testing.T) {
+	const wantSum = "0b625b64391474290f4ae1afda6fa9fc1003aeb004bf2490c86fe7436d4800f1"
+	sum := sha256.Sum256([]byte(gradePrompt))
+	if got := hex.EncodeToString(sum[:]); len(gradePrompt) != 1863 || got != wantSum {
+		t.Errorf("prompt has %d bytes and the SHA-256 %s, want 1863 bytes and %s", len(gradePrompt), got, wantSum)
+	}
+}
+
+func TestGradeOutcome(t *testing.T) {
+	// text is an answer of the model that ends normally.
+	text := func(s string) AIResponse { return AIResponse{StopReason: "end_turn", Text: s} }
+	const dobrze = `{"grade":"correct","explanation":"Dobrze."}`
+	tests := []struct {
+		name      string
+		answer    AIResponse
+		callErr   error
+		want      aiGrade
+		wantCause string
+	}{
+		{name: "a grade correct", answer: text(dobrze), want: aiGrade{grade: Correct, explanation: "Dobrze."}},
+		{name: "a grade almost", answer: text(`{"grade":"almost","explanation":"Popraw literę ł."}`), want: aiGrade{grade: Almost, explanation: "Popraw literę ł."}},
+		{name: "a grade again", answer: text(`{"grade":"again","explanation":"To inne słowo."}`), want: aiGrade{grade: Again, explanation: "To inne słowo."}},
+		{name: "a grade with a capital letter", answer: text(`{"grade":"Correct","explanation":"Dobrze."}`), want: aiGrade{grade: Correct, explanation: "Dobrze."}},
+		{name: "spaces at the ends of the explanation", answer: text(`{"grade":"correct","explanation":" Dobrze. "}`), want: aiGrade{grade: Correct, explanation: "Dobrze."}},
+		{name: "a line break in the explanation", answer: text(`{"grade":"again","explanation":"To inne słowo.\nSpróbuj jeszcze raz."}`),
+			want: aiGrade{grade: Again, explanation: "To inne słowo.\nSpróbuj jeszcze raz."}},
+		{name: "an explanation of 500 letters", answer: text(`{"grade":"correct","explanation":"` + strings.Repeat("ą", 500) + `"}`),
+			want: aiGrade{grade: Correct, explanation: strings.Repeat("ą", 500)}},
+		{name: "an explanation of 501 letters", answer: text(`{"grade":"correct","explanation":"` + strings.Repeat("ą", 501) + `"}`), wantCause: "explanation"},
+		{name: "a blank explanation", answer: text(`{"grade":"correct","explanation":" "}`), wantCause: "explanation"},
+		{name: "a grade outside the three", answer: text(`{"grade":"good","explanation":"Dobrze."}`), wantCause: "grade"},
+		{name: "a text that is not JSON", answer: text("Dobrze."), wantCause: "not the JSON of the schema"},
+		{name: "a refusal", answer: AIResponse{StopReason: "refusal", Text: dobrze}, wantCause: "refusal"},
+		{name: "the output limit", answer: AIResponse{StopReason: "max_tokens", Text: dobrze}, wantCause: "stop reason"},
+		{name: "a failed call", callErr: &AIError{Status: 529}, wantCause: "call"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, cause := gradeOutcome(tt.answer, tt.callErr)
+			if got != tt.want || cause != tt.wantCause {
+				t.Errorf("gradeOutcome = %+v, %q, want %+v, %q", got, cause, tt.want, tt.wantCause)
+			}
+		})
+	}
+}
+
+func TestGradeRequest(t *testing.T) {
+	// The properties keep their order on the wire. The top level is a Go map, so Deterministic writes its keys sorted.
+	const wantSchema = `{"additionalProperties":false,"properties":{"grade":{"type":"string","enum":["correct","almost","again"]},"explanation":{"type":"string"}},"required":["grade","explanation"],"type":"object"}`
+	dom := Card{Pl: "Dom", Ru: "Дом", ExamplePl: "To jest dom.", ExampleRu: "Это дом.", MeaningRu: "здание", AlternativesPl: []string{"Budynek"}}
+	tests := []struct {
+		name      string
+		direction Direction
+		wantInput string // the user message
+	}{
+		{name: "ru-pl", direction: RuPl,
+			wantInput: `{"card":{"pl":"Dom","ru":"Дом","examplePl":"To jest dom.","exampleRu":"Это дом.","meaningRu":"здание","alternativesPl":["Budynek"],"alternativesRu":[]},"direction":"ru-pl","answer":" Chata "}`},
+		{name: "pl-ru", direction: PlRu,
+			wantInput: `{"card":{"pl":"Dom","ru":"Дом","examplePl":"To jest dom.","exampleRu":"Это дом.","meaningRu":"здание","alternativesPl":["Budynek"],"alternativesRu":[]},"direction":"pl-ru","answer":" Chata "}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls []AIRequest
+			var deadline time.Time
+			var hasDeadline bool
+			srv := &Server{AI: func(ctx context.Context, req AIRequest) (AIResponse, error) {
+				calls = append(calls, req)
+				deadline, hasDeadline = ctx.Deadline()
+				return AIResponse{StopReason: "end_turn", Text: `{"grade":"correct","explanation":"Dobrze."}`}, nil
+			}}
+
+			before := time.Now()
+			got, ok := srv.gradeWithAI(context.Background(), subOla, dom, tt.direction, " Chata ")
+			after := time.Now()
+			if want := (aiGrade{grade: Correct, explanation: "Dobrze."}); got != want || !ok {
+				t.Errorf("gradeWithAI = %+v, %t, want %+v, true", got, ok, want)
+			}
+			if len(calls) != 1 {
+				t.Fatalf("calls = %d, want 1", len(calls))
+			}
+			req := calls[0]
+			// The schema is compared as text, because the model writes its answer in the order of the schema.
+			gotSchema, err := json.Marshal(req.Schema, json.Deterministic(true))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(gotSchema) != wantSchema {
+				t.Errorf("schema = %s, want %s", gotSchema, wantSchema)
+			}
+			req.Schema = nil
+			if want := (AIRequest{Model: "claude-sonnet-5-5", Effort: "low", MaxTokens: 16000, System: gradePrompt, Input: tt.wantInput}); !reflect.DeepEqual(req, want) {
+				t.Errorf("request = %+v, want %+v", req, want)
+			}
+			if earliest, latest := before.Add(15*time.Second), after.Add(15*time.Second); !hasDeadline || deadline.Before(earliest) || deadline.After(latest) {
+				t.Errorf("deadline = %v (set: %t), want from %v to %v", deadline, hasDeadline, earliest, latest)
+			}
+		})
+	}
+}
+
 // The attempt IDs of the review tests.
 const (
 	attemptA1 = "00000000-0000-0000-0000-0000000000a1"
 	attemptA2 = "00000000-0000-0000-0000-0000000000a2"
 )
+
+// giveConsent gives Ola of groupFixture the AI consent.
+const giveConsent = "UPDATE users SET ai_consent_at = now() WHERE id = 'sub-ola';"
+
+// modelAnswer is an answer of the model with the grade g and the explanation e.
+func modelAnswer(g, e string) AIResponse {
+	return AIResponse{StopReason: "end_turn", Text: `{"grade":"` + g + `","explanation":"` + e + `"}`}
+}
 
 // reviewBody is the JSON body of a review with the five members.
 func reviewBody(attemptID, cardID string, progressVersion int, direction Direction, answer string) string {
@@ -176,16 +289,23 @@ func TestCreateReview(t *testing.T) {
 		answerRule    = `{"message":"answer must have at most 500 characters"}`
 		notCurrent    = `{"message":"progressVersion is not current"}`
 		otherCard     = `{"message":"attemptId is used for another card"}`
+		noAIGrade     = `{"message":"AI grading is not available"}`
 	)
+	// modelInput is the input of the model for the answer chata to K1 in the direction ru-pl.
+	const modelInput = `{"card":{"pl":"dom","ru":"дом","examplePl":"To jest dom.","exampleRu":"Это дом.","meaningRu":"здание","alternativesPl":["domek"],"alternativesRu":["жилище"]},"direction":"ru-pl","answer":"chata"}`
 	tests := []struct {
-		name       string
-		setup      string // the SQL text that runs after groupFixture and cardFixture
-		sub        string
-		body       string
-		wantStatus int
-		wantBody   string // the body for a status that is not 200 or 201
-		wantReview Review // the body for 200 and 201
-		wantRow    wantProgress
+		name        string
+		setup       string // the SQL text that runs after groupFixture and cardFixture
+		sub         string
+		body        string
+		model       AIResponse // the answer of the fake model
+		modelErr    error
+		duringModel string // the SQL text that the fake model runs before it answers
+		wantStatus  int
+		wantBody    string // the body for a status that is not 200 or 201
+		wantReview  Review // the body for 200 and 201
+		wantRow     wantProgress
+		wantCalls   int // the calls of the model
 	}{
 		{name: "the first correct answer makes the progress row", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"),
 			wantStatus: 201, wantReview: Review{Grade: Correct, Correction: "dom"}, wantRow: wantProgress{1, 0, "new", "", 1}},
@@ -271,6 +391,42 @@ func TestCreateReview(t *testing.T) {
 			wantStatus: 404, wantBody: cardNotFound},
 		{name: "a member of another group is refused", sub: subEwa, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"), wantStatus: 403, wantBody: notMember},
 		{name: "a user without a group is refused", sub: subJan, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"), wantStatus: 403, wantBody: notMember},
+		{name: "the model grades an answer that no term matches", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "chata"),
+			model:      modelAnswer("correct", "To też znaczy dom."),
+			wantStatus: 201, wantReview: Review{Grade: Correct, Correction: "dom", Explanation: new("To też znaczy dom.")}, wantRow: wantProgress{1, 0, "new", "", 1}, wantCalls: 1},
+		{name: "a grade almost of the model is a miss", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "chata"),
+			model:      modelAnswer("almost", "Popraw formę."),
+			wantStatus: 201, wantReview: Review{Grade: Almost, Correction: "dom", Explanation: new("Popraw formę.")}, wantRow: wantProgress{0, 1, "", "new", 1}, wantCalls: 1},
+		{name: "a grade again of the model is a miss", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "chata"),
+			model:      modelAnswer("again", "To inne słowo."),
+			wantStatus: 201, wantReview: Review{Grade: Again, Correction: "dom", Explanation: new("To inne słowo.")}, wantRow: wantProgress{0, 1, "", "new", 1}, wantCalls: 1},
+		{name: "consent and an exact answer", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"),
+			wantStatus: 201, wantReview: Review{Grade: Correct, Correction: "dom"}, wantRow: wantProgress{1, 0, "new", "", 1}},
+		{name: "consent and an almost answer", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dóm"),
+			wantStatus: 201, wantReview: Review{Grade: Almost, Correction: "dom"}, wantRow: wantProgress{0, 1, "", "new", 1}},
+		{name: "consent and an empty answer", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, ""),
+			wantStatus: 201, wantReview: Review{Grade: Again, Correction: "dom"}, wantRow: wantProgress{0, 1, "", "new", 1}},
+		{name: "consent and a stored attempt", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "chata"),
+			setup: giveConsent + addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 0, 1, NULL, now() - interval '1 hour', 1);" +
+				addReview + "('sub-ola', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000001', 'again')",
+			wantStatus: 200, wantReview: Review{Grade: Again, Correction: "dom"}, wantRow: wantProgress{0, 1, "", "kept", 1}},
+		{name: "consent and a stale version", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 1, RuPl, "chata"), wantStatus: 409, wantBody: notCurrent},
+		{name: "consent and a card of another group", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK3.Id, 0, RuPl, "chata"), wantStatus: 404, wantBody: cardNotFound},
+		{name: "a failed call of the model", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "chata"),
+			modelErr: &AIError{Status: 529}, wantStatus: 503, wantBody: noAIGrade, wantCalls: 1},
+		{name: "the attempt is stored while the model grades", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "chata"),
+			model: modelAnswer("correct", "x"),
+			duringModel: addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 0, 1, NULL, now(), 1);" +
+				addReview + "('sub-ola', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000001', 'again')",
+			wantStatus: 200, wantReview: Review{Grade: Again, Correction: "dom"}, wantRow: wantProgress{0, 1, "", "kept", 1}, wantCalls: 1},
+		{name: "another answer is counted while the model grades", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "chata"),
+			model: modelAnswer("correct", "x"),
+			duringModel: addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 0, 1, NULL, now(), 1);" +
+				addReview + "('sub-ola', '00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-000000000001', 'again')",
+			wantStatus: 409, wantBody: notCurrent, wantRow: wantProgress{0, 1, "", "kept", 1}, wantCalls: 1},
+		{name: "the card gets the answer as a term while the model grades", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "chata"),
+			model: modelAnswer("again", "To inne słowo."), duringModel: "UPDATE cards SET pl = 'Chata' WHERE id = '00000000-0000-0000-0000-000000000001'",
+			wantStatus: 201, wantReview: Review{Grade: Correct, Correction: "Chata"}, wantRow: wantProgress{1, 0, "new", "", 1}, wantCalls: 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -282,6 +438,20 @@ func TestCreateReview(t *testing.T) {
 			key := progressKey{tt.sub, cardK1.Id}
 			before := progressRows(t, pool)
 			wantReviews := reviewRows(t, pool)
+			// The rows of duringModel are not changes of the request, so the fake reads the snapshots again.
+			var calls atomic.Int64
+			srv.AI = func(_ context.Context, req AIRequest) (AIResponse, error) {
+				calls.Add(1)
+				if req.Input != modelInput {
+					t.Errorf("input of the model = %s, want %s", req.Input, modelInput)
+				}
+				if _, err := pool.Exec(ctx, tt.duringModel); err != nil {
+					t.Fatal(err)
+				}
+				before = progressRows(t, pool)
+				wantReviews = reviewRows(t, pool)
+				return tt.model, tt.modelErr
+			}
 
 			start := time.Now()
 			resp, err := srv.Handle(ctx, groupRequest("POST /v1/groups/{groupId}/reviews", tt.sub, tt.body, map[string]string{"groupId": rodzina}))
@@ -297,11 +467,14 @@ func TestCreateReview(t *testing.T) {
 				if err := json.Unmarshal([]byte(resp.Body), &review); err != nil {
 					t.Fatalf("body %s: %v", resp.Body, err)
 				}
-				if review != tt.wantReview {
-					t.Errorf("review = %+v, want %+v", review, tt.wantReview)
+				if !reflect.DeepEqual(review, tt.wantReview) {
+					t.Errorf("review = %s, want %+v", resp.Body, tt.wantReview)
 				}
 			} else if resp.Body != tt.wantBody {
 				t.Errorf("body = %s, want %s", resp.Body, tt.wantBody)
+			}
+			if got := int(calls.Load()); got != tt.wantCalls {
+				t.Errorf("calls of the model = %d, want %d", got, tt.wantCalls)
 			}
 			after := progressRows(t, pool)
 			checkProgress(t, after[key], before[key], tt.wantRow, start, end)
@@ -334,27 +507,36 @@ func TestCreateReviewAtTheSameInstant(t *testing.T) {
 		setup                       string // the SQL text that runs after groupFixture and cardFixture
 		lock                        string // the SQL text that locks a row in the held transaction
 		progressVersion             int
+		firstAnswer                 string
 		secondAttempt, secondAnswer string
 		wantFirst, wantSecond       int
+		wantSecondReview            Review // the body of a second status 200
 		wantRow                     wantProgress
 		wantReviews                 int // the reviews rows of Ola after the two requests
+		wantCalls                   int // the calls of the model
 	}{
 		{name: "a card with a progress row",
 			setup: "INSERT INTO card_progress (user_id, card_id, correct, incorrect, last_correct_at, last_incorrect_at, version) " +
 				"VALUES ('sub-ola', '00000000-0000-0000-0000-000000000001', 1, 0, now() - interval '2 days', NULL, 1)",
 			lock:            "SELECT version FROM card_progress WHERE card_id = '00000000-0000-0000-0000-000000000001' AND user_id = 'sub-ola' FOR UPDATE",
-			progressVersion: 1, secondAttempt: attemptA2, secondAnswer: "kot", wantFirst: 201, wantSecond: 409, wantRow: wantProgress{2, 0, "new", "", 2}, wantReviews: 1},
+			progressVersion: 1, firstAnswer: "dom", secondAttempt: attemptA2, secondAnswer: "kot", wantFirst: 201, wantSecond: 409, wantRow: wantProgress{2, 0, "new", "", 2}, wantReviews: 1},
 		{name: "a new card",
 			lock:            "SELECT id FROM cards WHERE id = '00000000-0000-0000-0000-000000000001' FOR UPDATE",
-			progressVersion: 0, secondAttempt: attemptA2, secondAnswer: "kot", wantFirst: 201, wantSecond: 409, wantRow: wantProgress{1, 0, "new", "", 1}, wantReviews: 1},
+			progressVersion: 0, firstAnswer: "dom", secondAttempt: attemptA2, secondAnswer: "kot", wantFirst: 201, wantSecond: 409, wantRow: wantProgress{1, 0, "new", "", 1}, wantReviews: 1},
 		{name: "one attempt sent two times, a card with a progress row",
 			setup: "INSERT INTO card_progress (user_id, card_id, correct, incorrect, last_correct_at, last_incorrect_at, version) " +
 				"VALUES ('sub-ola', '00000000-0000-0000-0000-000000000001', 1, 0, now() - interval '2 days', NULL, 1)",
 			lock:            "SELECT version FROM card_progress WHERE card_id = '00000000-0000-0000-0000-000000000001' AND user_id = 'sub-ola' FOR UPDATE",
-			progressVersion: 1, secondAttempt: attemptA1, secondAnswer: "dom", wantFirst: 201, wantSecond: 200, wantRow: wantProgress{2, 0, "new", "", 2}, wantReviews: 1},
+			progressVersion: 1, firstAnswer: "dom", secondAttempt: attemptA1, secondAnswer: "dom", wantFirst: 201, wantSecond: 200,
+			wantSecondReview: Review{Grade: Correct, Correction: "dom"}, wantRow: wantProgress{2, 0, "new", "", 2}, wantReviews: 1},
 		{name: "one attempt sent two times, a new card",
 			lock:            "SELECT id FROM cards WHERE id = '00000000-0000-0000-0000-000000000001' FOR UPDATE",
-			progressVersion: 0, secondAttempt: attemptA1, secondAnswer: "dom", wantFirst: 201, wantSecond: 200, wantRow: wantProgress{1, 0, "new", "", 1}, wantReviews: 1},
+			progressVersion: 0, firstAnswer: "dom", secondAttempt: attemptA1, secondAnswer: "dom", wantFirst: 201, wantSecond: 200,
+			wantSecondReview: Review{Grade: Correct, Correction: "dom"}, wantRow: wantProgress{1, 0, "new", "", 1}, wantReviews: 1},
+		{name: "one attempt sent two times, the model grades both", setup: giveConsent,
+			lock:            "SELECT id FROM cards WHERE id = '00000000-0000-0000-0000-000000000001' FOR UPDATE",
+			progressVersion: 0, firstAnswer: "chata", secondAttempt: attemptA1, secondAnswer: "chata", wantFirst: 201, wantSecond: 200,
+			wantSecondReview: Review{Grade: Almost, Correction: "dom"}, wantRow: wantProgress{0, 1, "", "new", 1}, wantReviews: 1, wantCalls: 2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -362,6 +544,12 @@ func TestCreateReviewAtTheSameInstant(t *testing.T) {
 			pool, srv, rodzina, _ := groupFixture(t)
 			if _, err := pool.Exec(ctx, cardFixture+";"+tt.setup); err != nil {
 				t.Fatal(err)
+			}
+			// The two requests call the model in two goroutines.
+			var calls atomic.Int64
+			srv.AI = func(context.Context, AIRequest) (AIResponse, error) {
+				calls.Add(1)
+				return modelAnswer("almost", "Popraw formę."), nil
 			}
 			key := progressKey{subOla, cardK1.Id}
 			before := progressRows(t, pool)
@@ -386,7 +574,7 @@ func TestCreateReviewAtTheSameInstant(t *testing.T) {
 				t.Fatal(err)
 			}
 			start := time.Now()
-			first := send(attemptA1, "dom")
+			first := send(attemptA1, tt.firstAnswer)
 			waitForLockWaits(t, pool, 1)
 			second := send(tt.secondAttempt, tt.secondAnswer)
 			waitForLockWaits(t, pool, 2)
@@ -406,9 +594,12 @@ func TestCreateReviewAtTheSameInstant(t *testing.T) {
 				if err := json.Unmarshal([]byte(resp.Body), &review); err != nil {
 					t.Fatalf("body %s: %v", resp.Body, err)
 				}
-				if want := (Review{Grade: Correct, Correction: "dom"}); review != want {
-					t.Errorf("review of the second request = %+v, want %+v", review, want)
+				if !reflect.DeepEqual(review, tt.wantSecondReview) {
+					t.Errorf("review of the second request = %s, want %+v", resp.Body, tt.wantSecondReview)
 				}
+			}
+			if got := int(calls.Load()); got != tt.wantCalls {
+				t.Errorf("calls of the model = %d, want %d", got, tt.wantCalls)
 			}
 			end := time.Now()
 			checkProgress(t, progressRows(t, pool)[key], before[key], tt.wantRow, start, end)
