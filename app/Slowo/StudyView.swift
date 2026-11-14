@@ -15,12 +15,15 @@ struct StudyView: View {
     private var canCheck: Bool { fits(text, 500) && !working }
 
     /// The text of the field. An edit of the learner removes the error.
+    /// The field also calls the setter when it gets the focus, with the same text.
     private var fieldText: Binding<String> {
         Binding {
             text
         } set: {
+            if $0 != text {
+                error = nil
+            }
             text = $0
-            error = nil
         }
     }
 
