@@ -2,9 +2,12 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json/v2"
 	"maps"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +54,107 @@ func TestGrade(t *testing.T) {
 			got := grade(tt.card, tt.direction, tt.answer)
 			if got.Grade != tt.wantGrade || got.Correction != tt.wantCorrection {
 				t.Errorf("grade(%q) = %+v, want {Grade:%s Correction:%s}", tt.answer, got, tt.wantGrade, tt.wantCorrection)
+			}
+		})
+	}
+}
+
+// TestGradePrompt checks that the embedded prompt is the prompt file of the old app, byte for byte.
+func TestGradePrompt(t *testing.T) {
+	const wantSum = "0b625b64391474290f4ae1afda6fa9fc1003aeb004bf2490c86fe7436d4800f1"
+	sum := sha256.Sum256([]byte(gradePrompt))
+	if got := hex.EncodeToString(sum[:]); len(gradePrompt) != 1863 || got != wantSum {
+		t.Errorf("prompt has %d bytes and the SHA-256 %s, want 1863 bytes and %s", len(gradePrompt), got, wantSum)
+	}
+}
+
+func TestGradeOutcome(t *testing.T) {
+	// text is an answer of the model that ends normally.
+	text := func(s string) AIResponse { return AIResponse{StopReason: "end_turn", Text: s} }
+	const dobrze = `{"grade":"correct","explanation":"Dobrze."}`
+	tests := []struct {
+		name      string
+		answer    AIResponse
+		callErr   error
+		want      aiGrade
+		wantCause string
+	}{
+		{name: "a grade correct", answer: text(dobrze), want: aiGrade{grade: Correct, explanation: "Dobrze."}},
+		{name: "a grade almost", answer: text(`{"grade":"almost","explanation":"Popraw literę ł."}`), want: aiGrade{grade: Almost, explanation: "Popraw literę ł."}},
+		{name: "a grade again", answer: text(`{"grade":"again","explanation":"To inne słowo."}`), want: aiGrade{grade: Again, explanation: "To inne słowo."}},
+		{name: "a grade with a capital letter", answer: text(`{"grade":"Correct","explanation":"Dobrze."}`), want: aiGrade{grade: Correct, explanation: "Dobrze."}},
+		{name: "spaces at the ends of the explanation", answer: text(`{"grade":"correct","explanation":" Dobrze. "}`), want: aiGrade{grade: Correct, explanation: "Dobrze."}},
+		{name: "a line break in the explanation", answer: text(`{"grade":"again","explanation":"To inne słowo.\nSpróbuj jeszcze raz."}`),
+			want: aiGrade{grade: Again, explanation: "To inne słowo.\nSpróbuj jeszcze raz."}},
+		{name: "an explanation of 500 letters", answer: text(`{"grade":"correct","explanation":"` + strings.Repeat("ą", 500) + `"}`),
+			want: aiGrade{grade: Correct, explanation: strings.Repeat("ą", 500)}},
+		{name: "an explanation of 501 letters", answer: text(`{"grade":"correct","explanation":"` + strings.Repeat("ą", 501) + `"}`), wantCause: "explanation"},
+		{name: "a blank explanation", answer: text(`{"grade":"correct","explanation":" "}`), wantCause: "explanation"},
+		{name: "a grade outside the three", answer: text(`{"grade":"good","explanation":"Dobrze."}`), wantCause: "grade"},
+		{name: "a text that is not JSON", answer: text("Dobrze."), wantCause: "not the JSON of the schema"},
+		{name: "a refusal", answer: AIResponse{StopReason: "refusal", Text: dobrze}, wantCause: "refusal"},
+		{name: "the output limit", answer: AIResponse{StopReason: "max_tokens", Text: dobrze}, wantCause: "stop reason"},
+		{name: "a failed call", callErr: &AIError{Status: 529}, wantCause: "call"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, cause := gradeOutcome(tt.answer, tt.callErr)
+			if got != tt.want || cause != tt.wantCause {
+				t.Errorf("gradeOutcome = %+v, %q, want %+v, %q", got, cause, tt.want, tt.wantCause)
+			}
+		})
+	}
+}
+
+func TestGradeRequest(t *testing.T) {
+	// The properties keep their order on the wire. The top level is a Go map, so Deterministic writes its keys sorted.
+	const wantSchema = `{"additionalProperties":false,"properties":{"grade":{"type":"string","enum":["correct","almost","again"]},"explanation":{"type":"string"}},"required":["grade","explanation"],"type":"object"}`
+	dom := Card{Pl: "Dom", Ru: "Дом", ExamplePl: "To jest dom.", ExampleRu: "Это дом.", MeaningRu: "здание", AlternativesPl: []string{"Budynek"}}
+	tests := []struct {
+		name      string
+		direction Direction
+		wantInput string // the user message
+	}{
+		{name: "ru-pl", direction: RuPl,
+			wantInput: `{"card":{"pl":"Dom","ru":"Дом","examplePl":"To jest dom.","exampleRu":"Это дом.","meaningRu":"здание","alternativesPl":["Budynek"],"alternativesRu":[]},"direction":"ru-pl","answer":" Chata "}`},
+		{name: "pl-ru", direction: PlRu,
+			wantInput: `{"card":{"pl":"Dom","ru":"Дом","examplePl":"To jest dom.","exampleRu":"Это дом.","meaningRu":"здание","alternativesPl":["Budynek"],"alternativesRu":[]},"direction":"pl-ru","answer":" Chata "}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls []AIRequest
+			var deadline time.Time
+			var hasDeadline bool
+			srv := &Server{AI: func(ctx context.Context, req AIRequest) (AIResponse, error) {
+				calls = append(calls, req)
+				deadline, hasDeadline = ctx.Deadline()
+				return AIResponse{StopReason: "end_turn", Text: `{"grade":"correct","explanation":"Dobrze."}`}, nil
+			}}
+
+			before := time.Now()
+			got, ok := srv.gradeWithAI(context.Background(), subOla, dom, tt.direction, " Chata ")
+			after := time.Now()
+			if want := (aiGrade{grade: Correct, explanation: "Dobrze."}); got != want || !ok {
+				t.Errorf("gradeWithAI = %+v, %t, want %+v, true", got, ok, want)
+			}
+			if len(calls) != 1 {
+				t.Fatalf("calls = %d, want 1", len(calls))
+			}
+			req := calls[0]
+			// The schema is compared as text, because the model writes its answer in the order of the schema.
+			gotSchema, err := json.Marshal(req.Schema, json.Deterministic(true))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(gotSchema) != wantSchema {
+				t.Errorf("schema = %s, want %s", gotSchema, wantSchema)
+			}
+			req.Schema = nil
+			if want := (AIRequest{Model: "claude-sonnet-5-5", Effort: "low", MaxTokens: 16000, System: gradePrompt, Input: tt.wantInput}); !reflect.DeepEqual(req, want) {
+				t.Errorf("request = %+v, want %+v", req, want)
+			}
+			if earliest, latest := before.Add(15*time.Second), after.Add(15*time.Second); !hasDeadline || deadline.Before(earliest) || deadline.After(latest) {
+				t.Errorf("deadline = %v (set: %t), want from %v to %v", deadline, hasDeadline, earliest, latest)
 			}
 		})
 	}
