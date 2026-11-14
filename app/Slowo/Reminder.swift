@@ -84,10 +84,10 @@ final class Reminder {
     private func apply() async {
         // The interval must be greater than zero.
         // https://developer.apple.com/documentation/usernotifications/untimeintervalnotificationtrigger/init(timeinterval:repeats:)
-        if isOn, let dueAt, dueAt.timeIntervalSince(now()) > 0 {
+        if isOn, let interval = dueAt?.timeIntervalSince(now()), interval > 0 {
             let content = UNMutableNotificationContent()
             content.body = "Masz fiszki do powtórki."
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: dueAt.timeIntervalSince(now()), repeats: false)
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
             try? await center.add(UNNotificationRequest(identifier: Reminder.id, content: content, trigger: trigger))
         } else {
             center.removePendingNotificationRequests(withIdentifiers: [Reminder.id])
