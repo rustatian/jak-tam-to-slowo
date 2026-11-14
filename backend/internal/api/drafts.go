@@ -6,11 +6,13 @@ import (
 	_ "embed"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/jackc/pgx/v5"
@@ -174,7 +176,7 @@ func (s *Server) RunJob(ctx context.Context, event JobEvent) error {
 	resp, callErr := s.AI(callCtx, AIRequest{Model: "claude-sonnet-5-5", Effort: "high", MaxTokens: 16000, System: draftPrompt, Schema: draftSchema(input), Input: string(text)})
 	duration := time.Since(start)
 	cancel()
-	result, fail := draftOutcome(input, resp, callErr)
+	result, fail, cause := draftOutcome(input, resp, callErr)
 	// The end write uses the context of the event, because the call can use all 50 seconds of its own context.
 	err = db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
 		const running = " WHERE user_id = $1 AND id::text = $2 AND status = 'running'"
@@ -185,8 +187,8 @@ func (s *Server) RunJob(ctx context.Context, event JobEvent) error {
 		_, err := tx.Exec(ctx, "UPDATE jobs SET status = 'done', result = $3"+running, event.UserID, event.JobID, result)
 		return err
 	})
-	// The line has no text of the learner and no text of the answer.
-	level, args := slog.LevelInfo, []any{"jobId", event.JobID, "userId", event.UserID, "outcome", cmp.Or(string(fail), "done"), "model", resp.Model,
+	// The line has no text of the learner and no text of the answer: cause names the broken rule and gives counts.
+	level, args := slog.LevelInfo, []any{"jobId", event.JobID, "userId", event.UserID, "outcome", cmp.Or(string(fail), "done"), "cause", cause, "model", resp.Model,
 		"stopReason", resp.StopReason, "duration", duration, "requestId", resp.RequestID, "inferenceGeo", resp.InferenceGeo, "attempts", resp.Attempts}
 	if callErr != nil {
 		level, args = slog.LevelError, append(args, "error", callErr)
@@ -205,17 +207,17 @@ func (s *Server) RunJob(ctx context.Context, event JobEvent) error {
 }
 
 // draftOutcome checks the answer of the call for the input of a draft job. fail is the cause of a failed job; when it
-// is empty, the job is done with result.
+// is empty, the job is done with result. cause is the rule that an invalid answer broke, for the log.
 // https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons
-func draftOutcome(input DraftCreate, resp AIResponse, callErr error) (result map[string]any, fail DraftError) {
+func draftOutcome(input DraftCreate, resp AIResponse, callErr error) (result map[string]any, fail DraftError, cause string) {
 	switch {
 	case callErr != nil:
-		return nil, Unavailable
+		return nil, Unavailable, ""
 	// A refusal can come with a text, so the stop reason is read first.
 	case resp.StopReason == "refusal":
-		return nil, Refused
+		return nil, Refused, ""
 	case resp.StopReason != "end_turn":
-		return nil, Invalid
+		return nil, Invalid, "stop reason"
 	}
 	var answer struct {
 		Result struct {
@@ -225,23 +227,33 @@ func draftOutcome(input DraftCreate, resp AIResponse, callErr error) (result map
 		} `json:"result"`
 	}
 	if err := json.Unmarshal([]byte(resp.Text), &answer, json.RejectUnknownMembers(true)); err != nil {
-		return nil, Invalid
+		return nil, Invalid, "not the JSON of the schema"
 	}
 	r := answer.Result
 	switch {
 	case strings.EqualFold(r.Kind, "draft") && r.Card != nil && r.Choices == nil:
 		c := r.Card
 		// checkCard lets a nil field pass, and a card needs each of the seven fields.
-		if c.Pl == nil || c.Ru == nil || c.ExamplePl == nil || c.ExampleRu == nil || c.MeaningRu == nil || c.AlternativesPl == nil || c.AlternativesRu == nil ||
-			checkCard(c) != "" {
-			return nil, Invalid
+		if c.Pl == nil || c.Ru == nil || c.ExamplePl == nil || c.ExampleRu == nil || c.MeaningRu == nil || c.AlternativesPl == nil || c.AlternativesRu == nil {
+			return nil, Invalid, "a card field is missing"
 		}
-		return map[string]any{"card": c}, ""
+		if msg := checkCard(c); msg != "" {
+			return nil, Invalid, msg
+		}
+		return map[string]any{"card": c}, "", ""
 	// Meanings are only for a text without a picked meaning. checkTerms trims each meaning and allows at most 8. The
 	// sorted list without repeats is shorter when two trimmed meanings are equal.
 	case strings.EqualFold(r.Kind, "choices") && r.Card == nil && input.MeaningRu == nil && len(r.Choices) >= 2 && checkTerms(&r.Choices) &&
 		len(slices.Compact(slices.Sorted(slices.Values(r.Choices)))) == len(r.Choices):
-		return map[string]any{"choices": r.Choices}, ""
+		return map[string]any{"choices": r.Choices}, "", ""
 	}
-	return nil, Invalid
+	longest := 0
+	terms := make([]string, len(r.Choices))
+	for i, choice := range r.Choices {
+		terms[i] = strings.TrimSpace(choice)
+		longest = max(longest, utf8.RuneCountInString(terms[i]))
+	}
+	slices.Sort(terms)
+	return nil, Invalid, fmt.Sprintf("%d choices, %d distinct, the longest has %d characters, card %t, meaning %t",
+		len(terms), len(slices.Compact(terms)), longest, r.Card != nil, input.MeaningRu != nil)
 }

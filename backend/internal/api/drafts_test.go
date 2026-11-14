@@ -381,6 +381,54 @@ func TestRunJob(t *testing.T) {
 	}
 }
 
+// TestDraftOutcomeCause checks the cause that the log line of a draft job gets for an answer of the model.
+func TestDraftOutcomeCause(t *testing.T) {
+	answer := func(result string) AIResponse {
+		return AIResponse{StopReason: "end_turn", Text: `{"result":` + result + `}`}
+	}
+	draft := func(oldNew ...string) AIResponse {
+		return answer(`{"kind":"draft","card":` + strings.NewReplacer(oldNew...).Replace(draftCard) + `}`)
+	}
+	choices := func(list string) AIResponse { return answer(`{"kind":"choices","choices":` + list + `}`) }
+	meaning := "Овощ"
+	tests := []struct {
+		name      string
+		input     DraftCreate
+		answer    AIResponse
+		wantFail  DraftError
+		wantCause string
+	}{
+		{name: "a card has no cause", answer: draft(), wantFail: "", wantCause: ""},
+		{name: "a refusal has no cause", answer: AIResponse{StopReason: "refusal"}, wantFail: Refused, wantCause: ""},
+		{name: "the output limit", answer: AIResponse{StopReason: "max_tokens", Text: draft().Text}, wantFail: Invalid, wantCause: "stop reason"},
+		{name: "a text that is not JSON", answer: AIResponse{StopReason: "end_turn", Text: "Słowo"}, wantFail: Invalid, wantCause: "not the JSON of the schema"},
+		{name: "a missing card field", answer: draft(`,"alternativesRu":[]`, ""), wantFail: Invalid, wantCause: "a card field is missing"},
+		{name: "a meaning of 201 letters", answer: draft(`"meaningRu":"Единица речи"`, `"meaningRu":"`+strings.Repeat("я", 201)+`"`), wantFail: Invalid,
+			wantCause: "meaningRu must have 1 to 200 characters"},
+		{name: "9 alternatives", answer: draft(`["Wyraz"]`, `["w1","w2","w3","w4","w5","w6","w7","w8","w9"]`), wantFail: Invalid,
+			wantCause: "alternativesPl must have at most 8 terms of 1 to 200 characters"},
+		{name: "9 choices", answer: choices(`["м1","м2","м3","м4","м5","м6","м7","м8","м9"]`), wantFail: Invalid,
+			wantCause: "9 choices, 9 distinct, the longest has 2 characters, card false, meaning false"},
+		{name: "a choice of 201 letters", answer: choices(`["Овощ","` + strings.Repeat("я", 201) + `"]`), wantFail: Invalid,
+			wantCause: "2 choices, 2 distinct, the longest has 201 characters, card false, meaning false"},
+		{name: "two equal choices", answer: choices(`["Овощ"," Овощ "]`), wantFail: Invalid,
+			wantCause: "2 choices, 1 distinct, the longest has 4 characters, card false, meaning false"},
+		{name: "choices for an input with a meaning", input: DraftCreate{Text: "лук", MeaningRu: &meaning}, answer: choices(`["Овощ","Оружие"]`), wantFail: Invalid,
+			wantCause: "2 choices, 2 distinct, the longest has 6 characters, card false, meaning true"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, fail, cause := draftOutcome(tt.input, tt.answer, nil)
+			if fail != tt.wantFail {
+				t.Errorf("fail = %q, want %q", fail, tt.wantFail)
+			}
+			if cause != tt.wantCause {
+				t.Errorf("cause = %q, want %q", cause, tt.wantCause)
+			}
+		})
+	}
+}
+
 func TestRunJobRequest(t *testing.T) {
 	// The two forms of the result, and the schema of an answer with the result form.
 	const (
