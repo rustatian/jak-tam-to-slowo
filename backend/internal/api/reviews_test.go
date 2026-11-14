@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -55,11 +56,45 @@ func TestGrade(t *testing.T) {
 	}
 }
 
-// reviewBody is the JSON body of a review with the four members.
-func reviewBody(cardID string, progressVersion int, direction Direction, answer string) string {
+// The attempt IDs of the review tests.
+const (
+	attemptA1 = "00000000-0000-0000-0000-0000000000a1"
+	attemptA2 = "00000000-0000-0000-0000-0000000000a2"
+)
+
+// reviewBody is the JSON body of a review with the five members.
+func reviewBody(attemptID, cardID string, progressVersion int, direction Direction, answer string) string {
 	// A ReviewCreate always marshals.
-	b, _ := json.Marshal(ReviewCreate{CardId: cardID, ProgressVersion: progressVersion, Direction: direction, Answer: answer})
+	b, _ := json.Marshal(ReviewCreate{AttemptId: attemptID, CardId: cardID, ProgressVersion: progressVersion, Direction: direction, Answer: answer})
 	return string(b)
+}
+
+// reviewRow is a row of the table reviews.
+type reviewRow struct {
+	userID, attemptID, cardID string
+	grade                     Grade
+}
+
+// reviewRows reads all reviews rows.
+func reviewRows(t *testing.T, pool *pgxpool.Pool) map[reviewRow]bool {
+	t.Helper()
+	rows, err := pool.Query(context.Background(), "SELECT user_id, attempt_id::text, card_id::text, grade FROM reviews")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	m := map[reviewRow]bool{}
+	for rows.Next() {
+		var r reviewRow
+		if err := rows.Scan(&r.userID, &r.attemptID, &r.cardID, &r.grade); err != nil {
+			t.Fatal(err)
+		}
+		m[r] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return m
 }
 
 // progressKey names the progress row of a learner for a card.
@@ -132,11 +167,15 @@ func checkProgress(t *testing.T, got, setup progress, want wantProgress, start, 
 func TestCreateReview(t *testing.T) {
 	// addProgress takes the rows (learner, card, correct, incorrect, last correct, last incorrect, version).
 	const addProgress = "INSERT INTO card_progress (user_id, card_id, correct, incorrect, last_correct_at, last_incorrect_at, version) VALUES "
+	// addReview takes the rows (learner, attempt, card, grade).
+	const addReview = "INSERT INTO reviews (user_id, attempt_id, card_id, grade) VALUES "
 	const (
+		attemptRule   = `{"message":"attemptId must be a UUID"}`
 		versionRule   = `{"message":"progressVersion must be 0 or more"}`
 		directionRule = `{"message":"direction must be ru-pl or pl-ru"}`
 		answerRule    = `{"message":"answer must have at most 500 characters"}`
 		notCurrent    = `{"message":"progressVersion is not current"}`
+		otherCard     = `{"message":"attemptId is used for another card"}`
 	)
 	tests := []struct {
 		name       string
@@ -144,54 +183,94 @@ func TestCreateReview(t *testing.T) {
 		sub        string
 		body       string
 		wantStatus int
-		wantBody   string // the body for a status that is not 201
-		wantReview Review // the body for 201
+		wantBody   string // the body for a status that is not 200 or 201
+		wantReview Review // the body for 200 and 201
 		wantRow    wantProgress
 	}{
-		{name: "the first correct answer makes the progress row", sub: subOla, body: reviewBody(cardK1.Id, 0, RuPl, "dom"),
+		{name: "the first correct answer makes the progress row", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"),
 			wantStatus: 201, wantReview: Review{Grade: Correct, Correction: "dom"}, wantRow: wantProgress{1, 0, "new", "", 1}},
-		{name: "the first miss makes the progress row", sub: subOla, body: reviewBody(cardK1.Id, 0, RuPl, "kot"),
+		{name: "the first miss makes the progress row", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "kot"),
 			wantStatus: 201, wantReview: Review{Grade: Again, Correction: "dom"}, wantRow: wantProgress{0, 1, "", "new", 1}},
-		{name: "an almost answer counts as a miss", sub: subOla, body: reviewBody(cardK1.Id, 0, RuPl, "dóm"),
+		{name: "an almost answer counts as a miss", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dóm"),
 			wantStatus: 201, wantReview: Review{Grade: Almost, Correction: "dom"}, wantRow: wantProgress{0, 1, "", "new", 1}},
-		{name: "an empty answer counts as a miss", sub: subOla, body: reviewBody(cardK1.Id, 0, RuPl, ""),
+		{name: "an empty answer counts as a miss", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, ""),
 			wantStatus: 201, wantReview: Review{Grade: Again, Correction: "dom"}, wantRow: wantProgress{0, 1, "", "new", 1}},
-		{name: "a correct answer in the Russian direction", sub: subOla, body: reviewBody(cardK1.Id, 0, PlRu, "ДОМ"),
+		{name: "a correct answer in the Russian direction", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, PlRu, "ДОМ"),
 			wantStatus: 201, wantReview: Review{Grade: Correct, Correction: "дом"}, wantRow: wantProgress{1, 0, "new", "", 1}},
-		{name: "a correct answer after a miss keeps the time of the miss", sub: subOla, body: reviewBody(cardK1.Id, 1, RuPl, "dom"),
+		{name: "a correct answer after a miss keeps the time of the miss", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 1, RuPl, "dom"),
 			setup:      addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 0, 1, NULL, now() - interval '1 hour', 1)",
 			wantStatus: 201, wantReview: Review{Grade: Correct, Correction: "dom"}, wantRow: wantProgress{1, 1, "new", "kept", 2}},
 		// After 2 correct answers the card waits 3 days, so it is not due.
-		{name: "a miss on a card that is not due keeps the time of the correct answer", sub: subOla, body: reviewBody(cardK1.Id, 2, RuPl, "kot"),
+		{name: "a miss on a card that is not due keeps the time of the correct answer", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 2, RuPl, "kot"),
 			setup:      addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 2, 0, now() - interval '2 days', NULL, 2)",
 			wantStatus: 201, wantReview: Review{Grade: Again, Correction: "dom"}, wantRow: wantProgress{2, 1, "kept", "new", 3}},
-		{name: "the progress of another learner stays", sub: subOla, body: reviewBody(cardK1.Id, 0, RuPl, "dom"),
+		{name: "the progress of another learner stays", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"),
 			setup:      addProgress + "('sub-adam', '00000000-0000-0000-0000-000000000001', 3, 1, now() - interval '1 day', now() - interval '2 days', 4)",
 			wantStatus: 201, wantReview: Review{Grade: Correct, Correction: "dom"}, wantRow: wantProgress{1, 0, "new", "", 1}},
-		{name: "an answer of 500 characters outside the BMP passes", sub: subOla, body: reviewBody(cardK1.Id, 0, RuPl, strings.Repeat("\U0001F600", 500)),
+		{name: "an answer of 500 characters outside the BMP passes", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, strings.Repeat("\U0001F600", 500)),
 			wantStatus: 201, wantReview: Review{Grade: Again, Correction: "dom"}, wantRow: wantProgress{0, 1, "", "new", 1}},
 		{name: "a body that is not JSON", sub: subOla, body: `{`, wantStatus: 400, wantBody: notJSON},
-		{name: "a negative progress version", sub: subOla, body: reviewBody(cardK1.Id, -1, RuPl, "dom"), wantStatus: 400, wantBody: versionRule},
-		{name: "a direction outside the two values", sub: subOla, body: reviewBody(cardK1.Id, 0, "en-pl", "dom"), wantStatus: 400, wantBody: directionRule},
-		{name: "a body without a direction", sub: subOla, body: `{"cardId":"00000000-0000-0000-0000-000000000001","progressVersion":0,"answer":"dom"}`,
+		{name: "a negative progress version", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, -1, RuPl, "dom"), wantStatus: 400, wantBody: versionRule},
+		{name: "a direction outside the two values", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, "en-pl", "dom"), wantStatus: 400, wantBody: directionRule},
+		{name: "a body without a direction", sub: subOla, body: `{"attemptId":"00000000-0000-0000-0000-0000000000a1","cardId":"00000000-0000-0000-0000-000000000001","progressVersion":0,"answer":"dom"}`,
 			wantStatus: 400, wantBody: directionRule},
-		{name: "an answer of 501 characters", sub: subOla, body: reviewBody(cardK1.Id, 0, RuPl, strings.Repeat("a", 501)), wantStatus: 400, wantBody: answerRule},
-		{name: "the first broken rule gives the text", sub: subOla, body: reviewBody(cardK1.Id, -1, "en-pl", "dom"), wantStatus: 400, wantBody: versionRule},
-		{name: "a card ID that is not a UUID", sub: subOla, body: reviewBody("abc", 0, RuPl, "dom"), wantStatus: 404, wantBody: cardNotFound},
-		{name: "a card that does not exist", sub: subOla, body: reviewBody("00000000-0000-0000-0000-000000000009", 0, RuPl, "dom"), wantStatus: 404, wantBody: cardNotFound},
-		{name: "an archived card", sub: subOla, body: reviewBody(cardK2.Id, 0, RuPl, "dom"), wantStatus: 404, wantBody: cardNotFound},
-		{name: "a card of another group", sub: subOla, body: reviewBody(cardK3.Id, 0, RuPl, "dom"), wantStatus: 404, wantBody: cardNotFound},
-		{name: "a grammar card", sub: subOla, body: reviewBody(cardK1.Id, 0, RuPl, "dom"),
+		{name: "an answer of 501 characters", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, strings.Repeat("a", 501)), wantStatus: 400, wantBody: answerRule},
+		{name: "the first broken rule gives the text", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, -1, "en-pl", "dom"), wantStatus: 400, wantBody: versionRule},
+		{name: "a body without an attempt ID", sub: subOla, body: `{"cardId":"00000000-0000-0000-0000-000000000001","progressVersion":0,"direction":"ru-pl","answer":"dom"}`,
+			wantStatus: 400, wantBody: attemptRule},
+		{name: "the attempt ID is the first rule", sub: subOla, body: reviewBody("abc", cardK1.Id, -1, RuPl, "dom"), wantStatus: 400, wantBody: attemptRule},
+		{name: "a card ID that is not a UUID", sub: subOla, body: reviewBody(attemptA1, "abc", 0, RuPl, "dom"), wantStatus: 404, wantBody: cardNotFound},
+		{name: "a card that does not exist", sub: subOla, body: reviewBody(attemptA1, "00000000-0000-0000-0000-000000000009", 0, RuPl, "dom"), wantStatus: 404, wantBody: cardNotFound},
+		{name: "an archived card", sub: subOla, body: reviewBody(attemptA1, cardK2.Id, 0, RuPl, "dom"), wantStatus: 404, wantBody: cardNotFound},
+		{name: "a card of another group", sub: subOla, body: reviewBody(attemptA1, cardK3.Id, 0, RuPl, "dom"), wantStatus: 404, wantBody: cardNotFound},
+		{name: "a grammar card", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"),
 			setup: "UPDATE cards SET kind = 'grammar' WHERE id = '00000000-0000-0000-0000-000000000001'", wantStatus: 404, wantBody: cardNotFound},
-		{name: "the version 0 for a card with a progress row", sub: subOla, body: reviewBody(cardK1.Id, 0, RuPl, "dom"),
+		{name: "the version 0 for a card with a progress row", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"),
 			setup:      addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 1, 0, now() - interval '2 days', NULL, 1)",
 			wantStatus: 409, wantBody: notCurrent, wantRow: wantProgress{1, 0, "kept", "", 1}},
-		{name: "an old version", sub: subOla, body: reviewBody(cardK1.Id, 2, RuPl, "dom"),
+		{name: "an old version", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 2, RuPl, "dom"),
 			setup:      addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 2, 1, now() - interval '2 days', now() - interval '3 days', 3)",
 			wantStatus: 409, wantBody: notCurrent, wantRow: wantProgress{2, 1, "kept", "kept", 3}},
-		{name: "a version for a card without a progress row", sub: subOla, body: reviewBody(cardK1.Id, 1, RuPl, "dom"), wantStatus: 409, wantBody: notCurrent},
-		{name: "a member of another group is refused", sub: subEwa, body: reviewBody(cardK1.Id, 0, RuPl, "dom"), wantStatus: 403, wantBody: notMember},
-		{name: "a user without a group is refused", sub: subJan, body: reviewBody(cardK1.Id, 0, RuPl, "dom"), wantStatus: 403, wantBody: notMember},
+		{name: "a version for a card without a progress row", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 1, RuPl, "dom"), wantStatus: 409, wantBody: notCurrent},
+		{name: "a repeat gives the stored grade and counts nothing", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"),
+			setup: addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 1, 0, now() - interval '1 hour', NULL, 1);" +
+				addReview + "('sub-ola', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000001', 'correct')",
+			wantStatus: 200, wantReview: Review{Grade: Correct, Correction: "dom"}, wantRow: wantProgress{1, 0, "kept", "", 1}},
+		{name: "a repeat with another answer gives the stored grade", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"),
+			setup: addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 0, 1, NULL, now() - interval '1 hour', 1);" +
+				addReview + "('sub-ola', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000001', 'again')",
+			wantStatus: 200, wantReview: Review{Grade: Again, Correction: "dom"}, wantRow: wantProgress{0, 1, "", "kept", 1}},
+		{name: "a repeat of an almost grade gives the term that the answer matches", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dómek"),
+			setup: addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 0, 1, NULL, now() - interval '1 hour', 1);" +
+				addReview + "('sub-ola', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000001', 'almost')",
+			wantStatus: 200, wantReview: Review{Grade: Almost, Correction: "domek"}, wantRow: wantProgress{0, 1, "", "kept", 1}},
+		{name: "a repeat of an almost grade whose answer matches no term gives the main term", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "kot"),
+			setup: addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 0, 1, NULL, now() - interval '1 hour', 1);" +
+				addReview + "('sub-ola', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000001', 'almost')",
+			wantStatus: 200, wantReview: Review{Grade: Almost, Correction: "dom"}, wantRow: wantProgress{0, 1, "", "kept", 1}},
+		{name: "a repeat in the Russian direction gives the Russian term", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, PlRu, "дом"),
+			setup: addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 1, 0, now() - interval '1 hour', NULL, 1);" +
+				addReview + "('sub-ola', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000001', 'correct')",
+			wantStatus: 200, wantReview: Review{Grade: Correct, Correction: "дом"}, wantRow: wantProgress{1, 0, "kept", "", 1}},
+		{name: "a repeat with the attempt ID in upper case", sub: subOla, body: reviewBody("00000000-0000-0000-0000-0000000000A1", cardK1.Id, 0, RuPl, "dom"),
+			setup: addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 1, 0, now() - interval '1 hour', NULL, 1);" +
+				addReview + "('sub-ola', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000001', 'correct')",
+			wantStatus: 200, wantReview: Review{Grade: Correct, Correction: "dom"}, wantRow: wantProgress{1, 0, "kept", "", 1}},
+		{name: "a repeat after the archive of the card", sub: subOla, body: reviewBody(attemptA1, cardK2.Id, 0, RuPl, "stary"),
+			setup: addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000002', 1, 0, now() - interval '1 hour', NULL, 1);" +
+				addReview + "('sub-ola', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000002', 'correct')",
+			wantStatus: 200, wantReview: Review{Grade: Correct, Correction: "stary"}},
+		{name: "the attempt ID of another card", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"),
+			setup:      addReview + "('sub-ola', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000002', 'correct')",
+			wantStatus: 409, wantBody: otherCard},
+		{name: "the attempt ID of another learner is free", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"),
+			setup:      addReview + "('sub-adam', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000001', 'again')",
+			wantStatus: 201, wantReview: Review{Grade: Correct, Correction: "dom"}, wantRow: wantProgress{1, 0, "new", "", 1}},
+		{name: "a repeat for a card of another group", sub: subOla, body: reviewBody(attemptA1, cardK3.Id, 0, RuPl, "dom"),
+			setup:      addReview + "('sub-ola', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000003', 'correct')",
+			wantStatus: 404, wantBody: cardNotFound},
+		{name: "a member of another group is refused", sub: subEwa, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"), wantStatus: 403, wantBody: notMember},
+		{name: "a user without a group is refused", sub: subJan, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"), wantStatus: 403, wantBody: notMember},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -202,6 +281,7 @@ func TestCreateReview(t *testing.T) {
 			}
 			key := progressKey{tt.sub, cardK1.Id}
 			before := progressRows(t, pool)
+			wantReviews := reviewRows(t, pool)
 
 			start := time.Now()
 			resp, err := srv.Handle(ctx, groupRequest("POST /v1/groups/{groupId}/reviews", tt.sub, tt.body, map[string]string{"groupId": rodzina}))
@@ -212,7 +292,7 @@ func TestCreateReview(t *testing.T) {
 			if resp.StatusCode != tt.wantStatus {
 				t.Errorf("status = %d, want %d (body %s)", resp.StatusCode, tt.wantStatus, resp.Body)
 			}
-			if tt.wantStatus == http.StatusCreated {
+			if tt.wantStatus == http.StatusOK || tt.wantStatus == http.StatusCreated {
 				var review Review
 				if err := json.Unmarshal([]byte(resp.Body), &review); err != nil {
 					t.Fatalf("body %s: %v", resp.Body, err)
@@ -230,6 +310,17 @@ func TestCreateReview(t *testing.T) {
 			if !maps.EqualFunc(after, before, equalProgress) {
 				t.Errorf("the other progress rows = %v, want %v", after, before)
 			}
+			// Only a new review stores a row.
+			if tt.wantStatus == http.StatusCreated {
+				var sent ReviewCreate
+				if err := json.Unmarshal([]byte(tt.body), &sent); err != nil {
+					t.Fatal(err)
+				}
+				wantReviews[reviewRow{tt.sub, sent.AttemptId, sent.CardId, tt.wantReview.Grade}] = true
+			}
+			if got := reviewRows(t, pool); !maps.Equal(got, wantReviews) {
+				t.Errorf("reviews = %v, want %v", got, wantReviews)
+			}
 		})
 	}
 }
@@ -238,22 +329,32 @@ func TestCreateReview(t *testing.T) {
 // read the progress version before the other one writes the row.
 func TestCreateReviewAtTheSameInstant(t *testing.T) {
 	tests := []struct {
-		name                  string
-		setup                 string // the SQL text that runs after groupFixture and cardFixture
-		lock                  string // the SQL text that locks a row in the held transaction
-		progressVersion       int
-		wantFirst, wantSecond int
-		wantRow               wantProgress
+		name                        string
+		setup                       string // the SQL text that runs after groupFixture and cardFixture
+		lock                        string // the SQL text that locks a row in the held transaction
+		progressVersion             int
+		secondAttempt, secondAnswer string
+		wantFirst, wantSecond       int
+		wantRow                     wantProgress
+		wantReviews                 int // the reviews rows of Ola after the two requests
 	}{
 		{name: "a card with a progress row",
 			setup: "INSERT INTO card_progress (user_id, card_id, correct, incorrect, last_correct_at, last_incorrect_at, version) " +
 				"VALUES ('sub-ola', '00000000-0000-0000-0000-000000000001', 1, 0, now() - interval '2 days', NULL, 1)",
 			lock:            "SELECT version FROM card_progress WHERE card_id = '00000000-0000-0000-0000-000000000001' AND user_id = 'sub-ola' FOR UPDATE",
-			progressVersion: 1, wantFirst: 201, wantSecond: 409, wantRow: wantProgress{2, 0, "new", "", 2}},
+			progressVersion: 1, secondAttempt: attemptA2, secondAnswer: "kot", wantFirst: 201, wantSecond: 409, wantRow: wantProgress{2, 0, "new", "", 2}, wantReviews: 1},
 		// The insert of the progress row checks its foreign key to the card row, so it waits for the lock of the card row.
 		{name: "a new card",
 			lock:            "SELECT id FROM cards WHERE id = '00000000-0000-0000-0000-000000000001' FOR UPDATE",
-			progressVersion: 0, wantFirst: 201, wantSecond: 409, wantRow: wantProgress{1, 0, "new", "", 1}},
+			progressVersion: 0, secondAttempt: attemptA2, secondAnswer: "kot", wantFirst: 201, wantSecond: 409, wantRow: wantProgress{1, 0, "new", "", 1}, wantReviews: 1},
+		{name: "one attempt sent two times, a card with a progress row",
+			setup: "INSERT INTO card_progress (user_id, card_id, correct, incorrect, last_correct_at, last_incorrect_at, version) " +
+				"VALUES ('sub-ola', '00000000-0000-0000-0000-000000000001', 1, 0, now() - interval '2 days', NULL, 1)",
+			lock:            "SELECT version FROM card_progress WHERE card_id = '00000000-0000-0000-0000-000000000001' AND user_id = 'sub-ola' FOR UPDATE",
+			progressVersion: 1, secondAttempt: attemptA1, secondAnswer: "dom", wantFirst: 201, wantSecond: 200, wantRow: wantProgress{2, 0, "new", "", 2}, wantReviews: 1},
+		{name: "one attempt sent two times, a new card",
+			lock:            "SELECT id FROM cards WHERE id = '00000000-0000-0000-0000-000000000001' FOR UPDATE",
+			progressVersion: 0, secondAttempt: attemptA1, secondAnswer: "dom", wantFirst: 201, wantSecond: 200, wantRow: wantProgress{1, 0, "new", "", 1}, wantReviews: 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -264,14 +365,14 @@ func TestCreateReviewAtTheSameInstant(t *testing.T) {
 			}
 			key := progressKey{subOla, cardK1.Id}
 			before := progressRows(t, pool)
-			send := func(answer string) <-chan int {
-				req := groupRequest("POST /v1/groups/{groupId}/reviews", subOla, reviewBody(cardK1.Id, tt.progressVersion, RuPl, answer), map[string]string{"groupId": rodzina})
-				status := make(chan int, 1)
+			send := func(attemptID, answer string) <-chan events.APIGatewayV2HTTPResponse {
+				req := groupRequest("POST /v1/groups/{groupId}/reviews", subOla, reviewBody(attemptID, cardK1.Id, tt.progressVersion, RuPl, answer), map[string]string{"groupId": rodzina})
+				out := make(chan events.APIGatewayV2HTTPResponse, 1)
 				go func() {
 					resp, _ := srv.Handle(ctx, req)
-					status <- resp.StatusCode
+					out <- resp
 				}()
-				return status
+				return out
 			}
 
 			// The held lock stops the write of the first request, and the write of the second request waits for the
@@ -285,22 +386,39 @@ func TestCreateReviewAtTheSameInstant(t *testing.T) {
 				t.Fatal(err)
 			}
 			start := time.Now()
-			first := send("dom")
+			first := send(attemptA1, "dom")
 			waitForLockWaits(t, pool, 1)
-			second := send("kot")
+			second := send(tt.secondAttempt, tt.secondAnswer)
 			waitForLockWaits(t, pool, 2)
 			if err := held.Rollback(ctx); err != nil {
 				t.Fatal(err)
 			}
 
-			if got := <-first; got != tt.wantFirst {
+			if got := (<-first).StatusCode; got != tt.wantFirst {
 				t.Errorf("status of the first request = %d, want %d", got, tt.wantFirst)
 			}
-			if got := <-second; got != tt.wantSecond {
-				t.Errorf("status of the second request = %d, want %d", got, tt.wantSecond)
+			resp := <-second
+			if resp.StatusCode != tt.wantSecond {
+				t.Errorf("status of the second request = %d, want %d", resp.StatusCode, tt.wantSecond)
+			}
+			if tt.wantSecond == http.StatusOK {
+				var review Review
+				if err := json.Unmarshal([]byte(resp.Body), &review); err != nil {
+					t.Fatalf("body %s: %v", resp.Body, err)
+				}
+				if want := (Review{Grade: Correct, Correction: "dom"}); review != want {
+					t.Errorf("review of the second request = %+v, want %+v", review, want)
+				}
 			}
 			end := time.Now()
 			checkProgress(t, progressRows(t, pool)[key], before[key], tt.wantRow, start, end)
+			var reviews int
+			if err := pool.QueryRow(ctx, "SELECT count(*) FROM reviews WHERE user_id = 'sub-ola'").Scan(&reviews); err != nil {
+				t.Fatal(err)
+			}
+			if reviews != tt.wantReviews {
+				t.Errorf("reviews of Ola = %d, want %d", reviews, tt.wantReviews)
+			}
 		})
 	}
 }

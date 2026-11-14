@@ -11,11 +11,15 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/db"
 )
 
-var errNotCurrent = errors.New("the progress version is not current")
+var (
+	errNotCurrent = errors.New("the progress version is not current")
+	errOtherCard  = errors.New("the attempt ID is stored for another card")
+)
 
 // createReview grades an answer of the signed-in learner to a translation card of the group in the path, and counts
 // it in the progress row of the learner for the card.
@@ -28,6 +32,10 @@ func (s *Server) createReview(ctx context.Context, req events.APIGatewayV2HTTPRe
 	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
 		return jsonResponse(http.StatusBadRequest, Error{Message: "invalid JSON body"})
 	}
+	var attempt pgtype.UUID
+	if err := attempt.Scan(body.AttemptId); err != nil {
+		return jsonResponse(http.StatusBadRequest, Error{Message: "attemptId must be a UUID"})
+	}
 	switch {
 	case body.ProgressVersion < 0:
 		return jsonResponse(http.StatusBadRequest, Error{Message: "progressVersion must be 0 or more"})
@@ -38,9 +46,33 @@ func (s *Server) createReview(ctx context.Context, req events.APIGatewayV2HTTPRe
 	}
 	now := time.Now()
 	var review Review
-	// The read and the write use one transaction. When another request writes the row after the read, the
-	// transaction fails with SQLSTATE 40001, db.Tx runs the function again, and the new read gives 409.
+	var status int
+	// The reads and the writes use one transaction. When another request writes the progress row after the reads,
+	// the transaction fails with SQLSTATE 40001 and db.Tx runs the function again. The second run answers 200 when
+	// the other request stored the same attempt, and 409 when it had another attempt. So each run sets review and
+	// status.
 	err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
+		// A stored attempt gets its stored grade and counts nothing. The card ID is compared as text, as in the read
+		// below.
+		var stored Grade
+		var sameCard bool
+		err := tx.QueryRow(ctx, "SELECT grade, card_id::text = $3 FROM reviews WHERE user_id = $1 AND attempt_id = $2",
+			sub, attempt, body.CardId).Scan(&stored, &sameCard)
+		switch {
+		case err == nil && !sameCard:
+			return errOtherCard
+		case err == nil:
+			card, err := scanCard(tx.QueryRow(ctx, "SELECT "+cardColumns+" FROM cards WHERE group_id = $1 AND id::text = $2",
+				req.PathParameters["groupId"], body.CardId))
+			if err != nil {
+				return err
+			}
+			review = Review{Grade: stored, Correction: grade(card, body.Direction, body.Answer).Correction}
+			status = http.StatusOK
+			return nil
+		case !errors.Is(err, pgx.ErrNoRows):
+			return err
+		}
 		var version int
 		// The ID is compared as text: PostgreSQL refuses a uuid parameter that is not a UUID (SQLSTATE 22P02).
 		// https://www.postgresql.org/docs/16/errcodes-appendix.html
@@ -56,6 +88,7 @@ func (s *Server) createReview(ctx context.Context, req events.APIGatewayV2HTTPRe
 			return errNotCurrent
 		}
 		review = grade(card, body.Direction, body.Answer)
+		status = http.StatusCreated
 		// add is the counts and the time of this answer. Each grade that is not correct counts as a miss.
 		add := progress{incorrect: 1, lastIncorrectAt: &now}
 		if review.Grade == Correct {
@@ -71,6 +104,11 @@ func (s *Server) createReview(ctx context.Context, req events.APIGatewayV2HTTPRe
 			"last_incorrect_at = COALESCE(EXCLUDED.last_incorrect_at, card_progress.last_incorrect_at), "+
 			"version = card_progress.version + 1",
 			sub, card.Id, add.correct, add.incorrect, add.lastCorrectAt, add.lastIncorrectAt)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, "INSERT INTO reviews (user_id, attempt_id, card_id, grade) VALUES ($1, $2, $3, $4)",
+			sub, attempt, card.Id, review.Grade)
 		return err
 	})
 	switch {
@@ -78,10 +116,12 @@ func (s *Server) createReview(ctx context.Context, req events.APIGatewayV2HTTPRe
 		return jsonResponse(http.StatusNotFound, Error{Message: "card not found"})
 	case errors.Is(err, errNotCurrent):
 		return jsonResponse(http.StatusConflict, Error{Message: "progressVersion is not current"})
+	case errors.Is(err, errOtherCard):
+		return jsonResponse(http.StatusConflict, Error{Message: "attemptId is used for another card"})
 	case err != nil:
 		return serverError(ctx, req, sub, err)
 	}
-	return jsonResponse(http.StatusCreated, review)
+	return jsonResponse(status, review)
 }
 
 // grade grades an answer to the card for the direction of the prompt. Only the terms of the answer side count.
