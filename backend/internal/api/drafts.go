@@ -4,8 +4,10 @@ import (
 	"cmp"
 	"context"
 	_ "embed"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -82,50 +84,24 @@ func (s *Server) getDraft(ctx context.Context, req events.APIGatewayV2HTTPReques
 }
 
 // choicesForm and draftForm are the two forms of the result of a draft job: the meanings of the text, or a draft of
-// a card.
-var (
-	choicesForm = map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"kind":    map[string]any{"type": "string", "enum": []any{"choices"}},
-			"choices": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-		},
-		"required":             []any{"kind", "choices"},
-		"additionalProperties": false,
-	}
-	draftForm = map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"kind": map[string]any{"type": "string", "enum": []any{"draft"}},
-			"card": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"pl":             map[string]any{"type": "string"},
-					"ru":             map[string]any{"type": "string"},
-					"examplePl":      map[string]any{"type": "string"},
-					"exampleRu":      map[string]any{"type": "string"},
-					"meaningRu":      map[string]any{"type": "string"},
-					"alternativesPl": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1},
-					"alternativesRu": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-				},
-				"required":             []any{"pl", "ru", "examplePl", "exampleRu", "meaningRu", "alternativesPl", "alternativesRu"},
-				"additionalProperties": false,
-			},
-		},
-		"required":             []any{"kind", "card"},
-		"additionalProperties": false,
-	}
+// a card. They are JSON text because the model writes the properties of its answer in the order of the schema, and
+// the encoder writes a Go map with sorted keys. kind is first, so the model names the form before it writes the
+// content. The card has its properties in the order of the prompt.
+// https://platform.claude.com/docs/en/build-with-claude/structured-outputs#property-ordering
+const (
+	choicesForm = `{"type":"object","properties":{"kind":{"type":"string","enum":["choices"]},"choices":{"type":"array","items":{"type":"string"}}},"required":["kind","choices"],"additionalProperties":false}`
+	draftForm   = `{"type":"object","properties":{"kind":{"type":"string","enum":["draft"]},"card":{"type":"object","properties":{"pl":{"type":"string"},"ru":{"type":"string"},"examplePl":{"type":"string"},"exampleRu":{"type":"string"},"meaningRu":{"type":"string"},"alternativesPl":{"type":"array","items":{"type":"string"},"minItems":1},"alternativesRu":{"type":"array","items":{"type":"string"}}},"required":["pl","ru","examplePl","exampleRu","meaningRu","alternativesPl","alternativesRu"],"additionalProperties":false}},"required":["kind","card"],"additionalProperties":false}`
 )
 
 // draftSchema is the JSON schema of the answer of a draft job for the input. An input with a picked meaning allows
 // only a draft: in some calls the model answers with meanings again when the schema allows them.
 // https://platform.claude.com/docs/en/build-with-claude/structured-outputs
 func draftSchema(input DraftCreate) map[string]any {
-	result := map[string]any{"anyOf": []any{choicesForm, draftForm}}
+	result := `{"anyOf":[` + choicesForm + `,` + draftForm + `]}`
 	if input.MeaningRu != nil {
 		result = draftForm
 	}
-	return map[string]any{"type": "object", "properties": map[string]any{"result": result}, "required": []any{"result"}, "additionalProperties": false}
+	return map[string]any{"type": "object", "properties": map[string]any{"result": jsontext.Value(result)}, "required": []any{"result"}, "additionalProperties": false}
 }
 
 // draftPrompt is the system prompt of a draft job: the prompt file of the old app, byte for byte.
@@ -174,7 +150,7 @@ func (s *Server) RunJob(ctx context.Context, event JobEvent) error {
 	resp, callErr := s.AI(callCtx, AIRequest{Model: "claude-sonnet-5-5", Effort: "high", MaxTokens: 16000, System: draftPrompt, Schema: draftSchema(input), Input: string(text)})
 	duration := time.Since(start)
 	cancel()
-	result, fail := draftOutcome(input, resp, callErr)
+	result, fail, cause := draftOutcome(input, resp, callErr)
 	// The end write uses the context of the event, because the call can use all 50 seconds of its own context.
 	err = db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
 		const running = " WHERE user_id = $1 AND id::text = $2 AND status = 'running'"
@@ -185,8 +161,8 @@ func (s *Server) RunJob(ctx context.Context, event JobEvent) error {
 		_, err := tx.Exec(ctx, "UPDATE jobs SET status = 'done', result = $3"+running, event.UserID, event.JobID, result)
 		return err
 	})
-	// The line has no text of the learner and no text of the answer.
-	level, args := slog.LevelInfo, []any{"jobId", event.JobID, "userId", event.UserID, "outcome", cmp.Or(string(fail), "done"), "model", resp.Model,
+	// The line has no text of the learner and no text of the answer: cause names the broken rule or gives counts.
+	level, args := slog.LevelInfo, []any{"jobId", event.JobID, "userId", event.UserID, "outcome", cmp.Or(string(fail), "done"), "cause", cause, "model", resp.Model,
 		"stopReason", resp.StopReason, "duration", duration, "requestId", resp.RequestID, "inferenceGeo", resp.InferenceGeo, "attempts", resp.Attempts}
 	if callErr != nil {
 		level, args = slog.LevelError, append(args, "error", callErr)
@@ -205,17 +181,18 @@ func (s *Server) RunJob(ctx context.Context, event JobEvent) error {
 }
 
 // draftOutcome checks the answer of the call for the input of a draft job. fail is the cause of a failed job; when it
-// is empty, the job is done with result.
+// is empty, the job is done with result. cause tells the log what an invalid answer broke: the rule of a card, or the
+// counts of a list of meanings.
 // https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons
-func draftOutcome(input DraftCreate, resp AIResponse, callErr error) (result map[string]any, fail DraftError) {
+func draftOutcome(input DraftCreate, resp AIResponse, callErr error) (result map[string]any, fail DraftError, cause string) {
 	switch {
 	case callErr != nil:
-		return nil, Unavailable
+		return nil, Unavailable, ""
 	// A refusal can come with a text, so the stop reason is read first.
 	case resp.StopReason == "refusal":
-		return nil, Refused
+		return nil, Refused, ""
 	case resp.StopReason != "end_turn":
-		return nil, Invalid
+		return nil, Invalid, "stop reason"
 	}
 	var answer struct {
 		Result struct {
@@ -225,23 +202,35 @@ func draftOutcome(input DraftCreate, resp AIResponse, callErr error) (result map
 		} `json:"result"`
 	}
 	if err := json.Unmarshal([]byte(resp.Text), &answer, json.RejectUnknownMembers(true)); err != nil {
-		return nil, Invalid
+		return nil, Invalid, "not the JSON of the schema"
 	}
 	r := answer.Result
 	switch {
 	case strings.EqualFold(r.Kind, "draft") && r.Card != nil && r.Choices == nil:
 		c := r.Card
 		// checkCard lets a nil field pass, and a card needs each of the seven fields.
-		if c.Pl == nil || c.Ru == nil || c.ExamplePl == nil || c.ExampleRu == nil || c.MeaningRu == nil || c.AlternativesPl == nil || c.AlternativesRu == nil ||
-			checkCard(c) != "" {
-			return nil, Invalid
+		if c.Pl == nil || c.Ru == nil || c.ExamplePl == nil || c.ExampleRu == nil || c.MeaningRu == nil || c.AlternativesPl == nil || c.AlternativesRu == nil {
+			return nil, Invalid, "a card field is missing"
 		}
-		return map[string]any{"card": c}, ""
+		if msg := checkCard(c); msg != "" {
+			return nil, Invalid, msg
+		}
+		return map[string]any{"card": c}, "", ""
 	// Meanings are only for a text without a picked meaning. checkTerms trims each meaning and allows at most 8. The
 	// sorted list without repeats is shorter when two trimmed meanings are equal.
 	case strings.EqualFold(r.Kind, "choices") && r.Card == nil && input.MeaningRu == nil && len(r.Choices) >= 2 && checkTerms(&r.Choices) &&
 		len(slices.Compact(slices.Sorted(slices.Values(r.Choices)))) == len(r.Choices):
-		return map[string]any{"choices": r.Choices}, ""
+		return map[string]any{"choices": r.Choices}, "", ""
 	}
-	return nil, Invalid
+	invalid := 0
+	terms := make([]string, len(r.Choices))
+	for i, choice := range r.Choices {
+		var ok bool
+		if terms[i], ok = trimmedText(choice, 200); !ok {
+			invalid++
+		}
+	}
+	slices.Sort(terms)
+	return nil, Invalid, fmt.Sprintf("%d choices, %d distinct, %d invalid, card %t, meaning %t",
+		len(terms), len(slices.Compact(terms)), invalid, r.Card != nil, input.MeaningRu != nil)
 }
