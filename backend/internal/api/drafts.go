@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/jackc/pgx/v5"
@@ -87,7 +86,7 @@ func (s *Server) getDraft(ctx context.Context, req events.APIGatewayV2HTTPReques
 // choicesForm and draftForm are the two forms of the result of a draft job: the meanings of the text, or a draft of
 // a card. They are JSON text because the model writes the properties of its answer in the order of the schema, and
 // the encoder writes a Go map with sorted keys. kind is first, so the model names the form before it writes the
-// content.
+// content. The card has its properties in the order of the prompt.
 // https://platform.claude.com/docs/en/build-with-claude/structured-outputs#property-ordering
 const (
 	choicesForm = `{"type":"object","properties":{"kind":{"type":"string","enum":["choices"]},"choices":{"type":"array","items":{"type":"string"}}},"required":["kind","choices"],"additionalProperties":false}`
@@ -162,7 +161,7 @@ func (s *Server) RunJob(ctx context.Context, event JobEvent) error {
 		_, err := tx.Exec(ctx, "UPDATE jobs SET status = 'done', result = $3"+running, event.UserID, event.JobID, result)
 		return err
 	})
-	// The line has no text of the learner and no text of the answer: cause names the broken rule and gives counts.
+	// The line has no text of the learner and no text of the answer: cause names the broken rule or gives counts.
 	level, args := slog.LevelInfo, []any{"jobId", event.JobID, "userId", event.UserID, "outcome", cmp.Or(string(fail), "done"), "cause", cause, "model", resp.Model,
 		"stopReason", resp.StopReason, "duration", duration, "requestId", resp.RequestID, "inferenceGeo", resp.InferenceGeo, "attempts", resp.Attempts}
 	if callErr != nil {
@@ -182,7 +181,8 @@ func (s *Server) RunJob(ctx context.Context, event JobEvent) error {
 }
 
 // draftOutcome checks the answer of the call for the input of a draft job. fail is the cause of a failed job; when it
-// is empty, the job is done with result. cause is the rule that an invalid answer broke, for the log.
+// is empty, the job is done with result. cause tells the log what an invalid answer broke: the rule of a card, or the
+// counts of a list of meanings.
 // https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons
 func draftOutcome(input DraftCreate, resp AIResponse, callErr error) (result map[string]any, fail DraftError, cause string) {
 	switch {
@@ -222,13 +222,15 @@ func draftOutcome(input DraftCreate, resp AIResponse, callErr error) (result map
 		len(slices.Compact(slices.Sorted(slices.Values(r.Choices)))) == len(r.Choices):
 		return map[string]any{"choices": r.Choices}, "", ""
 	}
-	longest := 0
+	invalid := 0
 	terms := make([]string, len(r.Choices))
 	for i, choice := range r.Choices {
-		terms[i] = strings.TrimSpace(choice)
-		longest = max(longest, utf8.RuneCountInString(terms[i]))
+		var ok bool
+		if terms[i], ok = trimmedText(choice, 200); !ok {
+			invalid++
+		}
 	}
 	slices.Sort(terms)
-	return nil, Invalid, fmt.Sprintf("%d choices, %d distinct, the longest has %d characters, card %t, meaning %t",
-		len(terms), len(slices.Compact(terms)), longest, r.Card != nil, input.MeaningRu != nil)
+	return nil, Invalid, fmt.Sprintf("%d choices, %d distinct, %d invalid, card %t, meaning %t",
+		len(terms), len(slices.Compact(terms)), invalid, r.Card != nil, input.MeaningRu != nil)
 }

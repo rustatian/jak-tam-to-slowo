@@ -408,13 +408,17 @@ func TestDraftOutcomeCause(t *testing.T) {
 		{name: "9 alternatives", answer: draft(`["Wyraz"]`, `["w1","w2","w3","w4","w5","w6","w7","w8","w9"]`), wantFail: Invalid,
 			wantCause: "alternativesPl must have at most 8 terms of 1 to 200 characters"},
 		{name: "9 choices", answer: choices(`["м1","м2","м3","м4","м5","м6","м7","м8","м9"]`), wantFail: Invalid,
-			wantCause: "9 choices, 9 distinct, the longest has 2 characters, card false, meaning false"},
+			wantCause: "9 choices, 9 distinct, 0 invalid, card false, meaning false"},
 		{name: "a choice of 201 letters", answer: choices(`["Овощ","` + strings.Repeat("я", 201) + `"]`), wantFail: Invalid,
-			wantCause: "2 choices, 2 distinct, the longest has 201 characters, card false, meaning false"},
+			wantCause: "2 choices, 2 distinct, 1 invalid, card false, meaning false"},
+		{name: "an empty choice", answer: choices(`["Овощ",""]`), wantFail: Invalid,
+			wantCause: "2 choices, 2 distinct, 1 invalid, card false, meaning false"},
+		{name: "a choice with a line break", answer: choices(`["Овощ","Ору\nжие"]`), wantFail: Invalid,
+			wantCause: "2 choices, 2 distinct, 1 invalid, card false, meaning false"},
 		{name: "two equal choices", answer: choices(`["Овощ"," Овощ "]`), wantFail: Invalid,
-			wantCause: "2 choices, 1 distinct, the longest has 4 characters, card false, meaning false"},
+			wantCause: "2 choices, 1 distinct, 0 invalid, card false, meaning false"},
 		{name: "choices for an input with a meaning", input: DraftCreate{Text: "лук", MeaningRu: &meaning}, answer: choices(`["Овощ","Оружие"]`), wantFail: Invalid,
-			wantCause: "2 choices, 2 distinct, the longest has 6 characters, card false, meaning true"},
+			wantCause: "2 choices, 2 distinct, 0 invalid, card false, meaning true"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
