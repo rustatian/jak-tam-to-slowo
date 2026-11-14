@@ -72,6 +72,8 @@ func (s *Server) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 		return s.archiveCard(ctx, req), nil
 	case "GET /v1/groups/{groupId}/study":
 		return s.getStudyQueue(ctx, req), nil
+	case "POST /v1/groups/{groupId}/reviews":
+		return s.createReview(ctx, req), nil
 	case "POST /v1/groups/{groupId}/drafts":
 		return s.createDraft(ctx, req), nil
 	case "GET /v1/groups/{groupId}/drafts/{draftId}":
