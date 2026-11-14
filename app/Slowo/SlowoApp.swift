@@ -41,6 +41,7 @@ struct SignedInView: View {
     @State private var profile: Profile
     @State private var membership: Membership
     @State private var cards: Cards
+    @State private var study: Study
     @State private var draft: CardDraft
     @State private var failed = false
     @State private var offeringConsent = false
@@ -57,6 +58,7 @@ struct SignedInView: View {
         _profile = State(initialValue: profile)
         _membership = State(initialValue: Membership(api: api, profile: profile))
         _cards = State(initialValue: Cards(api: api, profile: profile))
+        _study = State(initialValue: Study(api: api, profile: profile))
         _draft = State(initialValue: CardDraft(api: api, profile: profile))
     }
 
@@ -64,7 +66,9 @@ struct SignedInView: View {
         if profile.me != nil {
             TabView(selection: $tab) {
                 Tab("Nauka", systemImage: "graduationcap", value: .study) {
-                    placeholder("Nauka", systemImage: "graduationcap")
+                    NavigationStack {
+                        StudyView(profile: profile, study: study)
+                    }
                 }
                 Tab("Słówka", systemImage: "books.vertical", value: .words) {
                     NavigationStack {

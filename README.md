@@ -16,6 +16,10 @@ The app is in development. These screens exist today:
 |---|---|---|
 | <img src="docs/screenshots/words.png" width="240" alt="The Słówka tab with the cards of the group"> | <img src="docs/screenshots/card.png" width="240" alt="The form of a card with its fields"> | <img src="docs/screenshots/add.png" width="240" alt="The Dodaj tab with the meanings of a word and a card of the collection that matches the word"> |
 
+| Study | Feedback | All done |
+|---|---|---|
+| <img src="docs/screenshots/study.png" width="240" alt="The Nauka tab with a card of the queue and a typed answer"> | <img src="docs/screenshots/feedback.png" width="240" alt="The grade of a wrong answer, with the right term, the example and an explanation of the AI model"> | <img src="docs/screenshots/all-done.png" width="240" alt="The Nauka tab when no card is due, with the time of the next review"> |
+
 ## Parts
 
 - `app/`: the SwiftUI app for iOS 26.
