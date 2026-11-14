@@ -170,8 +170,8 @@ const (
 // giveConsent gives Ola of groupFixture the AI consent.
 const giveConsent = "UPDATE users SET ai_consent_at = now() WHERE id = 'sub-ola';"
 
-// ok is an answer of the model with the grade g and the explanation e.
-func ok(g, e string) AIResponse {
+// modelAnswer is an answer of the model with the grade g and the explanation e.
+func modelAnswer(g, e string) AIResponse {
 	return AIResponse{StopReason: "end_turn", Text: `{"grade":"` + g + `","explanation":"` + e + `"}`}
 }
 
@@ -291,6 +291,8 @@ func TestCreateReview(t *testing.T) {
 		otherCard     = `{"message":"attemptId is used for another card"}`
 		noAIGrade     = `{"message":"AI grading is not available"}`
 	)
+	// modelInput is the input of the model for the answer chata to K1 in the direction ru-pl.
+	const modelInput = `{"card":{"pl":"dom","ru":"дом","examplePl":"To jest dom.","exampleRu":"Это дом.","meaningRu":"здание","alternativesPl":["domek"],"alternativesRu":["жилище"]},"direction":"ru-pl","answer":"chata"}`
 	tests := []struct {
 		name        string
 		setup       string // the SQL text that runs after groupFixture and cardFixture
@@ -390,13 +392,13 @@ func TestCreateReview(t *testing.T) {
 		{name: "a member of another group is refused", sub: subEwa, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"), wantStatus: 403, wantBody: notMember},
 		{name: "a user without a group is refused", sub: subJan, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"), wantStatus: 403, wantBody: notMember},
 		{name: "the model grades an answer that no term matches", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "chata"),
-			model:      ok("correct", "To też znaczy dom."),
+			model:      modelAnswer("correct", "To też znaczy dom."),
 			wantStatus: 201, wantReview: Review{Grade: Correct, Correction: "dom", Explanation: new("To też znaczy dom.")}, wantRow: wantProgress{1, 0, "new", "", 1}, wantCalls: 1},
 		{name: "a grade almost of the model is a miss", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "chata"),
-			model:      ok("almost", "Popraw formę."),
+			model:      modelAnswer("almost", "Popraw formę."),
 			wantStatus: 201, wantReview: Review{Grade: Almost, Correction: "dom", Explanation: new("Popraw formę.")}, wantRow: wantProgress{0, 1, "", "new", 1}, wantCalls: 1},
 		{name: "a grade again of the model is a miss", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "chata"),
-			model:      ok("again", "To inne słowo."),
+			model:      modelAnswer("again", "To inne słowo."),
 			wantStatus: 201, wantReview: Review{Grade: Again, Correction: "dom", Explanation: new("To inne słowo.")}, wantRow: wantProgress{0, 1, "", "new", 1}, wantCalls: 1},
 		{name: "consent and an exact answer", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"),
 			wantStatus: 201, wantReview: Review{Grade: Correct, Correction: "dom"}, wantRow: wantProgress{1, 0, "new", "", 1}},
@@ -413,17 +415,17 @@ func TestCreateReview(t *testing.T) {
 		{name: "a failed call of the model", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "chata"),
 			modelErr: &AIError{Status: 529}, wantStatus: 503, wantBody: noAIGrade, wantCalls: 1},
 		{name: "the attempt is stored while the model grades", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "chata"),
-			model: ok("correct", "x"),
+			model: modelAnswer("correct", "x"),
 			duringModel: addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 0, 1, NULL, now(), 1);" +
 				addReview + "('sub-ola', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000001', 'again')",
 			wantStatus: 200, wantReview: Review{Grade: Again, Correction: "dom"}, wantRow: wantProgress{0, 1, "", "kept", 1}, wantCalls: 1},
 		{name: "another answer is counted while the model grades", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "chata"),
-			model: ok("correct", "x"),
+			model: modelAnswer("correct", "x"),
 			duringModel: addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 0, 1, NULL, now(), 1);" +
 				addReview + "('sub-ola', '00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-000000000001', 'again')",
 			wantStatus: 409, wantBody: notCurrent, wantRow: wantProgress{0, 1, "", "kept", 1}, wantCalls: 1},
 		{name: "the card gets the answer as a term while the model grades", setup: giveConsent, sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "chata"),
-			model: ok("again", "To inne słowo."), duringModel: "UPDATE cards SET pl = 'Chata' WHERE id = '00000000-0000-0000-0000-000000000001'",
+			model: modelAnswer("again", "To inne słowo."), duringModel: "UPDATE cards SET pl = 'Chata' WHERE id = '00000000-0000-0000-0000-000000000001'",
 			wantStatus: 201, wantReview: Review{Grade: Correct, Correction: "Chata"}, wantRow: wantProgress{1, 0, "new", "", 1}, wantCalls: 1},
 	}
 	for _, tt := range tests {
@@ -438,8 +440,11 @@ func TestCreateReview(t *testing.T) {
 			wantReviews := reviewRows(t, pool)
 			// The rows of duringModel are not changes of the request, so the fake reads the snapshots again.
 			var calls atomic.Int64
-			srv.AI = func(context.Context, AIRequest) (AIResponse, error) {
+			srv.AI = func(_ context.Context, req AIRequest) (AIResponse, error) {
 				calls.Add(1)
+				if req.Input != modelInput {
+					t.Errorf("input of the model = %s, want %s", req.Input, modelInput)
+				}
 				if _, err := pool.Exec(ctx, tt.duringModel); err != nil {
 					t.Fatal(err)
 				}
@@ -544,7 +549,7 @@ func TestCreateReviewAtTheSameInstant(t *testing.T) {
 			var calls atomic.Int64
 			srv.AI = func(context.Context, AIRequest) (AIResponse, error) {
 				calls.Add(1)
-				return ok("almost", "Popraw formę."), nil
+				return modelAnswer("almost", "Popraw formę."), nil
 			}
 			key := progressKey{subOla, cardK1.Id}
 			before := progressRows(t, pool)
