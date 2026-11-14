@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UserNotifications
 
 @testable import Slowo
 
@@ -348,7 +349,7 @@ func study(_ c: StudyCase) async throws {
     let api = FakeAPI(c.answers)
     let profile = Profile(api: api)
     try await profile.load()
-    let study = Study(api: api, profile: profile)
+    let study = Study(api: api, profile: profile, reminder: Reminder(center: FakeNotifications(status: .notDetermined), profile: profile))
 
     var thrown: StudyError?
     do {
@@ -463,7 +464,7 @@ func attempt(_ c: AttemptCase) async throws {
     let api = FakeAPI(c.answers)
     let profile = Profile(api: api)
     try await profile.load()
-    let study = Study(api: api, profile: profile)
+    let study = Study(api: api, profile: profile, reminder: Reminder(center: FakeNotifications(status: .notDetermined), profile: profile))
     try await study.load()
     await c.action(study, profile)
 
@@ -472,4 +473,41 @@ func attempt(_ c: AttemptCase) async throws {
     #expect(UUID(uuidString: reviews[0].attemptId) != nil)
     #expect(UUID(uuidString: reviews[1].attemptId) != nil)
     #expect((reviews[0].attemptId == reviews[1].attemptId) == c.same)
+}
+
+struct StudyReminderCase: Sendable, CustomTestStringConvertible {
+    let name: String
+    let me: Components.Schemas.Me
+    let getStudyQueue: [Operations.GetStudyQueue.Output]
+    let calls: [String]
+
+    var testDescription: String { name }
+}
+
+let studyReminderCases: [StudyReminderCase] = [
+    StudyReminderCase(
+        name: "a queue answer goes to the reminder",
+        me: reminded, getStudyQueue: [q([cebula0], next: later)], calls: [scheduled]
+    ),
+    StudyReminderCase(
+        name: "a failed load keeps the notification",
+        me: reminded, getStudyQueue: [.internalServerError(.init(body: .json(.init(message: "x"))))], calls: []
+    ),
+    StudyReminderCase(
+        name: "a load without a group removes the notification",
+        me: alone, getStudyQueue: [], calls: [removed]
+    ),
+]
+
+@MainActor
+@Test(arguments: studyReminderCases)
+func studyReminder(_ c: StudyReminderCase) async throws {
+    let api = FakeAPI(.init(getMe: [.ok(.init(body: .json(c.me)))], getStudyQueue: c.getStudyQueue))
+    let profile = Profile(api: api)
+    try await profile.load()
+    let center = FakeNotifications(status: .authorized)
+    let study = Study(api: api, profile: profile, reminder: Reminder(center: center, profile: profile, now: { start }))
+    try? await study.load()
+
+    #expect(center.calls == c.calls)
 }
