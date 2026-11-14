@@ -364,6 +364,12 @@ paths:
             schema:
               $ref: "#/components/schemas/ReviewCreate"
       responses:
+        "200":
+          description: The stored grade of an attempt that the server has counted already. No count changes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Review"
         "201":
           description: The grade of the answer. The progress of the learner for the card has one more answer.
           content:
@@ -882,8 +888,11 @@ components:
       description: The result of an answer. Each grade that is not correct counts as a miss.
     ReviewCreate:
       type: object
-      required: [cardId, progressVersion, direction, answer]
+      required: [attemptId, cardId, progressVersion, direction, answer]
       properties:
+        attemptId:
+          type: string
+          description: A UUID that the app makes for each answer. A repeat of the request with the same value gets the stored grade and counts nothing.
         cardId:
           type: string
           description: The ID of a translation card of the group.

@@ -370,6 +370,9 @@ type ReviewCreate struct {
 	// Answer The answer of the learner. An empty text asks for the right answer and counts as a miss.
 	Answer string `json:"answer"`
 
+	// AttemptId A UUID that the app makes for each answer. A repeat of the request with the same value gets the stored grade and counts nothing.
+	AttemptId string `json:"attemptId"`
+
 	// CardId The ID of a translation card of the group.
 	CardId string `json:"cardId"`
 
