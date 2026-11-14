@@ -1,5 +1,6 @@
 import OpenAPIURLSession
 import SwiftUI
+import UserNotifications
 
 @main
 struct SlowoApp: App {
@@ -27,6 +28,12 @@ struct SlowoApp: App {
                 }
             }
             .onOpenURL { link.open($0) }
+            // Every sign-out path ends in `Session.signOut()`, so this removes the notification for all of them.
+            .onChange(of: session.isSignedIn) { _, signedIn in
+                if !signedIn {
+                    UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Reminder.id])
+                }
+            }
         }
     }
 }
@@ -42,6 +49,7 @@ struct SignedInView: View {
     @State private var membership: Membership
     @State private var cards: Cards
     @State private var study: Study
+    @State private var reminder: Reminder
     @State private var draft: CardDraft
     @State private var failed = false
     @State private var offeringConsent = false
@@ -58,7 +66,9 @@ struct SignedInView: View {
         _profile = State(initialValue: profile)
         _membership = State(initialValue: Membership(api: api, profile: profile))
         _cards = State(initialValue: Cards(api: api, profile: profile))
-        _study = State(initialValue: Study(api: api, profile: profile))
+        let reminder = Reminder(center: UNUserNotificationCenter.current(), profile: profile)
+        _reminder = State(initialValue: reminder)
+        _study = State(initialValue: Study(api: api, profile: profile, reminder: reminder))
         _draft = State(initialValue: CardDraft(api: api, profile: profile))
     }
 
@@ -89,7 +99,7 @@ struct SignedInView: View {
                             .toolbar {
                                 ToolbarItem(placement: .topBarTrailing) {
                                     NavigationLink {
-                                        SettingsView(profile: profile, session: session)
+                                        SettingsView(profile: profile, session: session, reminder: reminder)
                                     } label: {
                                         Label("Ustawienia", systemImage: "gearshape")
                                     }
@@ -98,6 +108,8 @@ struct SignedInView: View {
                     }
                 }
             }
+            // A new group has its own due time. The next queue answer schedules the notification again.
+            .onChange(of: profile.me?.groupId) { reminder.clear() }
             // SwiftUI calls each setter with false also when the code closes the sheet.
             // The invitation setter forgets the token only while the model still shows the invitation.
             // The consent setter ends the offer only when no invitation takes the place of the consent sheet.

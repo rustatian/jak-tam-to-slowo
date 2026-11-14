@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     let profile: Profile
     let session: Session
+    let reminder: Reminder
 
     @State private var pendingDirection: Components.Schemas.Direction?
     @State private var pendingReminder: Bool?
@@ -24,7 +25,7 @@ struct SettingsView: View {
                         Text("Z rosyjskiego na polski").tag(Components.Schemas.Direction.ruPl)
                         Text("Z polskiego na rosyjski").tag(Components.Schemas.Direction.plRu)
                     }
-                    Toggle("Przypomnienie o powtórkach", isOn: reminder(me))
+                    Toggle("Przypomnienie o powtórkach", isOn: reminderBinding)
                 }
                 Section("AI") {
                     LabeledContent("Zgoda na AI", value: me.aiConsentAt.map { "od " + polishDate($0) } ?? "brak")
@@ -55,6 +56,12 @@ struct SettingsView: View {
                 }
             }
         }
+        // SwiftUI runs this task again when a sign-out removes the views. A refresh then adds the removed notification again.
+        .task {
+            if session.isSignedIn {
+                await reminder.refresh()
+            }
+        }
         .navigationTitle("Ustawienia")
         .sheet(isPresented: $givingConsent) {
             ConsentView(profile: profile)
@@ -71,12 +78,12 @@ struct SettingsView: View {
         }
     }
 
-    private func reminder(_ me: Components.Schemas.Me) -> Binding<Bool> {
+    private var reminderBinding: Binding<Bool> {
         Binding {
-            pendingReminder ?? me.reminder
+            pendingReminder ?? reminder.isOn
         } set: { value in
             pendingReminder = value
-            save(then: { pendingReminder = nil }) { try await profile.update(.init(reminder: value)) }
+            save(then: { pendingReminder = nil }) { value ? try await reminder.turnOn() : try await reminder.turnOff() }
         }
     }
 

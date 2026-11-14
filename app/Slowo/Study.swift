@@ -22,14 +22,16 @@ final class Study {
 
     private let api: any APIProtocol
     private let profile: Profile
+    private let reminder: Reminder
     /// The group ID of the last queue call.
     private var groupId: String?
     /// The body of the last review that got no final answer.
     private var attempt: Components.Schemas.ReviewCreate?
 
-    init(api: any APIProtocol, profile: Profile) {
+    init(api: any APIProtocol, profile: Profile, reminder: Reminder) {
         self.api = api
         self.profile = profile
+        self.reminder = reminder
     }
 
     func load() async throws {
@@ -37,7 +39,10 @@ final class Study {
         if profile.me?.groupId != groupId {
             clear()
         }
-        guard let groupId = profile.me?.groupId else { return }
+        guard let groupId = profile.me?.groupId else {
+            reminder.clear()
+            return
+        }
         self.groupId = groupId
         switch try await api.getStudyQueue(.init(path: .init(groupId: groupId))) {
         case let .ok(ok):
@@ -47,6 +52,7 @@ final class Study {
             if card == nil {
                 card = queue?.first
             }
+            await reminder.update(nextDueAt: answer.nextDueAt)
         case .forbidden:
             try await dropGroup()
         default:
