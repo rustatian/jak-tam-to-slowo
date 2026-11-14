@@ -210,7 +210,7 @@ Resources:
       Runtime: provided.al2023
       Architectures: [arm64]
       MemorySize: 128
-      # The time covers the 15 seconds of the AI model in the review route. The API Gateway integration ends a
+      # The timeout covers the 15 seconds of the AI model in the review route. The API Gateway integration ends a
       # request after 30 seconds, the default for an HTTP API.
       # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-apigatewayv2-integration.html#cfn-apigatewayv2-integration-timeoutinmillis
       Timeout: 20

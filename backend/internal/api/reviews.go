@@ -129,10 +129,10 @@ func (s *Server) createReview(ctx context.Context, req events.APIGatewayV2HTTPRe
 		return err
 	}
 	// The reads and the writes use one transaction. When another request writes the progress row after the reads,
-	// the transaction fails with SQLSTATE 40001 and db.Tx runs the function again. The second run answers 200 when
-	// the other request stored the same attempt, and 409 when it had another attempt. The call of the model runs
-	// outside the transaction, because db.Tx can run the function again. So for an answer that the model grades, the
-	// handler runs the function one more time after the call. Each run sets review and status.
+	// the transaction fails with SQLSTATE 40001 and db.Tx runs the function again. That run answers 200 when the
+	// other request stored the same attempt, and 409 when it had another attempt. The call of the model runs outside
+	// the transaction, because db.Tx can run the function again. So for an answer that the model grades, the handler
+	// runs the function one more time after the call. Each run sets review and status.
 	err := db.Tx(ctx, s.DB, count)
 	if errors.Is(err, errAskModel) {
 		g, ok := s.gradeWithAI(ctx, sub, asked, body.Direction, body.Answer)
@@ -245,7 +245,13 @@ func (s *Server) gradeWithAI(ctx context.Context, sub string, card Card, directi
 		Answer    string    `json:"answer"`
 	}
 	c := &input.Card
-	c.Pl, c.Ru, c.ExamplePl, c.ExampleRu, c.MeaningRu, c.AlternativesPl, c.AlternativesRu = card.Pl, card.Ru, card.ExamplePl, card.ExampleRu, card.MeaningRu, card.AlternativesPl, card.AlternativesRu
+	c.Pl = card.Pl
+	c.Ru = card.Ru
+	c.ExamplePl = card.ExamplePl
+	c.ExampleRu = card.ExampleRu
+	c.MeaningRu = card.MeaningRu
+	c.AlternativesPl = card.AlternativesPl
+	c.AlternativesRu = card.AlternativesRu
 	input.Direction, input.Answer = direction, answer
 	// The texts of a stored card and of a decoded body are valid UTF-8, so the input always marshals.
 	text, _ := json.Marshal(input)
