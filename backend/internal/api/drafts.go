@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	_ "embed"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -84,50 +85,24 @@ func (s *Server) getDraft(ctx context.Context, req events.APIGatewayV2HTTPReques
 }
 
 // choicesForm and draftForm are the two forms of the result of a draft job: the meanings of the text, or a draft of
-// a card.
-var (
-	choicesForm = map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"kind":    map[string]any{"type": "string", "enum": []any{"choices"}},
-			"choices": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-		},
-		"required":             []any{"kind", "choices"},
-		"additionalProperties": false,
-	}
-	draftForm = map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"kind": map[string]any{"type": "string", "enum": []any{"draft"}},
-			"card": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"pl":             map[string]any{"type": "string"},
-					"ru":             map[string]any{"type": "string"},
-					"examplePl":      map[string]any{"type": "string"},
-					"exampleRu":      map[string]any{"type": "string"},
-					"meaningRu":      map[string]any{"type": "string"},
-					"alternativesPl": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1},
-					"alternativesRu": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-				},
-				"required":             []any{"pl", "ru", "examplePl", "exampleRu", "meaningRu", "alternativesPl", "alternativesRu"},
-				"additionalProperties": false,
-			},
-		},
-		"required":             []any{"kind", "card"},
-		"additionalProperties": false,
-	}
+// a card. They are JSON text because the model writes the properties of its answer in the order of the schema, and
+// the encoder writes a Go map with sorted keys. kind is first, so the model names the form before it writes the
+// content.
+// https://platform.claude.com/docs/en/build-with-claude/structured-outputs#property-ordering
+const (
+	choicesForm = `{"type":"object","properties":{"kind":{"type":"string","enum":["choices"]},"choices":{"type":"array","items":{"type":"string"}}},"required":["kind","choices"],"additionalProperties":false}`
+	draftForm   = `{"type":"object","properties":{"kind":{"type":"string","enum":["draft"]},"card":{"type":"object","properties":{"pl":{"type":"string"},"ru":{"type":"string"},"examplePl":{"type":"string"},"exampleRu":{"type":"string"},"meaningRu":{"type":"string"},"alternativesPl":{"type":"array","items":{"type":"string"},"minItems":1},"alternativesRu":{"type":"array","items":{"type":"string"}}},"required":["pl","ru","examplePl","exampleRu","meaningRu","alternativesPl","alternativesRu"],"additionalProperties":false}},"required":["kind","card"],"additionalProperties":false}`
 )
 
 // draftSchema is the JSON schema of the answer of a draft job for the input. An input with a picked meaning allows
 // only a draft: in some calls the model answers with meanings again when the schema allows them.
 // https://platform.claude.com/docs/en/build-with-claude/structured-outputs
 func draftSchema(input DraftCreate) map[string]any {
-	result := map[string]any{"anyOf": []any{choicesForm, draftForm}}
+	result := `{"anyOf":[` + choicesForm + `,` + draftForm + `]}`
 	if input.MeaningRu != nil {
 		result = draftForm
 	}
-	return map[string]any{"type": "object", "properties": map[string]any{"result": result}, "required": []any{"result"}, "additionalProperties": false}
+	return map[string]any{"type": "object", "properties": map[string]any{"result": jsontext.Value(result)}, "required": []any{"result"}, "additionalProperties": false}
 }
 
 // draftPrompt is the system prompt of a draft job: the prompt file of the old app, byte for byte.

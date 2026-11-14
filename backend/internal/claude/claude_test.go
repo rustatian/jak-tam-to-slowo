@@ -1,7 +1,9 @@
 package claude
 
 import (
+	"bytes"
 	"context"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"io"
@@ -18,12 +20,15 @@ import (
 )
 
 func TestCaller(t *testing.T) {
-	req := api.AIRequest{Model: "claude-sonnet-5-5", Effort: "high", MaxTokens: 16000, System: "PROMPT", Schema: map[string]any{"type": "object"}, Input: `{"text":"słowo"}`}
+	// The members of properties are not in alphabetical order. The server must get them in this order.
+	const properties = `{"kind":{"type":"string"},"card":{"type":"string"}}`
+	req := api.AIRequest{Model: "claude-sonnet-5-5", Effort: "high", MaxTokens: 16000, System: "PROMPT",
+		Schema: map[string]any{"type": "object", "properties": jsontext.Value(properties)}, Input: `{"text":"słowo"}`}
 	// The body that the server must get for req. It has no thinking, temperature, top_p, top_k, inference_geo,
 	// stream or metadata.
 	const wantBody = `{"model":"claude-sonnet-5-5","max_tokens":16000,
 		"system":[{"type":"text","text":"PROMPT","cache_control":{"type":"ephemeral"}}],
-		"output_config":{"effort":"high","format":{"type":"json_schema","schema":{"type":"object"}}},
+		"output_config":{"effort":"high","format":{"type":"json_schema","schema":{"type":"object","properties":{"kind":{"type":"string"},"card":{"type":"string"}}}}},
 		"fallbacks":"default",
 		"messages":[{"role":"user","content":[{"type":"text","text":"{\"text\":\"słowo\"}"}]}]}`
 	tests := []struct {
@@ -155,6 +160,10 @@ func TestCaller(t *testing.T) {
 			}
 			if !reflect.DeepEqual(gotBody, want) {
 				t.Errorf("body = %s, want %s", r.body, wantBody)
+			}
+			// The decoded body has no order of members, so the raw body must have the properties text.
+			if !bytes.Contains(r.body, []byte(properties)) {
+				t.Errorf("body = %s, want the properties %s in this order", r.body, properties)
 			}
 		})
 	}

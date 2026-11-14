@@ -430,13 +430,14 @@ func TestDraftOutcomeCause(t *testing.T) {
 }
 
 func TestRunJobRequest(t *testing.T) {
-	// The two forms of the result, and the schema of an answer with the result form.
+	// The two forms of the result, and the schema of an answer with the result form. The forms keep the order of
+	// their properties on the wire. The top level is a Go map, so Deterministic writes its keys sorted.
 	const (
 		choicesForm = `{"type":"object","properties":{"kind":{"type":"string","enum":["choices"]},"choices":{"type":"array","items":{"type":"string"}}},"required":["kind","choices"],"additionalProperties":false}`
 		draftForm   = `{"type":"object","properties":{"kind":{"type":"string","enum":["draft"]},"card":{"type":"object","properties":{"pl":{"type":"string"},"ru":{"type":"string"},"examplePl":{"type":"string"},"exampleRu":{"type":"string"},"meaningRu":{"type":"string"},"alternativesPl":{"type":"array","items":{"type":"string"},"minItems":1},"alternativesRu":{"type":"array","items":{"type":"string"}}},"required":["pl","ru","examplePl","exampleRu","meaningRu","alternativesPl","alternativesRu"],"additionalProperties":false}},"required":["kind","card"],"additionalProperties":false}`
 	)
 	answerSchema := func(result string) string {
-		return `{"type":"object","properties":{"result":` + result + `},"required":["result"],"additionalProperties":false}`
+		return `{"additionalProperties":false,"properties":{"result":` + result + `},"required":["result"],"type":"object"}`
 	}
 	tests := []struct {
 		name       string
@@ -474,18 +475,12 @@ func TestRunJobRequest(t *testing.T) {
 				t.Fatalf("calls = %d, want 1", len(calls))
 			}
 			got := calls[0]
-			gotSchema, err := json.Marshal(got.Schema)
+			// The schema is compared as text, because the model writes its answer in the order of the schema.
+			gotSchema, err := json.Marshal(got.Schema, json.Deterministic(true))
 			if err != nil {
 				t.Fatal(err)
 			}
-			var gotSchemaValue, wantSchema any
-			if err := json.Unmarshal(gotSchema, &gotSchemaValue); err != nil {
-				t.Fatal(err)
-			}
-			if err := json.Unmarshal([]byte(tt.wantSchema), &wantSchema); err != nil {
-				t.Fatal(err)
-			}
-			if !reflect.DeepEqual(gotSchemaValue, wantSchema) {
+			if string(gotSchema) != tt.wantSchema {
 				t.Errorf("schema = %s, want %s", gotSchema, tt.wantSchema)
 			}
 			got.Schema = nil
