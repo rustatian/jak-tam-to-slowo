@@ -365,7 +365,7 @@ paths:
               $ref: "#/components/schemas/ReviewCreate"
       responses:
         "200":
-          description: The stored grade of an attempt that the server has counted already. No count changes.
+          description: The stored grade of an attempt that the server has counted already. No count changes. The correction comes from the card as it is now, so after an edit of the card it can differ from the correction of the first answer.
           content:
             application/json:
               schema:

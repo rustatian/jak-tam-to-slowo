@@ -326,7 +326,8 @@ func TestCreateReview(t *testing.T) {
 }
 
 // TestCreateReviewAtTheSameInstant sends two answers of Ola to K1 with one progressVersion, and makes both of them
-// read the progress version before the other one writes the row.
+// read the progress version before the other one writes the row. For a new card, the held transaction locks the card
+// row: the insert of the progress row checks its foreign key to the card row, so it waits for that lock.
 func TestCreateReviewAtTheSameInstant(t *testing.T) {
 	tests := []struct {
 		name                        string
@@ -343,7 +344,6 @@ func TestCreateReviewAtTheSameInstant(t *testing.T) {
 				"VALUES ('sub-ola', '00000000-0000-0000-0000-000000000001', 1, 0, now() - interval '2 days', NULL, 1)",
 			lock:            "SELECT version FROM card_progress WHERE card_id = '00000000-0000-0000-0000-000000000001' AND user_id = 'sub-ola' FOR UPDATE",
 			progressVersion: 1, secondAttempt: attemptA2, secondAnswer: "kot", wantFirst: 201, wantSecond: 409, wantRow: wantProgress{2, 0, "new", "", 2}, wantReviews: 1},
-		// The insert of the progress row checks its foreign key to the card row, so it waits for the lock of the card row.
 		{name: "a new card",
 			lock:            "SELECT id FROM cards WHERE id = '00000000-0000-0000-0000-000000000001' FOR UPDATE",
 			progressVersion: 0, secondAttempt: attemptA2, secondAnswer: "kot", wantFirst: 201, wantSecond: 409, wantRow: wantProgress{1, 0, "new", "", 1}, wantReviews: 1},
