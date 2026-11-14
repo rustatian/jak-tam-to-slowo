@@ -377,6 +377,7 @@ struct ErrorMessageCase: Sendable, CustomTestStringConvertible {
     ErrorMessageCase(name: "a draft text that the server refuses", error: DraftError.badText, message: "Sprawdź pola tekstowe."),
     ErrorMessageCase(name: "a card that changed on another device", error: StudyError.changed, message: "Fiszka lub wynik się zmieniły."),
     ErrorMessageCase(name: "an unavailable model for a grade", error: StudyError.aiUnavailable, message: "Model AI jest teraz niedostępny. Spróbuj ponownie."),
+    ErrorMessageCase(name: "a refused notification permission", error: ReminderError.denied, message: "Włącz powiadomienia aplikacji „Jak tam?” w Ustawieniach na iPhonie."),
     ErrorMessageCase(
         name: "no network through the API client",
         error: ClientError(operationID: "updateMe", operationInput: "", causeDescription: "transport", underlyingError: URLError(.notConnectedToInternet)),
