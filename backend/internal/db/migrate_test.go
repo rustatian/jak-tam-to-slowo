@@ -141,6 +141,18 @@ func TestMigrateRealFiles(t *testing.T) {
 	if !errors.As(err, &pgErr) || pgErr.Code != "23503" {
 		t.Errorf("the deletion of a user with a progress row: error = %v, want a foreign key violation (23503)", err)
 	}
+	const review = "INSERT INTO reviews (user_id, attempt_id, card_id, grade) VALUES ('u2', '00000000-0000-0000-0000-0000000000a1', $1, 'correct')"
+	if _, err := pool.Exec(ctx, review, cardID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.Exec(ctx, review, cardID)
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		t.Errorf("a second review of the same learner and attempt: error = %v, want a unique violation (23505)", err)
+	}
+	_, err = pool.Exec(ctx, "INSERT INTO reviews (user_id, attempt_id, card_id, grade) VALUES ('u2', '00000000-0000-0000-0000-0000000000a2', $1, 'x')", cardID)
+	if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
+		t.Errorf("review grade x: error = %v, want a check violation (23514)", err)
+	}
 
 	if _, err := pool.Exec(ctx, "DELETE FROM groups WHERE id = $1", groupID); err != nil {
 		t.Fatal(err)
@@ -165,6 +177,20 @@ func TestMigrateRealFiles(t *testing.T) {
 	}
 	if progressRows != 0 {
 		t.Errorf("progress rows after the deletion of the group of their card = %d, want 0", progressRows)
+	}
+	var reviews int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM reviews").Scan(&reviews); err != nil {
+		t.Fatal(err)
+	}
+	if reviews != 1 {
+		t.Errorf("reviews after the deletion of the group of their card = %d, want 1", reviews)
+	}
+	_, err = pool.Exec(ctx, "DELETE FROM users WHERE id = 'u2'")
+	if !errors.As(err, &pgErr) || pgErr.Code != "23503" {
+		t.Errorf("the deletion of a user with a review: error = %v, want a foreign key violation (23503)", err)
+	}
+	if _, err := pool.Exec(ctx, "DELETE FROM reviews WHERE user_id = 'u2'"); err != nil {
+		t.Fatal(err)
 	}
 
 	_, err = pool.Exec(ctx, "INSERT INTO jobs (user_id, kind, status, input) VALUES ('u2', 'draft', 'x', '{}')")
