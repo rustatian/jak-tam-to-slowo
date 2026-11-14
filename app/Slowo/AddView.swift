@@ -75,7 +75,7 @@ struct AddView: View {
                 similar = .failed
             }
         }
-        // The save clears the field, so an empty text keeps the line "Fiszka zapisana.".
+        // The save clears the field, so an empty text keeps the line "Fiszka zapisana." and the link to the card.
         .onChange(of: text) { _, new in
             draft.reset()
             error = nil
