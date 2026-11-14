@@ -49,7 +49,7 @@ final class Cards {
         }
     }
 
-    /// The first 5 translation cards of the group for a search text. A 200 or an error keeps `cards`, `query` and `last`, so the list of Słówka does not change.
+    /// The first 5 translation cards of the group for a search text. A 200 or a thrown error keeps `cards`, `query` and `last`, so the list of Słówka does not change and an answer of a running `load` stays valid.
     func similar(to text: String) async throws -> [Components.Schemas.Card] {
         guard let groupId = profile.me?.groupId else { return [] }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)

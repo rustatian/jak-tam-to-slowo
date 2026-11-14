@@ -557,3 +557,35 @@ func anOlderAnswerIsDropped(_ c: DroppedAnswerCase) async throws {
     #expect(api.inputs == c.inputs)
     #expect(cards.cards == [dom])
 }
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func aSearchOfSimilarCardsKeepsTheAnswerOfARunningLoad() async throws {
+    let (signal, release) = AsyncStream<Void>.makeStream()
+    let api = FakeAPI(
+        .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula])))), .ok(.init(body: .json(.init(cards: [dom]))))]
+        ),
+        holdListCards: { call in
+            guard call == 1 else { return }
+            for await _ in signal {}
+        }
+    )
+    let profile = Profile(api: api)
+    try await profile.load()
+    let cards = Cards(api: api, profile: profile)
+
+    let first = Task { try await cards.load(query: "ceb") }
+    while !api.calls.contains("listCards") {
+        await Task.yield()
+    }
+    let result = try await cards.similar(to: "dom")
+    release.finish()
+    try await first.value
+
+    #expect(result == [dom])
+    #expect(api.inputs == ["listCards g1 ceb", "listCards g1 dom"])
+    #expect(cards.cards == [cebula])
+    #expect(cards.query == "ceb")
+}
