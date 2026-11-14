@@ -210,7 +210,10 @@ Resources:
       Runtime: provided.al2023
       Architectures: [arm64]
       MemorySize: 128
-      Timeout: 10
+      # The time covers the 15 seconds of the AI model in the review route. The API Gateway integration ends a
+      # request after 30 seconds, the default for an HTTP API.
+      # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-apigatewayv2-integration.html#cfn-apigatewayv2-integration-timeoutinmillis
+      Timeout: 20
       LoggingConfig:
         LogGroup: !Ref ApiLogGroup
       Environment:
@@ -220,6 +223,7 @@ Resources:
           MAIL_FROM: noreply@slowo.rustatian.me
           MAIL_CONFIGURATION_SET: !Ref MailConfigurationSet
           JOBS_FUNCTION: !Ref JobsFunction
+          ANTHROPIC_KEY_PARAMETER: /slowo/anthropic-api-key
       # The database role app maps to this role (cmd/migrate); dsql:DbConnect allows no admin connection.
       Policies:
         - Statement:
@@ -240,6 +244,10 @@ Resources:
             - Effect: Allow
               Action: lambda:InvokeFunction
               Resource: !GetAtt JobsFunction.Arn
+            # The comment at the statement of JobsFunction tells why the role needs no KMS statement.
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/slowo/anthropic-api-key
       Events:
         GetMe:
           Type: HttpApi
