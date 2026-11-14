@@ -25,7 +25,7 @@ func TestGrade(t *testing.T) {
 	}{
 		{name: "Polish case and spaces at the ends", card: slowo, direction: RuPl, answer: " słowo ", wantGrade: Correct, wantCorrection: "Słowo"},
 		{name: "Russian case and spaces at the ends", card: slowo, direction: PlRu, answer: "  СЛОВО  ", wantGrade: Correct, wantCorrection: "Слово"},
-		{name: "a decomposed Polish answer", card: zolw, direction: RuPl, answer: "żółw", wantGrade: Correct, wantCorrection: "Żółw"},
+		{name: "a decomposed Polish answer", card: zolw, direction: RuPl, answer: "z\u0307o\u0301łw", wantGrade: Correct, wantCorrection: "Żółw"},
 		{name: "a run of white space in an expression", card: Card{Pl: "Zielona herbata", Ru: "Зелёный чай"}, direction: RuPl, answer: " ZIELONA \n HERBATA ", wantGrade: Correct, wantCorrection: "Zielona herbata"},
 		{name: "a Polish alternative", card: slowo, direction: RuPl, answer: " WYRAZ ", wantGrade: Correct, wantCorrection: "Słowo"},
 		{name: "a Russian alternative", card: slowo, direction: PlRu, answer: "словечко", wantGrade: Correct, wantCorrection: "Слово"},
