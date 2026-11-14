@@ -24,6 +24,8 @@ final class FakeAPI: APIProtocol {
         var listCards: [Operations.ListCards.Output] = []
         var updateCard: [Operations.UpdateCard.Output] = []
         var archiveCard: [Operations.ArchiveCard.Output] = []
+        var getStudyQueue: [Operations.GetStudyQueue.Output] = []
+        var createReview: [Operations.CreateReview.Output] = []
         var createDraft: [Operations.CreateDraft.Output] = []
         var getDraft: [Operations.GetDraft.Output] = []
         var previewInvitation: [Operations.PreviewInvitation.Output] = []
@@ -32,18 +34,19 @@ final class FakeAPI: APIProtocol {
 
     struct Empty: Error {}
 
-    private let state: Mutex<(answers: Answers, calls: [String], updates: [Components.Schemas.MeUpdate], inputs: [String])>
+    private let state: Mutex<(answers: Answers, calls: [String], updates: [Components.Schemas.MeUpdate], inputs: [String], reviews: [Components.Schemas.ReviewCreate])>
     /// Runs in `listCards` after the answer is taken, with the number of the `listCards` call, from 1.
     private let holdListCards: (@Sendable (_ call: Int) async -> Void)?
 
     init(_ answers: Answers, holdListCards: (@Sendable (_ call: Int) async -> Void)? = nil) {
-        state = Mutex((answers, [], [], []))
+        state = Mutex((answers, [], [], [], []))
         self.holdListCards = holdListCards
     }
 
     var calls: [String] { state.withLock { $0.calls } }
     var updates: [Components.Schemas.MeUpdate] { state.withLock { $0.updates } }
     var inputs: [String] { state.withLock { $0.inputs } }
+    var reviews: [Components.Schemas.ReviewCreate] { state.withLock { $0.reviews } }
 
     private static func next<T>(_ queue: inout [T]) throws -> T {
         guard !queue.isEmpty else { throw Empty() }
@@ -183,6 +186,25 @@ final class FakeAPI: APIProtocol {
             s.calls.append("archiveCard")
             s.inputs.append("archiveCard \(input.path.groupId) \(input.path.cardId)")
             return try Self.next(&s.answers.archiveCard)
+        }
+    }
+
+    func getStudyQueue(_ input: Operations.GetStudyQueue.Input) async throws -> Operations.GetStudyQueue.Output {
+        try state.withLock { s in
+            s.calls.append("getStudyQueue")
+            s.inputs.append("getStudyQueue \(input.path.groupId)")
+            return try Self.next(&s.answers.getStudyQueue)
+        }
+    }
+
+    func createReview(_ input: Operations.CreateReview.Input) async throws -> Operations.CreateReview.Output {
+        try state.withLock { s in
+            s.calls.append("createReview")
+            if case let .json(review) = input.body {
+                s.inputs.append("createReview \(input.path.groupId) \(review.cardId) \(review.progressVersion) \(review.direction.rawValue) \(review.answer.isEmpty ? "-" : review.answer)")
+                s.reviews.append(review)
+            }
+            return try Self.next(&s.answers.createReview)
         }
     }
 
@@ -353,6 +375,8 @@ struct ErrorMessageCase: Sendable, CustomTestStringConvertible {
     ErrorMessageCase(name: "an invalid draft", error: DraftError.invalid, message: "Model AI zwrócił nieprawidłową fiszkę. Spróbuj ponownie."),
     ErrorMessageCase(name: "an unavailable model", error: DraftError.unavailable, message: "Model AI jest teraz niedostępny. Spróbuj ponownie."),
     ErrorMessageCase(name: "a draft text that the server refuses", error: DraftError.badText, message: "Sprawdź pola tekstowe."),
+    ErrorMessageCase(name: "a card that changed on another device", error: StudyError.changed, message: "Fiszka lub wynik się zmieniły."),
+    ErrorMessageCase(name: "an unavailable model for a grade", error: StudyError.aiUnavailable, message: "Model AI jest teraz niedostępny. Spróbuj ponownie."),
     ErrorMessageCase(
         name: "no network through the API client",
         error: ClientError(operationID: "updateMe", operationInput: "", causeDescription: "transport", underlyingError: URLError(.notConnectedToInternet)),
