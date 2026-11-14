@@ -87,6 +87,8 @@ struct AddView: View {
         Form {
             Section {
                 TextField("Słowo lub wyrażenie", text: $text)
+                    // The keyboard applies a pending correction when a card form opens, and that changes the text and its similar cards.
+                    .autocorrectionDisabled()
                     .disabled(waiting)
                     .onSubmit { if canRequest { request() } }
             } header: {
