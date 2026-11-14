@@ -351,6 +351,37 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalError"
+  /v1/groups/{groupId}/reviews:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+    post:
+      operationId: createReview
+      summary: Grade an answer of the signed-in learner to a card and count it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewCreate"
+      responses:
+        "201":
+          description: The grade of the answer. The progress of the learner for the card has one more answer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Review"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /v1/groups/{groupId}/drafts:
     parameters:
       - $ref: "#/components/parameters/GroupId"
@@ -845,6 +876,37 @@ components:
           type: integer
           minimum: 0
           description: The version of the learner's progress for the card. 0 for a new card.
+    Grade:
+      type: string
+      enum: [correct, almost, again]
+      description: The result of an answer. Each grade that is not correct counts as a miss.
+    ReviewCreate:
+      type: object
+      required: [cardId, progressVersion, direction, answer]
+      properties:
+        cardId:
+          type: string
+          description: The ID of a translation card of the group.
+        progressVersion:
+          type: integer
+          minimum: 0
+          description: The progress version of the card from the study queue.
+        direction:
+          $ref: "#/components/schemas/Direction"
+          description: The direction of the prompt that the learner saw.
+        answer:
+          type: string
+          maxLength: 500
+          description: The answer of the learner. An empty text asks for the right answer and counts as a miss.
+    Review:
+      type: object
+      required: [grade, correction]
+      properties:
+        grade:
+          $ref: "#/components/schemas/Grade"
+        correction:
+          type: string
+          description: The term of the answer side of the card. For the grade almost, it is the term that the answer matched.
     DraftCreate:
       type: object
       required: [text]

@@ -88,6 +88,27 @@ func (e DraftStatus) Valid() bool {
 	}
 }
 
+// Defines values for Grade.
+const (
+	Again   Grade = "again"
+	Almost  Grade = "almost"
+	Correct Grade = "correct"
+)
+
+// Valid indicates whether the value is a known member of the Grade enum.
+func (e Grade) Valid() bool {
+	switch e {
+	case Again:
+		return true
+	case Almost:
+		return true
+	case Correct:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for InvitationFailure.
 const (
 	Bounce    InvitationFailure = "bounce"
@@ -212,6 +233,9 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// Grade The result of an answer. Each grade that is not correct counts as a miss.
+type Grade string
+
 // Group defines model for Group.
 type Group struct {
 	CreatedAt time.Time `json:"createdAt"`
@@ -332,6 +356,30 @@ type Member struct {
 	Id string `json:"id"`
 }
 
+// Review defines model for Review.
+type Review struct {
+	// Correction The term of the answer side of the card. For the grade almost, it is the term that the answer matched.
+	Correction string `json:"correction"`
+
+	// Grade The result of an answer. Each grade that is not correct counts as a miss.
+	Grade Grade `json:"grade"`
+}
+
+// ReviewCreate defines model for ReviewCreate.
+type ReviewCreate struct {
+	// Answer The answer of the learner. An empty text asks for the right answer and counts as a miss.
+	Answer string `json:"answer"`
+
+	// CardId The ID of a translation card of the group.
+	CardId string `json:"cardId"`
+
+	// Direction The direction of the prompt that the learner saw.
+	Direction Direction `json:"direction"`
+
+	// ProgressVersion The progress version of the card from the study queue.
+	ProgressVersion int `json:"progressVersion"`
+}
+
 // StudyCard defines model for StudyCard.
 type StudyCard struct {
 	Card Card `json:"card"`
@@ -413,6 +461,9 @@ type CreateDraftJSONRequestBody = DraftCreate
 
 // CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
 type CreateInvitationJSONRequestBody = InvitationCreate
+
+// CreateReviewJSONRequestBody defines body for CreateReview for application/json ContentType.
+type CreateReviewJSONRequestBody = ReviewCreate
 
 // AcceptInvitationJSONRequestBody defines body for AcceptInvitation for application/json ContentType.
 type AcceptInvitationJSONRequestBody = InvitationAccept
