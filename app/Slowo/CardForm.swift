@@ -122,7 +122,7 @@ struct CardCheckView: View {
         working = true
         defer { working = false }
         do {
-            try await cards.create(fields.create)
+            _ = try await cards.create(fields.create)
             saved()
         } catch {
             self.error = errorMessage(error)

@@ -49,6 +49,21 @@ final class Cards {
         }
     }
 
+    /// The first 5 translation cards of the group for a search text. A 200 or an error keeps `cards`, `query` and `last`, so the list of Słówka does not change.
+    func similar(to text: String) async throws -> [Components.Schemas.Card] {
+        guard let groupId = profile.me?.groupId else { return [] }
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch try await api.listCards(.init(path: .init(groupId: groupId), query: .init(q: text))) {
+        case let .ok(ok):
+            return try Array(ok.body.json.cards.filter { $0.kind == .translation }.prefix(5))
+        case .forbidden:
+            try await dropGroup()
+            return []
+        default:
+            throw CardError.unexpected
+        }
+    }
+
     func update(_ id: String, _ change: Components.Schemas.CardUpdate) async throws {
         guard let groupId = profile.me?.groupId else { throw CardError.unexpected }
         switch try await api.updateCard(.init(path: .init(groupId: groupId, cardId: id), body: .json(change))) {
@@ -67,18 +82,21 @@ final class Cards {
         }
     }
 
-    func create(_ card: Components.Schemas.CardCreate) async throws {
+    /// The result is the new card. It is nil when the user is not a member of the group.
+    func create(_ card: Components.Schemas.CardCreate) async throws -> Components.Schemas.Card? {
         guard let groupId = profile.me?.groupId else { throw CardError.unexpected }
         switch try await api.createCard(.init(path: .init(groupId: groupId), body: .json(card))) {
-        case .created:
+        case let .created(created):
             // The card is stored. An error of this load makes the learner save again, and a second save makes a second card.
             if cards != nil {
                 try? await load(query: query)
             }
+            return try created.body.json
         case .badRequest:
             throw CardError.rejected
         case .forbidden:
             try await dropGroup()
+            return nil
         default:
             throw CardError.unexpected
         }
