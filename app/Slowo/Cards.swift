@@ -9,11 +9,11 @@ enum CardError: Error, Equatable {
     case unexpected
 }
 
-/// The translation cards of the group of the signed-in user for a search text, as the server has them.
+/// The loaded pages of the translation cards of the group of the signed-in user for a search text, as the server has them.
 @MainActor
 @Observable
 final class Cards {
-    static let pageSize = 50
+    private static let pageSize = 50
 
     private(set) var cards: [Components.Schemas.Card]?
     /// The after value of the next page of `cards`. It is nil when no page follows or when `cards` is nil.

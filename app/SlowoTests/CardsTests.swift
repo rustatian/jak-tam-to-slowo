@@ -48,7 +48,7 @@ struct CardsCase: Sendable, CustomTestStringConvertible {
     let error: CardError?
     let cards: [Components.Schemas.Card]?
     let query: String
-    var next: String? = nil
+    var next: String?
 
     var testDescription: String { name }
 }
@@ -718,7 +718,7 @@ func anOlderAnswerIsDropped(_ c: DroppedAnswerCase) async throws {
 struct DroppedPageCase: Sendable, CustomTestStringConvertible {
     let name: String
     let listCards: [Operations.ListCards.Output]
-    let between: @Sendable @MainActor (Cards) async throws -> Void
+    let second: String
     let inputs: [String]
     let cards: [Components.Schemas.Card]
     let query: String
@@ -736,7 +736,7 @@ let droppedPageCases: [DroppedPageCase] = [
             .ok(.init(body: .json(.init(cards: [zaba])))),
             .ok(.init(body: .json(.init(cards: [dom], next: "k1")))),
         ],
-        between: { try await $0.load(query: "do") },
+        second: "do",
         inputs: ["listCards g1 - limit=50", "listCards g1 - limit=50 after=k1", "listCards g1 do limit=50"], cards: [dom], query: "do", next: "k1"
     ),
     DroppedPageCase(
@@ -746,7 +746,7 @@ let droppedPageCases: [DroppedPageCase] = [
             .ok(.init(body: .json(.init(cards: [zaba])))),
             .ok(.init(body: .json(.init(cards: [cebula, dom], next: "k2")))),
         ],
-        between: { try await $0.load(query: "") },
+        second: "",
         inputs: ["listCards g1 - limit=50", "listCards g1 - limit=50 after=k1", "listCards g1 - limit=50"], cards: [cebula, dom], query: "", next: "k2"
     ),
 ]
@@ -771,7 +771,7 @@ func anOlderPageIsDropped(_ c: DroppedPageCase) async throws {
     while api.calls.count(where: { $0 == "listCards" }) < 2 {
         await Task.yield()
     }
-    try await c.between(cards)
+    try await cards.load(query: c.second)
     release.finish()
     try await more.value
 
