@@ -45,7 +45,7 @@ func (s *Server) createDraft(ctx context.Context, req events.APIGatewayV2HTTPReq
 	if !checkText(body.MeaningRu, 200) {
 		return jsonResponse(http.StatusBadRequest, Error{Message: "meaningRu must have 1 to 200 characters"})
 	}
-	draft := Draft{Status: Queued}
+	draft := Draft{Status: DraftStatusQueued}
 	err = db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, "INSERT INTO jobs (user_id, kind, input) VALUES ($1, 'draft', $2) RETURNING id", sub, body).Scan(&draft.Id)
 	})
@@ -187,12 +187,12 @@ func (s *Server) RunJob(ctx context.Context, event JobEvent) error {
 func draftOutcome(input DraftCreate, resp AIResponse, callErr error) (result map[string]any, fail DraftError, cause string) {
 	switch {
 	case callErr != nil:
-		return nil, Unavailable, ""
+		return nil, DraftErrorUnavailable, ""
 	// A refusal can come with a text, so the stop reason is read first.
 	case resp.StopReason == "refusal":
-		return nil, Refused, ""
+		return nil, DraftErrorRefused, ""
 	case resp.StopReason != "end_turn":
-		return nil, Invalid, "stop reason"
+		return nil, DraftErrorInvalid, "stop reason"
 	}
 	var answer struct {
 		Result struct {
@@ -202,7 +202,7 @@ func draftOutcome(input DraftCreate, resp AIResponse, callErr error) (result map
 		} `json:"result"`
 	}
 	if err := json.Unmarshal([]byte(resp.Text), &answer, json.RejectUnknownMembers(true)); err != nil {
-		return nil, Invalid, "not the JSON of the schema"
+		return nil, DraftErrorInvalid, "not the JSON of the schema"
 	}
 	r := answer.Result
 	switch {
@@ -210,10 +210,10 @@ func draftOutcome(input DraftCreate, resp AIResponse, callErr error) (result map
 		c := r.Card
 		// checkCard lets a nil field pass, and a card needs each of the seven fields.
 		if c.Pl == nil || c.Ru == nil || c.ExamplePl == nil || c.ExampleRu == nil || c.MeaningRu == nil || c.AlternativesPl == nil || c.AlternativesRu == nil {
-			return nil, Invalid, "a card field is missing"
+			return nil, DraftErrorInvalid, "a card field is missing"
 		}
 		if msg := checkCard(c); msg != "" {
-			return nil, Invalid, msg
+			return nil, DraftErrorInvalid, msg
 		}
 		return map[string]any{"card": c}, "", ""
 	// Meanings are only for a text without a picked meaning. checkTerms trims each meaning and allows at most 8. The
@@ -231,6 +231,6 @@ func draftOutcome(input DraftCreate, resp AIResponse, callErr error) (result map
 		}
 	}
 	slices.Sort(terms)
-	return nil, Invalid, fmt.Sprintf("%d choices, %d distinct, %d invalid, card %t, meaning %t",
+	return nil, DraftErrorInvalid, fmt.Sprintf("%d choices, %d distinct, %d invalid, card %t, meaning %t",
 		len(terms), len(slices.Compact(terms)), invalid, r.Card != nil, input.MeaningRu != nil)
 }

@@ -389,6 +389,18 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /v1/groups/{groupId}/drafts/{draftId}
             Method: GET
+        CreateGrammarCheck:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/groups/{groupId}/grammar-checks
+            Method: POST
+        GetGrammarCheck:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/groups/{groupId}/grammar-checks/{checkId}
+            Method: GET
 
   # Cognito calls this function before each sign-up and waits at most 5 seconds for its answer.
   # https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-working-with-lambda-triggers.html#important-lambda-considerations
