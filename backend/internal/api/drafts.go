@@ -104,7 +104,7 @@ func draftSchema(input DraftCreate) map[string]any {
 	return map[string]any{"type": "object", "properties": map[string]any{"result": jsontext.Value(result)}, "required": []any{"result"}, "additionalProperties": false}
 }
 
-// draftPrompt is the system prompt of a draft job: the prompt file of the old app, byte for byte.
+// draftPrompt is the system prompt of a draft job.
 //
 //go:embed draft_prompt.txt
 var draftPrompt string

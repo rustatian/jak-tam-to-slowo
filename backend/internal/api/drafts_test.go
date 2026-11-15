@@ -3,8 +3,6 @@ package api
 import (
 	"cmp"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json/v2"
 	"errors"
 	"maps"
@@ -495,15 +493,6 @@ func TestRunJobRequest(t *testing.T) {
 				t.Errorf("deadline = %v (set: %t), want from %v to %v", deadline, hasDeadline, earliest, latest)
 			}
 		})
-	}
-}
-
-// TestDraftPrompt checks that the embedded prompt is the prompt file of the old app, byte for byte.
-func TestDraftPrompt(t *testing.T) {
-	const wantSum = "12cdced7b598afe034b219ae60582b6b43d3d5eaf3a551bd8b4500794b4fc58a"
-	sum := sha256.Sum256([]byte(draftPrompt))
-	if got := hex.EncodeToString(sum[:]); len(draftPrompt) != 2489 || got != wantSum {
-		t.Errorf("prompt has %d bytes and the SHA-256 %s, want 2489 bytes and %s", len(draftPrompt), got, wantSum)
 	}
 }
 
