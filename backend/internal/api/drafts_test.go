@@ -517,7 +517,7 @@ func TestClaimJobAtTheSameInstant(t *testing.T) {
 	claims := make(chan bool, 2)
 	for range 2 {
 		go func() {
-			_, claimed, err := srv.claimJob(ctx, subOla, j1)
+			_, _, claimed, err := srv.claimJob(ctx, subOla, j1)
 			if err != nil {
 				t.Errorf("claimJob returned error %v", err)
 			}

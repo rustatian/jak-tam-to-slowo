@@ -9,12 +9,27 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
 
 // pieResult is the result of a done grammar check with the card of grammarBody.
 const pieResult = `{"cards":[` + grammarBody + `]}`
+
+// pieTable is the member table of grammarBody, byte for byte.
+const pieTable = `{"title":"Mianownik, liczba mnoga: końcówki według rodzaju","columns":["Rodzaj","Końcówka","Przykład"],"groups":[{"title":"W liczbie mnogiej: męskoosobowy","rows":[{"names":["męski osobowy"],"endings":"-i, -y, -owie, -e","examples":["student → studenci"],"hit":false}]},{"title":"W liczbie mnogiej: niemęskoosobowy","rows":[{"names":["męski żywotny","męski nieżywotny","żeński"],"endings":"-y, -i, -e","examples":["pies → psy","dom → domy","kobieta → kobiety"],"hit":true},{"names":["nijaki"],"endings":"-a","examples":["okno → okna"],"hit":false}]}]}`
+
+// pieCard is the card of grammarBody as the model writes it.
+const pieCard = `{"topic":"e ruchome","used":"dwa piesy","right":"dwa psy","sentence":"Na podwórku biegają dwa ___.","answer":"psy","alternatives":[],"hint":"(pies)","facts":["rzeczownik","rodzaj męski żywotny"],"slots":["Mianownik","liczba mnoga","niemęskoosobowy","końcówka -y"],"rule":"W liczbie mnogiej „pies” traci „e”: psy.","examples":["pies → psy","dom → domy","kobieta → kobiety"],"table":` + pieTable + `}`
+
+// grammarAnswer is an answer of the model that ends normally, with the cards.
+func grammarAnswer(cards ...string) AIResponse {
+	return AIResponse{StopReason: "end_turn", Text: `{"cards":[` + strings.Join(cards, ",") + `]}`}
+}
+
+// pieWith is pieCard with each old text of the pairs replaced by the new text.
+func pieWith(oldNew ...string) string { return strings.NewReplacer(oldNew...).Replace(pieCard) }
 
 func TestCreateGrammarCheck(t *testing.T) {
 	const textRule = `{"message":"text must have 1 to 500 characters"}`
@@ -224,5 +239,210 @@ func TestGetGrammarCheck(t *testing.T) {
 				t.Errorf("members = %q, want %q (body %s)", keys, wantKeys, resp.Body)
 			}
 		})
+	}
+}
+
+func TestRunGrammarCheck(t *testing.T) {
+	// reply is the answer and the error of the fake AI for one call.
+	type reply struct {
+		resp AIResponse
+		err  error
+	}
+	badHint := pieWith(`"hint":"(pies)"`, `"hint":"(dwa piesy, liczba mnoga)"`) // the words of used, and more words
+	tests := []struct {
+		name    string
+		replies []reply // reply i is the answer of call i
+		wantErr bool    // RunJob returns an error
+		// The job row of the setup after the call.
+		wantStatus string
+		wantError  string // empty for NULL
+		wantResult string // empty for NULL
+	}{
+		{name: "a card is checked and stored", replies: []reply{{resp: grammarAnswer(pieCard)}}, wantStatus: "done", wantResult: pieResult},
+		{name: "the texts of a card are trimmed", replies: []reply{{resp: grammarAnswer(pieWith(`"answer":"psy"`, `"answer":"  psy  "`, `"hint":"(pies)"`, `"hint":" (pies) "`))}},
+			wantStatus: "done", wantResult: pieResult},
+		{name: "no mistake stores an empty list", replies: []reply{{resp: grammarAnswer()}}, wantStatus: "done", wantResult: `{"cards":[]}`},
+		{name: "a null table gives a card without a table", replies: []reply{{resp: grammarAnswer(pieWith(pieTable, "null"))}},
+			wantStatus: "done", wantResult: `{"cards":[` + strings.Replace(grammarBody, `,"table":`+pieTable, "", 1) + `]}`},
+		{name: "a null group title gives a group without a title",
+			replies:    []reply{{resp: grammarAnswer(pieWith(`"title":"W liczbie mnogiej: męskoosobowy",`, `"title":null,`))}},
+			wantStatus: "done", wantResult: `{"cards":[` + strings.Replace(grammarBody, `"title":"W liczbie mnogiej: męskoosobowy",`, "", 1) + `]}`},
+		{name: "10 cards pass", replies: []reply{{resp: grammarAnswer(slices.Repeat([]string{pieCard}, 10)...)}},
+			wantStatus: "done", wantResult: `{"cards":[` + strings.Join(slices.Repeat([]string{grammarBody}, 10), ",") + `]}`},
+		{name: "a repeat after an invalid answer", replies: []reply{{resp: grammarAnswer(badHint)}, {resp: grammarAnswer(pieCard)}}, wantStatus: "done", wantResult: pieResult},
+		{name: "two invalid answers", replies: []reply{{resp: grammarAnswer(badHint)}, {resp: grammarAnswer(badHint)}}, wantStatus: "failed", wantError: "invalid"},
+		{name: "11 cards are invalid two times",
+			replies:    []reply{{resp: grammarAnswer(slices.Repeat([]string{pieCard}, 11)...)}, {resp: grammarAnswer(slices.Repeat([]string{pieCard}, 11)...)}},
+			wantStatus: "failed", wantError: "invalid"},
+		{name: "the output limit is invalid two times",
+			replies:    []reply{{resp: AIResponse{StopReason: "max_tokens", Text: grammarAnswer(pieCard).Text}}, {resp: AIResponse{StopReason: "max_tokens", Text: grammarAnswer(pieCard).Text}}},
+			wantStatus: "failed", wantError: "invalid"},
+		{name: "an unknown member is invalid two times",
+			replies:    []reply{{resp: grammarAnswer(pieWith(`"table":`, `"note":"x","table":`))}, {resp: grammarAnswer(pieWith(`"table":`, `"note":"x","table":`))}},
+			wantStatus: "failed", wantError: "invalid"},
+		{name: "a refusal is not repeated", replies: []reply{{resp: AIResponse{StopReason: "refusal"}}}, wantStatus: "failed", wantError: "refused"},
+		{name: "a refusal of the repeat", replies: []reply{{resp: grammarAnswer(badHint)}, {resp: AIResponse{StopReason: "refusal"}}}, wantStatus: "failed", wantError: "refused"},
+		{name: "a network error is not repeated", replies: []reply{{err: errors.New("connection reset by peer")}}, wantStatus: "failed", wantError: "unavailable"},
+		{name: "the time limit is unavailable", replies: []reply{{err: context.DeadlineExceeded}}, wantStatus: "failed", wantError: "unavailable"},
+		{name: "status 401 is unavailable and an error", replies: []reply{{err: &AIError{Status: 401}}}, wantErr: true, wantStatus: "failed", wantError: "unavailable"},
+		{name: "status 401 of the repeat is unavailable and an error", replies: []reply{{resp: grammarAnswer(badHint)}, {err: &AIError{Status: 401}}},
+			wantErr: true, wantStatus: "failed", wantError: "unavailable"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			pool, srv, _, _ := groupFixture(t)
+			if _, err := pool.Exec(ctx, addJob+`('sub-ola', '`+j1+`', 'grammar', 'queued', '{"text":"Idę do sklep."}', NULL, NULL, now())`); err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			srv.AI = func(context.Context, AIRequest) (AIResponse, error) {
+				calls++
+				if calls > len(tt.replies) {
+					t.Errorf("call %d, want at most %d calls", calls, len(tt.replies))
+					return AIResponse{}, errors.New("no reply")
+				}
+				r := tt.replies[calls-1]
+				return r.resp, r.err
+			}
+
+			if err := srv.RunJob(ctx, JobEvent{UserID: subOla, JobID: j1}); (err != nil) != tt.wantErr {
+				t.Errorf("RunJob returned error %v, want an error: %t", err, tt.wantErr)
+			}
+			if calls != len(tt.replies) {
+				t.Errorf("calls = %d, want %d", calls, len(tt.replies))
+			}
+			var status, jobErr, result string
+			var sameResult bool
+			if err := pool.QueryRow(ctx, "SELECT status, coalesce(error, ''), coalesce(result::text, ''), result IS NOT DISTINCT FROM nullif($1, '')::jsonb FROM jobs",
+				tt.wantResult).Scan(&status, &jobErr, &result, &sameResult); err != nil {
+				t.Fatal(err)
+			}
+			if status != tt.wantStatus {
+				t.Errorf("status = %s, want %s", status, tt.wantStatus)
+			}
+			if jobErr != tt.wantError {
+				t.Errorf("error = %q, want %q", jobErr, tt.wantError)
+			}
+			if !sameResult {
+				t.Errorf("result = %q, want %q", result, tt.wantResult)
+			}
+		})
+	}
+}
+
+// TestGrammarOutcomeCause checks the cause that the log line of a grammar check gets for an answer of the model.
+func TestGrammarOutcomeCause(t *testing.T) {
+	badHint := pieWith(`"hint":"(pies)"`, `"hint":"(dwa piesy, liczba mnoga)"`) // the words of used, and more words
+	tests := []struct {
+		name      string
+		resp      AIResponse
+		callErr   error
+		wantFail  GrammarCheckError
+		wantCause string
+	}{
+		{name: "cards have no cause", resp: grammarAnswer(pieCard), wantFail: "", wantCause: ""},
+		{name: "a failed call has no cause", callErr: errors.New("connection reset by peer"), wantFail: GrammarCheckErrorUnavailable, wantCause: ""},
+		{name: "a refusal has no cause", resp: AIResponse{StopReason: "refusal"}, wantFail: GrammarCheckErrorRefused, wantCause: ""},
+		{name: "the output limit", resp: AIResponse{StopReason: "max_tokens", Text: grammarAnswer(pieCard).Text}, wantFail: GrammarCheckErrorInvalid, wantCause: "stop reason"},
+		{name: "a text that is not JSON", resp: AIResponse{StopReason: "end_turn", Text: "psy"}, wantFail: GrammarCheckErrorInvalid, wantCause: "not the JSON of the schema"},
+		{name: "an unknown member", resp: grammarAnswer(pieWith(`"table":`, `"note":"x","table":`)), wantFail: GrammarCheckErrorInvalid, wantCause: "not the JSON of the schema"},
+		{name: "11 cards", resp: grammarAnswer(slices.Repeat([]string{pieCard}, 11)...), wantFail: GrammarCheckErrorInvalid, wantCause: "11 cards"},
+		{name: "a hint with the used form in the second card", resp: grammarAnswer(pieCard, badHint), wantFail: GrammarCheckErrorInvalid,
+			wantCause: "card 2: grammar.hint must not contain grammar.used"},
+		{name: "a card without hint", resp: grammarAnswer(pieWith(`"hint":"(pies)",`, "")), wantFail: GrammarCheckErrorInvalid,
+			wantCause: "card 1: grammar.hint must have 1 to 200 characters"},
+		{name: "a sentence without a gap", resp: grammarAnswer(pieWith(`"sentence":"Na podwórku biegają dwa ___."`, `"sentence":"Na podwórku biegają dwa psy."`)),
+			wantFail: GrammarCheckErrorInvalid, wantCause: "card 1: examplePl must have ___ exactly once"},
+		{name: "a card without facts and slots has no cause",
+			resp:     grammarAnswer(pieWith(`"facts":["rzeczownik","rodzaj męski żywotny"],`, "", `"slots":["Mianownik","liczba mnoga","niemęskoosobowy","końcówka -y"],`, "")),
+			wantFail: "", wantCause: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, fail, cause := grammarOutcome(tt.resp, tt.callErr)
+			if fail != tt.wantFail {
+				t.Errorf("fail = %q, want %q", fail, tt.wantFail)
+			}
+			if cause != tt.wantCause {
+				t.Errorf("cause = %q, want %q", cause, tt.wantCause)
+			}
+		})
+	}
+}
+
+func TestRunGrammarCheckRequest(t *testing.T) {
+	// The schema of the cards keeps the order of its properties on the wire. The top level is a Go map, so
+	// Deterministic writes its keys sorted.
+	const cardsSchema = `{"type":"array","items":{"type":"object","properties":{"topic":{"type":"string"},"used":{"type":"string"},"right":{"type":"string"},"sentence":{"type":"string"},"answer":{"type":"string"},"alternatives":{"type":"array","items":{"type":"string"}},"hint":{"type":"string"},"facts":{"type":"array","items":{"type":"string"}},"slots":{"type":"array","items":{"type":"string"}},"rule":{"type":"string"},"examples":{"type":"array","items":{"type":"string"},"minItems":1},"table":{"anyOf":[{"type":"object","properties":{"title":{"type":"string"},"columns":{"type":"array","items":{"type":"string"},"minItems":1},"groups":{"type":"array","items":{"type":"object","properties":{"title":{"type":["string","null"]},"rows":{"type":"array","items":{"type":"object","properties":{"names":{"type":"array","items":{"type":"string"},"minItems":1},"endings":{"type":"string"},"examples":{"type":"array","items":{"type":"string"},"minItems":1},"hit":{"type":"boolean"}},"required":["names","endings","examples","hit"],"additionalProperties":false},"minItems":1}},"required":["title","rows"],"additionalProperties":false},"minItems":1}},"required":["title","columns","groups"],"additionalProperties":false},{"type":"null"}]}},"required":["topic","used","right","sentence","answer","alternatives","hint","facts","slots","rule","examples","table"],"additionalProperties":false}}`
+	const wantSchema = `{"additionalProperties":false,"properties":{"cards":` + cardsSchema + `},"required":["cards"],"type":"object"}`
+	badHint := pieWith(`"hint":"(pies)"`, `"hint":"(dwa piesy, liczba mnoga)"`) // the words of used, and more words
+	tests := []struct {
+		name  string
+		index int // the index of the call
+	}{
+		{name: "the first call", index: 0},
+		{name: "the repeat", index: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			pool, srv, _, _ := groupFixture(t)
+			if _, err := pool.Exec(ctx, addJob+`('sub-ola', '`+j1+`', 'grammar', 'queued', '{"text":"Idę do sklep."}', NULL, NULL, now())`); err != nil {
+				t.Fatal(err)
+			}
+			type call struct {
+				req         AIRequest
+				deadline    time.Time
+				hasDeadline bool
+			}
+			var calls []call
+			replies := []AIResponse{grammarAnswer(badHint), grammarAnswer(pieCard)}
+			srv.AI = func(ctx context.Context, req AIRequest) (AIResponse, error) {
+				deadline, hasDeadline := ctx.Deadline()
+				calls = append(calls, call{req: req, deadline: deadline, hasDeadline: hasDeadline})
+				if len(calls) > len(replies) {
+					return AIResponse{}, errors.New("no reply")
+				}
+				return replies[len(calls)-1], nil
+			}
+
+			before := time.Now()
+			if err := srv.RunJob(ctx, JobEvent{UserID: subOla, JobID: j1}); err != nil {
+				t.Errorf("RunJob returned error %v", err)
+			}
+			after := time.Now()
+			if len(calls) != 2 {
+				t.Fatalf("calls = %d, want 2", len(calls))
+			}
+			got := calls[tt.index]
+			// The schema is compared as text, because the model writes its answer in the order of the schema.
+			gotSchema, err := json.Marshal(got.req.Schema, json.Deterministic(true))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(gotSchema) != wantSchema {
+				t.Errorf("schema = %s, want %s", gotSchema, wantSchema)
+			}
+			got.req.Schema = nil
+			if want := (AIRequest{Model: "claude-opus-5-5", Effort: "xhigh", MaxTokens: 16000, System: grammarPrompt, Input: `{"text":"Idę do sklep."}`}); !reflect.DeepEqual(got.req, want) {
+				t.Errorf("request = %+v, want %+v", got.req, want)
+			}
+			if earliest, latest := before.Add(120*time.Second), after.Add(120*time.Second); !got.hasDeadline || got.deadline.Before(earliest) || got.deadline.After(latest) {
+				t.Errorf("deadline = %v (set: %t), want from %v to %v", got.deadline, got.hasDeadline, earliest, latest)
+			}
+		})
+	}
+}
+
+// TestGrammarPromptExample checks that the worked example of the prompt is an answer that the job stores.
+func TestGrammarPromptExample(t *testing.T) {
+	_, example, found := strings.Cut(grammarPrompt, `For input {"text":"dwa piesy"}, return `)
+	if !found {
+		t.Fatal("the prompt has no worked example")
+	}
+	cards, fail, cause := grammarOutcome(AIResponse{StopReason: "end_turn", Text: strings.TrimSuffix(strings.TrimSpace(example), ".")}, nil)
+	if fail != "" || cause != "" || len(cards) != 1 {
+		t.Errorf("fail = %q, cause = %q, cards = %d, want no fail, no cause and 1 card", fail, cause, len(cards))
 	}
 }

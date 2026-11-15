@@ -484,7 +484,8 @@ Resources:
       Runtime: provided.al2023
       Architectures: [arm64]
       MemorySize: 128
-      Timeout: 60
+      # A grammar check makes at most two calls of 120 seconds each. The claim and the writes take less than 20 seconds.
+      Timeout: 260
       LoggingConfig:
         LogGroup: !Ref JobsLogGroup
       Environment:
@@ -506,8 +507,8 @@ Resources:
             - Effect: Allow
               Action: ssm:GetParameter
               Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/slowo/anthropic-api-key
-      # The poll route shows a job as failed after 120 seconds, so an event that waited longer than 60 seconds and a
-      # second run of a failed event have no use. The age can be 60 to 21,600 seconds, and the retries can be 0 to 2.
+      # The claim refuses a job of 60 seconds or more, so an event that waited longer than 60 seconds and a second run
+      # of a failed event have no use. The age can be 60 to 21,600 seconds, and the retries can be 0 to 2.
       # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-lambda-eventinvokeconfig.html
       # Lambda runs a failed event again, and it can send one event two times.
       # https://docs.aws.amazon.com/lambda/latest/dg/invocation-async-error-handling.html

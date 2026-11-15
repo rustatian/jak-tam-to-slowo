@@ -2,10 +2,14 @@ package api
 
 import (
 	"context"
+	_ "embed"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/jackc/pgx/v5"
@@ -72,4 +76,105 @@ func (s *Server) getGrammarCheck(ctx context.Context, req events.APIGatewayV2HTT
 		return serverError(ctx, req, sub, err)
 	}
 	return jsonResponse(http.StatusOK, check)
+}
+
+// grammarCards is the JSON schema of the cards in the answer of a grammar check. It is JSON text because the model
+// writes the properties of its answer in the order of the schema, and the encoder writes a Go map with sorted keys.
+// The card has its properties in the order of the prompt.
+// https://platform.claude.com/docs/en/build-with-claude/structured-outputs#property-ordering
+const grammarCards = `{"type":"array","items":{"type":"object","properties":{"topic":{"type":"string"},"used":{"type":"string"},"right":{"type":"string"},"sentence":{"type":"string"},"answer":{"type":"string"},"alternatives":{"type":"array","items":{"type":"string"}},"hint":{"type":"string"},"facts":{"type":"array","items":{"type":"string"}},"slots":{"type":"array","items":{"type":"string"}},"rule":{"type":"string"},"examples":{"type":"array","items":{"type":"string"},"minItems":1},"table":{"anyOf":[{"type":"object","properties":{"title":{"type":"string"},"columns":{"type":"array","items":{"type":"string"},"minItems":1},"groups":{"type":"array","items":{"type":"object","properties":{"title":{"type":["string","null"]},"rows":{"type":"array","items":{"type":"object","properties":{"names":{"type":"array","items":{"type":"string"},"minItems":1},"endings":{"type":"string"},"examples":{"type":"array","items":{"type":"string"},"minItems":1},"hit":{"type":"boolean"}},"required":["names","endings","examples","hit"],"additionalProperties":false},"minItems":1}},"required":["title","rows"],"additionalProperties":false},"minItems":1}},"required":["title","columns","groups"],"additionalProperties":false},{"type":"null"}]}},"required":["topic","used","right","sentence","answer","alternatives","hint","facts","slots","rule","examples","table"],"additionalProperties":false}}`
+
+// grammarSchema is the JSON schema of the answer of a grammar check.
+// https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+var grammarSchema = map[string]any{"type": "object", "properties": map[string]any{"cards": jsontext.Value(grammarCards)}, "required": []any{"cards"}, "additionalProperties": false}
+
+// grammarPrompt is the system prompt of a grammar check.
+//
+//go:embed grammar_prompt.txt
+var grammarPrompt string
+
+// runGrammarCheck asks the AI model for the grammar cards of the input of a claimed grammar check, and ends the check
+// as done with the checked cards or as failed with the cause. An invalid first answer gets a second call with the same
+// request.
+func (s *Server) runGrammarCheck(ctx context.Context, event JobEvent, input []byte) error {
+	var body GrammarCheckCreate
+	if err := json.Unmarshal(input, &body); err != nil {
+		return err
+	}
+	// The input of a stored job always marshals.
+	text, _ := json.Marshal(body)
+	req := AIRequest{Model: "claude-opus-5-5", Effort: "xhigh", MaxTokens: 16000, System: grammarPrompt, Schema: grammarSchema, Input: string(text)}
+	var (
+		cards   []CardCreate
+		fail    GrammarCheckError
+		callErr error
+	)
+	for n := 1; n <= 2; n++ {
+		callCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+		start := time.Now()
+		var resp AIResponse
+		resp, callErr = s.AI(callCtx, req)
+		duration := time.Since(start)
+		cancel()
+		var cause string
+		cards, fail, cause = grammarOutcome(resp, callErr)
+		logCall(ctx, "grammar check", event, string(fail), cause, resp, duration, callErr, "call", n)
+		if fail != GrammarCheckErrorInvalid {
+			break
+		}
+	}
+	if err := s.endJob(ctx, event, map[string]any{"cards": cards}, string(fail)); err != nil {
+		return err
+	}
+	if needsOperator(callErr) {
+		return callErr
+	}
+	return nil
+}
+
+// grammarOutcome checks the answer of a call of a grammar check. fail is the cause of a failed check; when it is
+// empty, the check is done with cards. cause tells the log what an invalid answer broke: the stop reason, the JSON,
+// the count of the cards, or the rule of a card.
+// https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons
+func grammarOutcome(resp AIResponse, callErr error) (cards []CardCreate, fail GrammarCheckError, cause string) {
+	switch {
+	case callErr != nil:
+		return nil, GrammarCheckErrorUnavailable, ""
+	// A refusal can come with a text, so the stop reason is read first.
+	case resp.StopReason == "refusal":
+		return nil, GrammarCheckErrorRefused, ""
+	case resp.StopReason != "end_turn":
+		return nil, GrammarCheckErrorInvalid, "stop reason"
+	}
+	var answer struct {
+		Cards []struct {
+			Topic        string        `json:"topic"`
+			Used         string        `json:"used"`
+			Right        string        `json:"right"`
+			Sentence     string        `json:"sentence"`
+			Answer       string        `json:"answer"`
+			Alternatives *[]string     `json:"alternatives"`
+			Hint         string        `json:"hint"`
+			Facts        []string      `json:"facts"`
+			Slots        []string      `json:"slots"`
+			Rule         string        `json:"rule"`
+			Examples     []string      `json:"examples"`
+			Table        *GrammarTable `json:"table"`
+		} `json:"cards"`
+	}
+	if err := json.Unmarshal([]byte(resp.Text), &answer, json.RejectUnknownMembers(true)); err != nil {
+		return nil, GrammarCheckErrorInvalid, "not the JSON of the schema"
+	}
+	if len(answer.Cards) > 10 {
+		return nil, GrammarCheckErrorInvalid, fmt.Sprintf("%d cards", len(answer.Cards))
+	}
+	cards = make([]CardCreate, len(answer.Cards))
+	for i, a := range answer.Cards {
+		cards[i] = CardCreate{Kind: new(CardKindGrammar), Pl: a.Answer, ExamplePl: a.Sentence, AlternativesPl: a.Alternatives, Grammar: &Grammar{
+			Topic: a.Topic, Used: a.Used, Right: a.Right, Hint: a.Hint, Facts: a.Facts, Slots: a.Slots, Rule: a.Rule, Examples: a.Examples, Table: a.Table}}
+		if msg := CheckGrammarCard(&cards[i]); msg != "" {
+			return nil, GrammarCheckErrorInvalid, fmt.Sprintf("card %d: %s", i+1, msg)
+		}
+	}
+	return cards, "", ""
 }
