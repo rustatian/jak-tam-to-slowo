@@ -8,7 +8,7 @@ topic is one short Polish label of the grammar topic, for example przypadek, lic
 
 used is the wrong words exactly as the learner wrote them, without leading and trailing spaces. Do not correct used. right is used with the mistake corrected, as text needs it.
 
-sentence is a new, short, natural Polish sentence that is not the sentence of the learner. It contains ___ (three underscores) exactly once, in the place of answer. The context of the sentence must force the form of answer, for example with a number word, a preposition, a subject, or a time word. answer is only the text that fills the gap in sentence.
+sentence is a new, short, natural Polish sentence that is not the sentence of the learner. It contains ___ (three underscores) exactly once, in the place of answer. The context of the sentence must force the form of answer, for example with a number word, a preposition, a subject, or a time word. When another form of the same word, for example another tense of a verb, is also correct Polish in the gap, change sentence so that only answer fits. answer is only the text that fills the gap in sentence.
 
 alternatives lists only other accepted forms of answer for the same gap. It is usually empty. Do not put anything else in it.
 
