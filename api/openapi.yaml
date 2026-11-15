@@ -241,7 +241,7 @@ paths:
       - $ref: "#/components/parameters/GroupId"
     post:
       operationId: createCard
-      summary: Add a translation card to the group.
+      summary: Add a card to the group.
       requestBody:
         required: true
         content:
@@ -294,7 +294,7 @@ paths:
       - $ref: "#/components/parameters/CardId"
     patch:
       operationId: updateCard
-      summary: Change the card fields that the body names.
+      summary: Change the card fields that the body names. A grammar card cannot be changed.
       requestBody:
         required: true
         content:
@@ -316,6 +316,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "500":
           $ref: "#/components/responses/InternalError"
     delete:
@@ -747,12 +749,12 @@ components:
     Card:
       type: object
       required: [id, kind, pl, ru, examplePl, exampleRu, meaningRu, alternativesPl, alternativesRu]
+      description: A card of the group. A grammar card has the object grammar. A translation card has none.
       properties:
         id:
           type: string
         kind:
-          type: string
-          enum: [translation, grammar]
+          $ref: "#/components/schemas/CardKind"
         pl:
           type: string
         ru:
@@ -771,35 +773,35 @@ components:
           type: array
           items:
             type: string
+        grammar:
+          $ref: "#/components/schemas/Grammar"
     CardCreate:
       type: object
       required: [pl, ru, examplePl, exampleRu, meaningRu]
+      description: Without kind, the card is a translation card. A grammar card must have grammar, empty ru, exampleRu and meaningRu, and no alternativesRu. A translation card must not have grammar.
       properties:
         pl:
           type: string
           minLength: 1
           maxLength: 200
-          description: The Polish term. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+          description: "The Polish term, or the answer of a grammar card: the words that fill the gap. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character."
         ru:
           type: string
-          minLength: 1
           maxLength: 200
-          description: The Russian term. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+          description: The Russian term, or the empty text for a grammar card. Spaces at the ends are removed; then the term of a translation card has 1 to 200 characters, and no control, line-break or text-direction character.
         examplePl:
           type: string
           minLength: 1
           maxLength: 500
-          description: A Polish example. Spaces at the ends are removed; then it has 1 to 500 characters, and no control, line-break or text-direction character.
+          description: A Polish example, or the gap sentence of a grammar card with ___ (three underscores) exactly once. Spaces at the ends are removed; then it has 1 to 500 characters, and no control, line-break or text-direction character.
         exampleRu:
           type: string
-          minLength: 1
           maxLength: 500
-          description: A Russian example. Spaces at the ends are removed; then it has 1 to 500 characters, and no control, line-break or text-direction character.
+          description: A Russian example, or the empty text for a grammar card. Spaces at the ends are removed; then the example of a translation card has 1 to 500 characters, and no control, line-break or text-direction character.
         meaningRu:
           type: string
-          minLength: 1
           maxLength: 200
-          description: The meaning in Russian. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+          description: The meaning in Russian, or the empty text for a grammar card. Spaces at the ends are removed; then the meaning of a translation card has 1 to 200 characters, and no control, line-break or text-direction character.
         alternativesPl:
           type: array
           maxItems: 8
@@ -807,7 +809,7 @@ components:
             type: string
             minLength: 1
             maxLength: 200
-          description: At most 8 other Polish terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. A list that the body does not have is an empty list.
+          description: At most 8 other Polish terms, or other accepted answers of a grammar card. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. A list that the body does not have is an empty list.
         alternativesRu:
           type: array
           maxItems: 8
@@ -815,7 +817,11 @@ components:
             type: string
             minLength: 1
             maxLength: 200
-          description: At most 8 other Russian terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. A list that the body does not have is an empty list.
+          description: At most 8 other Russian terms. A grammar card has none. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. A list that the body does not have is an empty list.
+        kind:
+          $ref: "#/components/schemas/CardKind"
+        grammar:
+          $ref: "#/components/schemas/Grammar"
     Cards:
       type: object
       required: [cards]
@@ -868,6 +874,132 @@ components:
             minLength: 1
             maxLength: 200
           description: At most 8 other Russian terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. An empty list removes all terms.
+    CardKind:
+      type: string
+      enum: [translation, grammar]
+      description: "translation: a card with a Polish and a Russian side. grammar: a card with a gap sentence in examplePl, the answer in pl, the object grammar, and empty Russian texts."
+    Grammar:
+      type: object
+      required: [topic, used, right, hint, facts, slots, rule, examples]
+      description: The grammar part of a grammar card. Spaces at the ends of each text are removed; then each text has the length of its field, and no control, line-break or text-direction character. The table is optional.
+      properties:
+        topic:
+          type: string
+          minLength: 1
+          maxLength: 40
+          description: "The grammar topic of the mistake: one short Polish label."
+        used:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: The wrong words as the learner wrote them.
+        right:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: The correct form for the text of the learner. It is not equal to used. A difference of capitals or spaces only does not count.
+        hint:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: The hint next to the gap. A hint with more words than used does not contain the words of used in the same order. So the hint can show the form of the learner only alone, for example in brackets.
+        facts:
+          type: array
+          maxItems: 4
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+          description: Facts about the word, for example the part of speech.
+        slots:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+          description: Facts about the gap, for example the case and the number.
+        rule:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: The rule in one or two sentences of simple Polish.
+        examples:
+          type: array
+          minItems: 2
+          maxItems: 3
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+          description: Short examples of the rule.
+        table:
+          $ref: "#/components/schemas/GrammarTable"
+    GrammarTable:
+      type: object
+      required: [title, columns, groups]
+      description: A table of the rule. It has at most 12 rows, and exactly one row has hit true.
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+        columns:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+        groups:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+            $ref: "#/components/schemas/GrammarGroup"
+    GrammarGroup:
+      type: object
+      required: [rows]
+      description: A group of rows of the table, with an optional title.
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 80
+        rows:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/GrammarRow"
+    GrammarRow:
+      type: object
+      required: [names, endings, examples, hit]
+      description: A row of the table. examples has one text for each name. hit is true for the row of the form of the card.
+      properties:
+        names:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+        endings:
+          type: string
+          minLength: 1
+          maxLength: 60
+        examples:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            type: string
+            minLength: 1
+            maxLength: 80
+        hit:
+          type: boolean
     StudyQueue:
       type: object
       required: [cards]

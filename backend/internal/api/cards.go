@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -212,6 +213,116 @@ func checkCard(u *CardUpdate) (msg string) {
 	return ""
 }
 
+// CheckGrammarCard checks the create body of a grammar card. It trims each text of c in place. It sets each list that
+// can be empty and that c does not have to an empty list, so the stored card has [] and not null. msg is the 400 text
+// of the first broken rule. It is empty when c passes.
+func CheckGrammarCard(c *CardCreate) (msg string) {
+	c.AlternativesPl, c.AlternativesRu = cmp.Or(c.AlternativesPl, &[]string{}), cmp.Or(c.AlternativesRu, &[]string{})
+	c.Ru, c.ExampleRu, c.MeaningRu = strings.TrimSpace(c.Ru), strings.TrimSpace(c.ExampleRu), strings.TrimSpace(c.MeaningRu)
+	g := c.Grammar
+	switch {
+	case !checkText(&c.Pl, 200):
+		return "pl must have 1 to 200 characters"
+	case !checkText(&c.ExamplePl, 500):
+		return "examplePl must have 1 to 500 characters"
+	case strings.Count(c.ExamplePl, "___") != 1:
+		return "examplePl must have ___ exactly once"
+	case !checkTerms(c.AlternativesPl):
+		return "alternativesPl must have at most 8 terms of 1 to 200 characters"
+	case c.Ru != "" || c.ExampleRu != "" || c.MeaningRu != "":
+		return "ru, exampleRu and meaningRu must be empty for a grammar card"
+	case len(*c.AlternativesRu) > 0:
+		return "alternativesRu must be empty for a grammar card"
+	case g == nil:
+		return "grammar is required for a grammar card"
+	case !checkText(&g.Topic, 40):
+		return "grammar.topic must have 1 to 40 characters"
+	case !checkText(&g.Used, 200):
+		return "grammar.used must have 1 to 200 characters"
+	case !checkText(&g.Right, 200):
+		return "grammar.right must have 1 to 200 characters"
+	case answerKey(g.Right) == answerKey(g.Used):
+		return "grammar.right must be different from grammar.used"
+	case !checkText(&g.Hint, 200):
+		return "grammar.hint must have 1 to 200 characters"
+	case hintContainsUsed(g.Hint, g.Used):
+		return "grammar.hint must not contain grammar.used"
+	case !checkTexts(g.Facts, 0, 4, 40):
+		return "grammar.facts must have at most 4 labels of 1 to 40 characters"
+	case !checkTexts(g.Slots, 0, 5, 40):
+		return "grammar.slots must have at most 5 labels of 1 to 40 characters"
+	case !checkText(&g.Rule, 500):
+		return "grammar.rule must have 1 to 500 characters"
+	case !checkTexts(g.Examples, 2, 3, 200):
+		return "grammar.examples must have 2 or 3 texts of 1 to 200 characters"
+	}
+	if g.Facts == nil {
+		g.Facts = []string{}
+	}
+	if g.Slots == nil {
+		g.Slots = []string{}
+	}
+	table := g.Table
+	switch {
+	case table == nil:
+		return ""
+	case !checkText(&table.Title, 100):
+		return "grammar.table.title must have 1 to 100 characters"
+	case !checkTexts(table.Columns, 3, 3, 40):
+		return "grammar.table.columns must have 3 texts of 1 to 40 characters"
+	case len(table.Groups) < 1 || len(table.Groups) > 4:
+		return "grammar.table.groups must have 1 to 4 groups"
+	}
+	rows, hits := 0, 0
+	for i := range table.Groups {
+		group := &table.Groups[i]
+		switch {
+		case !checkText(group.Title, 80):
+			return "grammar.table.groups.title must have 1 to 80 characters"
+		case len(group.Rows) < 1 || len(group.Rows) > 8:
+			return "grammar.table.groups.rows must have 1 to 8 rows in each group"
+		}
+		for j := range group.Rows {
+			row := &group.Rows[j]
+			switch {
+			case !checkTexts(row.Names, 1, 3, 40):
+				return "grammar.table.groups.rows.names must have 1 to 3 texts of 1 to 40 characters"
+			case !checkText(&row.Endings, 60):
+				return "grammar.table.groups.rows.endings must have 1 to 60 characters"
+			case !checkTexts(row.Examples, len(row.Names), len(row.Names), 80):
+				return "grammar.table.groups.rows.examples must have one text of 1 to 80 characters for each name"
+			}
+			if row.Hit {
+				hits++
+			}
+		}
+		rows += len(group.Rows)
+	}
+	switch {
+	case rows > 12:
+		return "grammar.table must have at most 12 rows"
+	case hits != 1:
+		return "grammar.table must have exactly one row with hit true"
+	}
+	return ""
+}
+
+// hintContainsUsed reports that the hint has more words than used, and that the words of used are next to each other
+// in the hint in the same order. The words of a text are the runs of letters and digits in its answer key.
+func hintContainsUsed(hint, used string) bool {
+	notWord := func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }
+	h, u := strings.FieldsFunc(answerKey(hint), notWord), strings.FieldsFunc(answerKey(used), notWord)
+	if len(h) <= len(u) {
+		return false
+	}
+	for i := range len(h) - len(u) + 1 {
+		if slices.Equal(h[i:i+len(u)], u) {
+			return true
+		}
+	}
+	return false
+}
+
 // checkText applies trimmedText to the text that p points to, in place. A nil p passes.
 func checkText(p *string, max int) bool {
 	if p == nil {
@@ -228,14 +339,17 @@ func checkText(p *string, max int) bool {
 // https://pkg.go.dev/encoding/json#Marshal
 // https://github.com/jackc/pgx/blob/v5.12.0/pgtype/pgtype_default.go#L69
 func checkTerms(p *[]string) bool {
-	if p == nil {
-		return true
-	}
-	if len(*p) > 8 {
+	return p == nil || checkTexts(*p, 0, 8, 200)
+}
+
+// checkTexts applies checkText with length characters to each text of the list, in place. It reports that the list
+// has min to max texts and that each text passes.
+func checkTexts(list []string, min, max, length int) bool {
+	if len(list) < min || len(list) > max {
 		return false
 	}
-	for i := range *p {
-		if !checkText(&(*p)[i], 200) {
+	for i := range list {
+		if !checkText(&list[i], length) {
 			return false
 		}
 	}
