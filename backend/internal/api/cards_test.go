@@ -39,7 +39,8 @@ var (
 		MeaningRu: "труд", AlternativesPl: []string{}, AlternativesRu: []string{}}
 )
 
-// grammarBody is the create body of the grammar card of the tests.
+// grammarBody is the create body of the grammar card of the tests. It has no ASCII apostrophe, because
+// grammarFixture puts it in an SQL literal.
 const grammarBody = `{"kind":"grammar","pl":"psy","ru":"","examplePl":"Na podwórku biegają dwa ___.","exampleRu":"","meaningRu":"","alternativesPl":[],"alternativesRu":[],"grammar":{"topic":"e ruchome","used":"dwa piesy","right":"dwa psy","hint":"(pies)","facts":["rzeczownik","rodzaj męski żywotny"],"slots":["Mianownik","liczba mnoga","niemęskoosobowy","końcówka -y"],"rule":"W liczbie mnogiej „pies” traci „e”: psy.","examples":["pies → psy","dom → domy","kobieta → kobiety"],"table":{"title":"Mianownik, liczba mnoga: końcówki według rodzaju","columns":["Rodzaj","Końcówka","Przykład"],"groups":[{"title":"W liczbie mnogiej: męskoosobowy","rows":[{"names":["męski osobowy"],"endings":"-i, -y, -owie, -e","examples":["student → studenci"],"hit":false}]},{"title":"W liczbie mnogiej: niemęskoosobowy","rows":[{"names":["męski żywotny","męski nieżywotny","żeński"],"endings":"-y, -i, -e","examples":["pies → psy","dom → domy","kobieta → kobiety"],"hit":true},{"names":["nijaki"],"endings":"-a","examples":["okno → okna"],"hit":false}]}]}}}`
 
 // grammarCreate decodes grammarBody into a new card, so no two cards share a slice. It applies change when change is
