@@ -21,6 +21,8 @@ const (
 	altPlRule     = `{"message":"alternativesPl must have at most 8 terms of 1 to 200 characters"}`
 	altRuRule     = `{"message":"alternativesRu must have at most 8 terms of 1 to 200 characters"}`
 	cardNotFound  = `{"message":"card not found"}`
+	limitRule     = `{"message":"limit must be a whole number of 1 or more"}`
+	afterRule     = `{"message":"invalid after"}`
 )
 
 // cardFixture adds the cards K1 and K2 (archived) to Rodzina and K3 to Praca of groupFixture.
@@ -480,6 +482,16 @@ func TestSearchCards(t *testing.T) {
 		{name: "a q of 200 letters passes", sub: subOla, query: "q=" + strings.Repeat("%C5%BC", 200), wantStatus: 200, wantBody: `{"cards":[]}`},
 		{name: "a q of 201 letters is rejected", sub: subOla, query: "q=" + strings.Repeat("%C5%BC", 201), wantStatus: 400,
 			wantBody: `{"message":"q must have at most 200 characters"}`},
+		{name: "a limit of 0 is rejected", sub: subOla, query: "limit=0", wantStatus: 400, wantBody: limitRule},
+		{name: "a negative limit is rejected", sub: subOla, query: "limit=-1", wantStatus: 400, wantBody: limitRule},
+		{name: "a limit that is not a whole number is rejected", sub: subOla, query: "limit=1.5", wantStatus: 400, wantBody: limitRule},
+		{name: "an empty limit is rejected", sub: subOla, query: "limit=", wantStatus: 400, wantBody: limitRule},
+		// a%2Bb is the text a+b. Base64url has no +.
+		{name: "an after that is not base64url is rejected", sub: subOla, query: "after=a%2Bb", wantStatus: 400, wantBody: afterRule},
+		// bm90IGpzb24 is "not json" in base64url.
+		{name: "an after that is not JSON is rejected", sub: subOla, query: "after=bm90IGpzb24", wantStatus: 400, wantBody: afterRule},
+		// eyJyYW5rIjoieCJ9 is {"rank":"x"} in base64url.
+		{name: "an after with a wrong field type is rejected", sub: subOla, query: "after=eyJyYW5rIjoieCJ9", wantStatus: 400, wantBody: afterRule},
 		{name: "a query string that is not valid is rejected", sub: subOla, query: "q=%zz", wantStatus: 400, wantBody: `{"message":"invalid query string"}`},
 		{name: "a member of another group is refused before the query is read", sub: subEwa, query: "q=%zz", wantStatus: 403, wantBody: notMember},
 	}
@@ -516,6 +528,104 @@ func TestSearchCards(t *testing.T) {
 			}
 			if !slices.Equal(pl, tt.wantPl) {
 				t.Errorf("pl = %q, want %q", pl, tt.wantPl)
+			}
+		})
+	}
+}
+
+func TestListCardPages(t *testing.T) {
+	// pagesFixture adds six cards to Rodzina of groupFixture. Polish order: adam, Ąb, lato, łódź, zamek, żaba. Byte
+	// order: adam, lato, zamek, Ąb, łódź, żaba.
+	const pagesFixture = `INSERT INTO cards (group_id, pl, ru, example_pl, example_ru, meaning_ru)
+		SELECT (SELECT id FROM groups WHERE name = 'Rodzina'), v.pl, 'ru', 'example', 'example', 'meaning'
+		FROM (VALUES ('żaba'), ('zamek'), ('Ąb'), ('adam'), ('łódź'), ('lato')) AS v (pl)`
+	// addCard is the SQL text that adds the card pl to Rodzina.
+	addCard := func(pl string) string {
+		return `INSERT INTO cards (group_id, pl, ru, example_pl, example_ru, meaning_ru)
+			VALUES ((SELECT id FROM groups WHERE name = 'Rodzina'), '` + pl + `', 'ru', 'example', 'example', 'meaning')`
+	}
+	all := []string{"adam", "Ąb", "lato", "łódź", "zamek", "żaba"}
+	pagesOf2 := [][]string{{"adam", "Ąb"}, {"lato", "łódź"}, {"zamek", "żaba"}}
+	tests := []struct {
+		name      string
+		setup     string     // the SQL text that adds cards to the fixture
+		query     string     // the raw query string of the first page
+		between   string     // the SQL text that runs once, after the first page
+		wantPages [][]string // the pl values of each page
+	}{
+		{name: "pages of 2 keep the Polish order", setup: pagesFixture, query: "limit=2", wantPages: pagesOf2},
+		{name: "the last page has the rest", setup: pagesFixture, query: "limit=4", wantPages: [][]string{{"adam", "Ąb", "lato", "łódź"}, {"zamek", "żaba"}}},
+		{name: "a limit equal to the number of cards gives one page", setup: pagesFixture, query: "limit=6", wantPages: [][]string{all}},
+		{name: "a limit above the number of cards gives one page", setup: pagesFixture, query: "limit=100", wantPages: [][]string{all}},
+		{name: "without limit the answer has all cards", setup: pagesFixture, wantPages: [][]string{all}},
+		{name: "an empty group has one empty page", query: "limit=2", wantPages: [][]string{{}}},
+		{name: "pages of a search keep the order of the rank", query: "q=wieczor&limit=2",
+			setup: `INSERT INTO cards (group_id, pl, ru, example_pl, example_ru, meaning_ru)
+				SELECT (SELECT id FROM groups WHERE name = 'Rodzina'), v.pl, 'ru', 'example', 'example', 'meaning'
+				FROM (VALUES ('dobry wieczór'), ('wieczorek'), ('wieczór'), ('jeż')) AS v (pl)`,
+			wantPages: [][]string{{"wieczór", "wieczorek"}, {"dobry wieczór"}}},
+		{name: "cards with the same pl come in pages by ID", query: "limit=1",
+			setup: `INSERT INTO cards (group_id, id, pl, ru, example_pl, example_ru, meaning_ru)
+				SELECT (SELECT id FROM groups WHERE name = 'Rodzina'), v.id, 'dom', 'ru', 'example', 'example', 'meaning'
+				FROM (VALUES ('00000000-0000-0000-0000-000000000001'::uuid), ('00000000-0000-0000-0000-000000000002'::uuid)) AS v (id)`,
+			wantPages: [][]string{{"dom"}, {"dom"}}},
+		{name: "a card archived on an earlier page does not move the next page", setup: pagesFixture, query: "limit=2",
+			between: `UPDATE cards SET archived = true WHERE pl = 'adam'`, wantPages: pagesOf2},
+		{name: "the archived last card of a page does not move the next page", setup: pagesFixture, query: "limit=2",
+			between: `UPDATE cards SET archived = true WHERE pl = 'Ąb'`, wantPages: pagesOf2},
+		{name: "a card added before the next value does not move the next page", setup: pagesFixture, query: "limit=2", between: addCard("aaa"), wantPages: pagesOf2},
+		{name: "a card added after the next value comes on a later page", setup: pagesFixture, query: "limit=2", between: addCard("mama"),
+			wantPages: [][]string{{"adam", "Ąb"}, {"lato", "łódź"}, {"mama", "zamek"}, {"żaba"}}},
+		// For each ID, the key of „tak” has a + in standard base64 and a - in base64url.
+		{name: "a next value needs no escape in a query string", setup: addCard("„tak”") + "; " + addCard("zzz"), query: "limit=1",
+			wantPages: [][]string{{"„tak”"}, {"zzz"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			pool, srv, rodzina, _ := groupFixture(t)
+			if tt.setup != "" {
+				if _, err := pool.Exec(ctx, tt.setup); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var pages [][]string
+			query := tt.query
+			// The loop asks for at most one page more than wantPages: a next value on the last wanted page adds a page, so
+			// the row fails.
+			for i := range len(tt.wantPages) + 1 {
+				req := groupRequest("GET /v1/groups/{groupId}/cards", subOla, "", map[string]string{"groupId": rodzina})
+				req.RawQueryString = query
+
+				resp, err := srv.Handle(ctx, req)
+				if err != nil {
+					t.Fatalf("Handle returned error %v", err)
+				}
+				if resp.StatusCode != 200 {
+					t.Fatalf("page %d: status = %d, want 200 (body %s)", i+1, resp.StatusCode, resp.Body)
+				}
+				var list Cards
+				if err := json.Unmarshal([]byte(resp.Body), &list); err != nil {
+					t.Fatalf("body %s: %v", resp.Body, err)
+				}
+				var pl []string
+				for _, c := range list.Cards {
+					pl = append(pl, c.Pl)
+				}
+				pages = append(pages, pl)
+				if i == 0 && tt.between != "" {
+					if _, err := pool.Exec(ctx, tt.between); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if list.Next == nil {
+					break
+				}
+				// next goes into the query string without an escape, so a + in it becomes a space and the page fails.
+				query = tt.query + "&after=" + *list.Next
+			}
+			if !slices.EqualFunc(pages, tt.wantPages, slices.Equal) {
+				t.Errorf("pages = %q, want %q", pages, tt.wantPages)
 			}
 		})
 	}

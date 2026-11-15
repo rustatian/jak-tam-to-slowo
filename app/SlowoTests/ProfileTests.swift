@@ -164,7 +164,14 @@ final class FakeAPI: APIProtocol {
     func listCards(_ input: Operations.ListCards.Input) async throws -> Operations.ListCards.Output {
         let (call, answer) = try state.withLock { s in
             s.calls.append("listCards")
-            s.inputs.append("listCards \(input.path.groupId) \(input.query.q ?? "-")")
+            var record = "listCards \(input.path.groupId) \(input.query.q ?? "-")"
+            if let limit = input.query.limit {
+                record += " limit=\(limit)"
+            }
+            if let after = input.query.after {
+                record += " after=\(after)"
+            }
+            s.inputs.append(record)
             return (s.calls.count { $0 == "listCards" }, try Self.next(&s.answers.listCards))
         }
         await holdListCards?(call)

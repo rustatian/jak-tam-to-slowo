@@ -9,11 +9,15 @@ enum CardError: Error, Equatable {
     case unexpected
 }
 
-/// The translation cards of the group of the signed-in user for a search text, as the server has them.
+/// The loaded pages of the translation cards of the group of the signed-in user for a search text, as the server has them.
 @MainActor
 @Observable
 final class Cards {
+    private static let pageSize = 50
+
     private(set) var cards: [Components.Schemas.Card]?
+    /// The after value of the next page of `cards`. It is nil when no page follows or when `cards` is nil.
+    private(set) var next: String?
     /// The trimmed search text of the answer in `cards`. It is empty when `cards` is nil.
     private(set) var query = ""
 
@@ -35,12 +39,16 @@ final class Cards {
         guard let groupId = profile.me?.groupId else { return }
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         last = (groupId, query)
-        let output = try await api.listCards(.init(path: .init(groupId: groupId), query: .init(q: query.isEmpty ? nil : query)))
+        // A reload keeps the length of the list, and a new search text starts with one page.
+        let limit = query == self.query ? max(Self.pageSize, cards?.count ?? 0) : Self.pageSize
+        let output = try await api.listCards(.init(path: .init(groupId: groupId), query: .init(q: query.isEmpty ? nil : query, limit: limit)))
         // A later call for another group or another search text started, so this answer is old.
         guard last?.groupId == groupId, last?.query == query else { return }
         switch output {
         case let .ok(ok):
-            cards = try ok.body.json.cards.filter { $0.kind == .translation }
+            let page = try ok.body.json
+            cards = page.cards.filter { $0.kind == .translation }
+            next = page.next
             self.query = query
         case .forbidden:
             try await dropGroup()
@@ -49,7 +57,28 @@ final class Cards {
         }
     }
 
-    /// The first 5 translation cards of the group for a search text. A 200 or a thrown error keeps `cards`, `query` and `last`, so the list of Słówka does not change and an answer of a running `load` stays valid.
+    /// Adds the next page to `cards`.
+    func loadMore() async throws {
+        guard let after = next, let groupId = last?.groupId else { return }
+        let query = self.query
+        let output = try await api.listCards(.init(path: .init(groupId: groupId), query: .init(q: query.isEmpty ? nil : query, limit: Self.pageSize, after: after)))
+        // Another call changed `next` or the search text while this call ran, so this answer is old.
+        guard next == after, self.query == query else { return }
+        switch output {
+        case let .ok(ok):
+            let page = try ok.body.json
+            // Another member can change a card between two pages, so a card of the list can come again.
+            let shown = Set(cards?.map(\.id) ?? [])
+            cards?.append(contentsOf: page.cards.filter { $0.kind == .translation && !shown.contains($0.id) })
+            next = page.next
+        case .forbidden:
+            try await dropGroup()
+        default:
+            throw CardError.unexpected
+        }
+    }
+
+    /// The first 5 translation cards of the group for a search text. A 200 or a thrown error keeps `cards`, `next`, `query` and `last`, so the list of Słówka does not change and an answer of a running `load` stays valid.
     func similar(to text: String) async throws -> [Components.Schemas.Card] {
         guard let groupId = profile.me?.groupId else { return [] }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -123,6 +152,7 @@ final class Cards {
 
     private func clear() {
         cards = nil
+        next = nil
         query = ""
     }
 }

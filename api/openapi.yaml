@@ -269,13 +269,24 @@ paths:
       parameters:
         - name: q
           in: query
-          description: A part of the Polish or the Russian term. Upper and lower case, the marks of the Polish letters, and ё and е are equal in the search. Without q, or with a q of spaces only, the answer has all cards.
+          description: A part of the Polish or the Russian term. Upper and lower case, the marks of the Polish letters, and ё and е are equal in the search. Without q, or with a q of spaces only, the search keeps all cards.
           schema:
             type: string
             maxLength: 200
+        - name: limit
+          in: query
+          description: The largest number of cards in the answer. With limit, the answer has next when more cards follow. Without limit, the answer has all cards.
+          schema:
+            type: integer
+            minimum: 1
+        - name: after
+          in: query
+          description: The next value of an earlier answer for the same q. The answer starts after the last card of that answer, in the same order, so a card that was added or archived since then does not move the page.
+          schema:
+            type: string
       responses:
         "200":
-          description: "The cards of the group that are not archived, in the Polish order of pl, then by ID. With q: the cards whose Polish or Russian term contains q. First the cards with a term that is equal to q, then the cards with a term that starts with q, then the others."
+          description: "The cards of the group that are not archived, in the Polish order of pl, then by ID. With q: the cards whose Polish or Russian term contains q. First the cards with a term that is equal to q, then the cards with a term that starts with q, then the others. The search and the order cover all cards of the group, and limit cuts the page after them."
           content:
             application/json:
               schema:
@@ -895,6 +906,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Card"
+        next:
+          type: string
+          description: The after value of the next page. It is in the answer only when the request has limit and more cards follow.
     CardUpdate:
       type: object
       properties:
