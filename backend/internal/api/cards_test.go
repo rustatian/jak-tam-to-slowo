@@ -573,7 +573,7 @@ func TestListCardPages(t *testing.T) {
 			between: `UPDATE cards SET archived = true WHERE pl = 'adam'`, wantPages: pagesOf2},
 		{name: "the archived last card of a page does not move the next page", setup: pagesFixture, query: "limit=2",
 			between: `UPDATE cards SET archived = true WHERE pl = 'Ąb'`, wantPages: pagesOf2},
-		{name: "a card added before the next value does not come again", setup: pagesFixture, query: "limit=2", between: addCard("aaa"), wantPages: pagesOf2},
+		{name: "a card added before the next value does not move the next page", setup: pagesFixture, query: "limit=2", between: addCard("aaa"), wantPages: pagesOf2},
 		{name: "a card added after the next value comes on a later page", setup: pagesFixture, query: "limit=2", between: addCard("mama"),
 			wantPages: [][]string{{"adam", "Ąb"}, {"lato", "łódź"}, {"mama", "zamek"}, {"żaba"}}},
 		// For each ID, the key of „tak” has a + in standard base64 and a - in base64url.
@@ -591,7 +591,8 @@ func TestListCardPages(t *testing.T) {
 			}
 			var pages [][]string
 			query := tt.query
-			// At most one page more than wantPages: a next value that is too many fails the row, and the loop stops.
+			// The loop asks for at most one page more than wantPages: a next value on the last wanted page adds a page, so
+			// the row fails.
 			for i := range len(tt.wantPages) + 1 {
 				req := groupRequest("GET /v1/groups/{groupId}/cards", subOla, "", map[string]string{"groupId": rodzina})
 				req.RawQueryString = query

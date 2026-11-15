@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json/v2"
 	"errors"
-	"math"
 	"net/http"
 	"net/url"
 	"slices"
@@ -80,18 +79,18 @@ func (s *Server) createCard(ctx context.Context, req events.APIGatewayV2HTTPRequ
 	return jsonResponse(http.StatusCreated, card)
 }
 
-// cardKey is the order of a card in listCards. The next value of a page is the key of its last card.
+// cardKey is the sort key of a card in listCards. The next value of a page is the cardKey of its last card.
 type cardKey struct {
 	Rank int    `json:"rank"`
 	Pl   string `json:"pl"`
-	Id   string `json:"id"`
+	ID   string `json:"id"`
 }
 
 // listCards answers the cards of the group in the path that are not archived and whose pl or ru key contains the key
 // of q. The order is the rank of the match, then the Polish order of pl, then the ID. When the key of q is empty, each
-// card has the rank 1. With after, the page starts at the first card whose key comes after the key in after. With
-// limit, the page has at most limit cards. When more cards follow, next is the key of the last card of the page, as
-// JSON in base64url.
+// card has the rank 1. With after, the page starts at the first card whose cardKey comes after the cardKey in after.
+// With limit, the page has at most limit cards. When more cards follow, next is the cardKey of the last card of the
+// page, as JSON in base64url.
 func (s *Server) listCards(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
 	sub, fail := s.member(ctx, req)
 	if fail != nil {
@@ -105,8 +104,7 @@ func (s *Server) listCards(ctx context.Context, req events.APIGatewayV2HTTPReque
 	if utf8.RuneCountInString(q) > 200 {
 		return jsonResponse(http.StatusBadRequest, Error{Message: "q must have at most 200 characters"})
 	}
-	// Without limit, listCards does not cut the page.
-	limit := math.MaxInt
+	var limit int
 	if query.Has("limit") {
 		limit, err = strconv.Atoi(query.Get("limit"))
 		if err != nil || limit < 1 {
@@ -152,24 +150,18 @@ func (s *Server) listCards(ctx context.Context, req events.APIGatewayV2HTTPReque
 	// https://docs.aws.amazon.com/aurora-dsql/latest/userguide/working-with-postgresql-compatibility-migration-guide.html#working-with-postgresql-compatibility-unsupported-limitations
 	polish := collate.New(language.Polish)
 	compare := func(a, b cardKey) int {
-		return cmp.Or(cmp.Compare(a.Rank, b.Rank), polish.CompareString(a.Pl, b.Pl), cmp.Compare(a.Id, b.Id))
+		return cmp.Or(cmp.Compare(a.Rank, b.Rank), polish.CompareString(a.Pl, b.Pl), cmp.Compare(a.ID, b.ID))
 	}
-	key := func(c Card) cardKey { return cardKey{Rank: rank[c.Id], Pl: c.Pl, Id: c.Id} }
+	key := func(c Card) cardKey { return cardKey{Rank: rank[c.Id], Pl: c.Pl, ID: c.Id} }
 	slices.SortFunc(cards, func(a, b Card) int { return compare(key(a), key(b)) })
 	if after != nil {
-		i, found := slices.BinarySearchFunc(cards, *after, func(c Card, k cardKey) int { return compare(key(c), k) })
-		if found {
-			i++
-		}
-		cards = cards[i:]
+		cards = slices.DeleteFunc(cards, func(c Card) bool { return compare(key(c), *after) <= 0 })
 	}
 	list := Cards{Cards: cards}
-	if len(cards) > limit {
+	if limit > 0 && len(cards) > limit {
 		list.Cards = cards[:limit]
-		b, err := json.Marshal(key(cards[limit-1]))
-		if err != nil {
-			return serverError(ctx, req, sub, err)
-		}
+		// The texts of a stored card are valid UTF-8, so its cardKey always marshals.
+		b, _ := json.Marshal(key(cards[limit-1]))
 		list.Next = new(base64.RawURLEncoding.EncodeToString(b))
 	}
 	return jsonResponse(http.StatusOK, list)
