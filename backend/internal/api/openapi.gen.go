@@ -205,6 +205,9 @@ type CardUpdate struct {
 // Cards defines model for Cards.
 type Cards struct {
 	Cards []Card `json:"cards"`
+
+	// Next The after value of the next page. It is in the answer only when the request has limit and more cards follow.
+	Next *string `json:"next,omitempty"`
 }
 
 // Direction The translation direction of the learner's study.
@@ -512,8 +515,14 @@ type Unauthorized = Error
 
 // ListCardsParams defines parameters for ListCards.
 type ListCardsParams struct {
-	// Q A part of the Polish or the Russian term. Upper and lower case, the marks of the Polish letters, and ё and е are equal in the search. Without q, or with a q of spaces only, the answer has all cards.
+	// Q A part of the Polish or the Russian term. Upper and lower case, the marks of the Polish letters, and ё and е are equal in the search. Without q, or with a q of spaces only, the search keeps all cards.
 	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// Limit The largest number of cards in the answer. With limit, the answer has next when more cards follow. Without limit, the answer has all cards.
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// After The next value of an earlier answer for the same q. The answer starts after the last card of that answer, in the same order, so a card that was added or archived since then does not move the page.
+	After *string `form:"after,omitempty" json:"after,omitempty"`
 }
 
 // CreateGroupJSONRequestBody defines body for CreateGroup for application/json ContentType.

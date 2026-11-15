@@ -3,11 +3,14 @@ package api
 import (
 	"cmp"
 	"context"
+	"encoding/base64"
 	"encoding/json/v2"
 	"errors"
+	"math"
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -77,9 +80,18 @@ func (s *Server) createCard(ctx context.Context, req events.APIGatewayV2HTTPRequ
 	return jsonResponse(http.StatusCreated, card)
 }
 
+// cardKey is the order of a card in listCards. The next value of a page is the key of its last card.
+type cardKey struct {
+	Rank int    `json:"rank"`
+	Pl   string `json:"pl"`
+	Id   string `json:"id"`
+}
+
 // listCards answers the cards of the group in the path that are not archived and whose pl or ru key contains the key
 // of q. The order is the rank of the match, then the Polish order of pl, then the ID. When the key of q is empty, each
-// card has the rank 1.
+// card has the rank 1. With after, the page starts at the first card whose key comes after the key in after. With
+// limit, the page has at most limit cards. When more cards follow, next is the key of the last card of the page, as
+// JSON in base64url.
 func (s *Server) listCards(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
 	sub, fail := s.member(ctx, req)
 	if fail != nil {
@@ -92,6 +104,21 @@ func (s *Server) listCards(ctx context.Context, req events.APIGatewayV2HTTPReque
 	q := query.Get("q")
 	if utf8.RuneCountInString(q) > 200 {
 		return jsonResponse(http.StatusBadRequest, Error{Message: "q must have at most 200 characters"})
+	}
+	// Without limit, listCards does not cut the page.
+	limit := math.MaxInt
+	if query.Has("limit") {
+		limit, err = strconv.Atoi(query.Get("limit"))
+		if err != nil || limit < 1 {
+			return jsonResponse(http.StatusBadRequest, Error{Message: "limit must be a whole number of 1 or more"})
+		}
+	}
+	var after *cardKey
+	if query.Has("after") {
+		b, err := base64.RawURLEncoding.DecodeString(query.Get("after"))
+		if err != nil || json.Unmarshal(b, &after) != nil {
+			return jsonResponse(http.StatusBadRequest, Error{Message: "invalid after"})
+		}
 	}
 	rows, err := s.DB.Query(ctx, "SELECT "+cardColumns+" FROM cards WHERE group_id = $1 AND NOT archived", req.PathParameters["groupId"])
 	if err != nil {
@@ -124,10 +151,28 @@ func (s *Server) listCards(ctx context.Context, req events.APIGatewayV2HTTPReque
 	// Aurora DSQL sorts text only by bytes, so the order is made here with a new Collator, as in listMembers.
 	// https://docs.aws.amazon.com/aurora-dsql/latest/userguide/working-with-postgresql-compatibility-migration-guide.html#working-with-postgresql-compatibility-unsupported-limitations
 	polish := collate.New(language.Polish)
-	slices.SortFunc(cards, func(a, b Card) int {
-		return cmp.Or(cmp.Compare(rank[a.Id], rank[b.Id]), polish.CompareString(a.Pl, b.Pl), cmp.Compare(a.Id, b.Id))
-	})
-	return jsonResponse(http.StatusOK, Cards{Cards: cards})
+	compare := func(a, b cardKey) int {
+		return cmp.Or(cmp.Compare(a.Rank, b.Rank), polish.CompareString(a.Pl, b.Pl), cmp.Compare(a.Id, b.Id))
+	}
+	key := func(c Card) cardKey { return cardKey{Rank: rank[c.Id], Pl: c.Pl, Id: c.Id} }
+	slices.SortFunc(cards, func(a, b Card) int { return compare(key(a), key(b)) })
+	if after != nil {
+		i, found := slices.BinarySearchFunc(cards, *after, func(c Card, k cardKey) int { return compare(key(c), k) })
+		if found {
+			i++
+		}
+		cards = cards[i:]
+	}
+	list := Cards{Cards: cards}
+	if len(cards) > limit {
+		list.Cards = cards[:limit]
+		b, err := json.Marshal(key(cards[limit-1]))
+		if err != nil {
+			return serverError(ctx, req, sub, err)
+		}
+		list.Next = new(base64.RawURLEncoding.EncodeToString(b))
+	}
+	return jsonResponse(http.StatusOK, list)
 }
 
 // polishBase maps the nine Polish letters with a mark to their base letters.
