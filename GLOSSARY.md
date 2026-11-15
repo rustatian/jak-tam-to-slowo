@@ -60,7 +60,7 @@ An iPhone app for Russian speakers who learn Polish: its words and its grammar. 
 
 **Grade**: The result of a review: correct, almost or again.
 
-**Dictation**: An answer or a new word that the learner speaks. One clip holds one language. The text goes into the editable field, and the learner sends it.
+**Dictation**: An answer or a new word that the learner speaks. The iOS keyboard changes the speech into text. The text goes into the editable field, and the learner sends it.
 
 ### Races
 
