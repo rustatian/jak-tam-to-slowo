@@ -21,17 +21,20 @@ import (
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/db"
 )
 
+var errGrammarCard = errors.New("the card is a grammar card")
+
 // cardColumns are the columns of a card in the order of scanCard.
-const cardColumns = "id, kind, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru"
+const cardColumns = "id, kind, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru, grammar"
 
 // scanCard scans the columns of cardColumns, then the next columns of the row into more.
 func scanCard(row pgx.Row, more ...any) (Card, error) {
 	var c Card
-	err := row.Scan(append([]any{&c.Id, &c.Kind, &c.Pl, &c.Ru, &c.ExamplePl, &c.ExampleRu, &c.MeaningRu, &c.AlternativesPl, &c.AlternativesRu}, more...)...)
+	err := row.Scan(append([]any{&c.Id, &c.Kind, &c.Pl, &c.Ru, &c.ExamplePl, &c.ExampleRu, &c.MeaningRu, &c.AlternativesPl, &c.AlternativesRu, &c.Grammar}, more...)...)
 	return c, err
 }
 
-// createCard adds a translation card to the group in the path.
+// createCard adds a translation card or a grammar card to the group in the path. A body without kind is a translation
+// card.
 func (s *Server) createCard(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
 	sub, fail := s.member(ctx, req)
 	if fail != nil {
@@ -42,17 +45,30 @@ func (s *Server) createCard(ctx context.Context, req events.APIGatewayV2HTTPRequ
 		return jsonResponse(http.StatusBadRequest, Error{Message: "invalid JSON body"})
 	}
 	// A list that the body does not have is stored as [].
-	in := CardUpdate{Pl: &body.Pl, Ru: &body.Ru, ExamplePl: &body.ExamplePl, ExampleRu: &body.ExampleRu, MeaningRu: &body.MeaningRu,
-		AlternativesPl: cmp.Or(body.AlternativesPl, &[]string{}), AlternativesRu: cmp.Or(body.AlternativesRu, &[]string{})}
-	if msg := checkCard(&in); msg != "" {
+	body.AlternativesPl, body.AlternativesRu = cmp.Or(body.AlternativesPl, &[]string{}), cmp.Or(body.AlternativesRu, &[]string{})
+	kind := *cmp.Or(body.Kind, new(CardKindTranslation))
+	var msg string
+	switch {
+	case !kind.Valid():
+		msg = "kind must be translation or grammar"
+	case kind == CardKindGrammar:
+		msg = CheckGrammarCard(&body)
+	case body.Grammar != nil:
+		msg = "only a grammar card can have grammar"
+	default:
+		msg = checkCard(&CardUpdate{Pl: &body.Pl, Ru: &body.Ru, ExamplePl: &body.ExamplePl, ExampleRu: &body.ExampleRu, MeaningRu: &body.MeaningRu,
+			AlternativesPl: body.AlternativesPl, AlternativesRu: body.AlternativesRu})
+	}
+	if msg != "" {
 		return jsonResponse(http.StatusBadRequest, Error{Message: msg})
 	}
 	var card Card
 	err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
 		var err error
 		card, err = scanCard(tx.QueryRow(ctx,
-			"INSERT INTO cards (group_id, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING "+cardColumns,
-			req.PathParameters["groupId"], in.Pl, in.Ru, in.ExamplePl, in.ExampleRu, in.MeaningRu, in.AlternativesPl, in.AlternativesRu))
+			"INSERT INTO cards (group_id, kind, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru, grammar) "+
+				"VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING "+cardColumns,
+			req.PathParameters["groupId"], kind, body.Pl, body.Ru, body.ExamplePl, body.ExampleRu, body.MeaningRu, body.AlternativesPl, body.AlternativesRu, body.Grammar))
 		return err
 	})
 	if err != nil {
@@ -132,7 +148,8 @@ func searchKey(s string) string {
 	return polishBase.Replace(answerKey(s))
 }
 
-// patchCard changes the card fields that the body names. A field that the body leaves out keeps its value.
+// patchCard changes the card fields that the body names. A field that the body leaves out keeps its value. A grammar
+// card cannot be changed, so its answer is 409.
 func (s *Server) patchCard(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
 	sub, fail := s.member(ctx, req)
 	if fail != nil {
@@ -153,15 +170,30 @@ func (s *Server) patchCard(ctx context.Context, req events.APIGatewayV2HTTPReque
 		card, err = scanCard(tx.QueryRow(ctx,
 			"UPDATE cards SET pl = COALESCE($3, pl), ru = COALESCE($4, ru), example_pl = COALESCE($5, example_pl), example_ru = COALESCE($6, example_ru), "+
 				"meaning_ru = COALESCE($7, meaning_ru), alternatives_pl = COALESCE($8, alternatives_pl), alternatives_ru = COALESCE($9, alternatives_ru) "+
-				"WHERE group_id = $1 AND id::text = $2 AND NOT archived RETURNING "+cardColumns,
+				"WHERE group_id = $1 AND id::text = $2 AND NOT archived AND kind = 'translation' RETURNING "+cardColumns,
 			req.PathParameters["groupId"], req.PathParameters["cardId"],
 			update.Pl, update.Ru, update.ExamplePl, update.ExampleRu, update.MeaningRu, update.AlternativesPl, update.AlternativesRu))
-		return err
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		// The update skips a grammar card, so a card that the update did not change and that this read finds is a
+		// grammar card.
+		var found bool
+		if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM cards WHERE group_id = $1 AND id::text = $2 AND NOT archived)",
+			req.PathParameters["groupId"], req.PathParameters["cardId"]).Scan(&found); err != nil {
+			return err
+		}
+		if found {
+			return errGrammarCard
+		}
+		return pgx.ErrNoRows
 	})
-	if errors.Is(err, pgx.ErrNoRows) {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
 		return jsonResponse(http.StatusNotFound, Error{Message: "card not found"})
-	}
-	if err != nil {
+	case errors.Is(err, errGrammarCard):
+		return jsonResponse(http.StatusConflict, Error{Message: "a grammar card cannot be changed"})
+	case err != nil:
 		return serverError(ctx, req, sub, err)
 	}
 	return jsonResponse(http.StatusOK, card)
