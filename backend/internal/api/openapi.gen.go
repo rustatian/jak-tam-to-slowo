@@ -45,19 +45,19 @@ func (e Direction) Valid() bool {
 
 // Defines values for DraftError.
 const (
-	Invalid     DraftError = "invalid"
-	Refused     DraftError = "refused"
-	Unavailable DraftError = "unavailable"
+	DraftErrorInvalid     DraftError = "invalid"
+	DraftErrorRefused     DraftError = "refused"
+	DraftErrorUnavailable DraftError = "unavailable"
 )
 
 // Valid indicates whether the value is a known member of the DraftError enum.
 func (e DraftError) Valid() bool {
 	switch e {
-	case Invalid:
+	case DraftErrorInvalid:
 		return true
-	case Refused:
+	case DraftErrorRefused:
 		return true
-	case Unavailable:
+	case DraftErrorUnavailable:
 		return true
 	default:
 		return false
@@ -66,22 +66,22 @@ func (e DraftError) Valid() bool {
 
 // Defines values for DraftStatus.
 const (
-	Done    DraftStatus = "done"
-	Failed  DraftStatus = "failed"
-	Queued  DraftStatus = "queued"
-	Running DraftStatus = "running"
+	DraftStatusDone    DraftStatus = "done"
+	DraftStatusFailed  DraftStatus = "failed"
+	DraftStatusQueued  DraftStatus = "queued"
+	DraftStatusRunning DraftStatus = "running"
 )
 
 // Valid indicates whether the value is a known member of the DraftStatus enum.
 func (e DraftStatus) Valid() bool {
 	switch e {
-	case Done:
+	case DraftStatusDone:
 		return true
-	case Failed:
+	case DraftStatusFailed:
 		return true
-	case Queued:
+	case DraftStatusQueued:
 		return true
-	case Running:
+	case DraftStatusRunning:
 		return true
 	default:
 		return false
@@ -103,6 +103,51 @@ func (e Grade) Valid() bool {
 	case Almost:
 		return true
 	case Correct:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GrammarCheckError.
+const (
+	GrammarCheckErrorInvalid     GrammarCheckError = "invalid"
+	GrammarCheckErrorRefused     GrammarCheckError = "refused"
+	GrammarCheckErrorUnavailable GrammarCheckError = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the GrammarCheckError enum.
+func (e GrammarCheckError) Valid() bool {
+	switch e {
+	case GrammarCheckErrorInvalid:
+		return true
+	case GrammarCheckErrorRefused:
+		return true
+	case GrammarCheckErrorUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GrammarCheckStatus.
+const (
+	GrammarCheckStatusDone    GrammarCheckStatus = "done"
+	GrammarCheckStatusFailed  GrammarCheckStatus = "failed"
+	GrammarCheckStatusQueued  GrammarCheckStatus = "queued"
+	GrammarCheckStatusRunning GrammarCheckStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the GrammarCheckStatus enum.
+func (e GrammarCheckStatus) Valid() bool {
+	switch e {
+	case GrammarCheckStatusDone:
+		return true
+	case GrammarCheckStatusFailed:
+		return true
+	case GrammarCheckStatusQueued:
+		return true
+	case GrammarCheckStatusRunning:
 		return true
 	default:
 		return false
@@ -278,6 +323,29 @@ type Grammar struct {
 
 	// Used The wrong words as the learner wrote them.
 	Used string `json:"used"`
+}
+
+// GrammarCheck defines model for GrammarCheck.
+type GrammarCheck struct {
+	// Cards One grammar card for each grammar mistake, in the order of the text, for done. Each card passes the rules of the create route. A done check without cards found no mistake.
+	Cards *[]CardCreate `json:"cards,omitempty"`
+
+	// Error The cause, for failed.
+	Error  *GrammarCheckError `json:"error,omitempty"`
+	Id     string             `json:"id"`
+	Status GrammarCheckStatus `json:"status"`
+}
+
+// GrammarCheckError The cause, for failed.
+type GrammarCheckError string
+
+// GrammarCheckStatus defines model for GrammarCheck.Status.
+type GrammarCheckStatus string
+
+// GrammarCheckCreate defines model for GrammarCheckCreate.
+type GrammarCheckCreate struct {
+	// Text The Polish word, phrase or sentence of the learner. Spaces at the ends are removed; then it has 1 to 500 characters, and no control, line-break or text-direction character.
+	Text string `json:"text"`
 }
 
 // GrammarGroup A group of rows of the table, with an optional title.
@@ -471,6 +539,9 @@ type StudyQueue struct {
 // CardId defines model for CardId.
 type CardId = string
 
+// CheckId defines model for CheckId.
+type CheckId = string
+
 // DraftId defines model for DraftId.
 type DraftId = string
 
@@ -539,6 +610,9 @@ type UpdateCardJSONRequestBody = CardUpdate
 
 // CreateDraftJSONRequestBody defines body for CreateDraft for application/json ContentType.
 type CreateDraftJSONRequestBody = DraftCreate
+
+// CreateGrammarCheckJSONRequestBody defines body for CreateGrammarCheck for application/json ContentType.
+type CreateGrammarCheckJSONRequestBody = GrammarCheckCreate
 
 // CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
 type CreateInvitationJSONRequestBody = InvitationCreate

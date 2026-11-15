@@ -463,6 +463,65 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /v1/groups/{groupId}/grammar-checks:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+    post:
+      operationId: createGrammarCheck
+      summary: Ask for an AI check of the grammar of a Polish text.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrammarCheckCreate"
+      responses:
+        "202":
+          description: The grammar check is stored. Read the check until its status is done or failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GrammarCheck"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The signed-in user is not a member of the group, or has not given the AI consent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "502":
+          description: The grammar check did not start.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/groups/{groupId}/grammar-checks/{checkId}:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+      - $ref: "#/components/parameters/CheckId"
+    get:
+      operationId: getGrammarCheck
+      summary: The state of a grammar check of the signed-in user.
+      responses:
+        "200":
+          description: The grammar check.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GrammarCheck"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /v1/invitations/{token}:
     parameters:
       - $ref: "#/components/parameters/InvitationToken"
@@ -548,6 +607,12 @@ components:
         type: string
     DraftId:
       name: draftId
+      in: path
+      required: true
+      schema:
+        type: string
+    CheckId:
+      name: checkId
       in: path
       required: true
       schema:
@@ -1108,6 +1173,34 @@ components:
           items:
             type: string
           description: Short Russian meanings, for done when the text has more than one common meaning.
+        error:
+          type: string
+          enum: [refused, invalid, unavailable]
+          description: The cause, for failed.
+    GrammarCheckCreate:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: The Polish word, phrase or sentence of the learner. Spaces at the ends are removed; then it has 1 to 500 characters, and no control, line-break or text-direction character.
+    GrammarCheck:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, done, failed]
+        cards:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/CardCreate"
+          description: One grammar card for each grammar mistake, in the order of the text, for done. Each card passes the rules of the create route. A done check without cards found no mistake.
         error:
           type: string
           enum: [refused, invalid, unavailable]
