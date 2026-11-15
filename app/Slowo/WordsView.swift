@@ -7,6 +7,7 @@ struct WordsView: View {
 
     @State private var search = ""
     @State private var failed = false
+    @State private var moreFailed = false
     @State private var error: String?
 
     private struct LoadKey: Equatable {
@@ -54,6 +55,15 @@ struct WordsView: View {
                             }
                         }
                     }
+                    if cards.next != nil {
+                        if moreFailed {
+                            Button("Spróbuj ponownie") { moreFailed = false }
+                        } else {
+                            ProgressView()
+                                .frame(maxWidth: .infinity)
+                                .task(id: cards.next) { await loadMore() }
+                        }
+                    }
                 } footer: {
                     // With no rows the error shows on the empty screen.
                     if !list.isEmpty { errorText }
@@ -99,6 +109,7 @@ struct WordsView: View {
 
     private func load() async {
         failed = false
+        moreFailed = false
         do {
             try await cards.load(query: query)
             error = nil
@@ -110,6 +121,18 @@ struct WordsView: View {
             } else {
                 self.error = errorMessage(error)
             }
+        }
+    }
+
+    private func loadMore() async {
+        do {
+            try await cards.loadMore()
+            error = nil
+        } catch {
+            // The row went away, or the next value changed: the page did not fail.
+            guard !Task.isCancelled else { return }
+            moreFailed = true
+            self.error = errorMessage(error)
         }
     }
 }
