@@ -486,7 +486,7 @@ func TestRunJobRequest(t *testing.T) {
 				t.Errorf("schema = %s, want %s", gotSchema, tt.wantSchema)
 			}
 			got.Schema = nil
-			if want := (AIRequest{Model: "claude-sonnet-5-5", Effort: "high", MaxTokens: 16000, System: draftPrompt, Input: tt.wantInput}); !reflect.DeepEqual(got, want) {
+			if want := (AIRequest{Model: "claude-opus-5-5", Effort: "high", MaxTokens: 16000, System: draftPrompt, Input: tt.wantInput}); !reflect.DeepEqual(got, want) {
 				t.Errorf("request = %+v, want %+v", got, want)
 			}
 			if earliest, latest := before.Add(50*time.Second), after.Add(50*time.Second); !hasDeadline || deadline.Before(earliest) || deadline.After(latest) {

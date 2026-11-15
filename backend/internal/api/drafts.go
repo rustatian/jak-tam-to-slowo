@@ -147,7 +147,7 @@ func (s *Server) RunJob(ctx context.Context, event JobEvent) error {
 	text, _ := json.Marshal(input)
 	callCtx, cancel := context.WithTimeout(ctx, 50*time.Second)
 	start := time.Now()
-	resp, callErr := s.AI(callCtx, AIRequest{Model: "claude-sonnet-5-5", Effort: "high", MaxTokens: 16000, System: draftPrompt, Schema: draftSchema(input), Input: string(text)})
+	resp, callErr := s.AI(callCtx, AIRequest{Model: "claude-opus-5-5", Effort: "high", MaxTokens: 16000, System: draftPrompt, Schema: draftSchema(input), Input: string(text)})
 	duration := time.Since(start)
 	cancel()
 	result, fail, cause := draftOutcome(input, resp, callErr)
