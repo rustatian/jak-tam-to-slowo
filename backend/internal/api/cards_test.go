@@ -31,13 +31,72 @@ const cardFixture = `INSERT INTO cards (group_id, id, pl, ru, example_pl, exampl
 
 // The cards of cardFixture.
 var (
-	cardK1 = Card{Id: "00000000-0000-0000-0000-000000000001", Kind: Translation, Pl: "dom", Ru: "дом", ExamplePl: "To jest dom.", ExampleRu: "Это дом.",
+	cardK1 = Card{Id: "00000000-0000-0000-0000-000000000001", Kind: CardKindTranslation, Pl: "dom", Ru: "дом", ExamplePl: "To jest dom.", ExampleRu: "Это дом.",
 		MeaningRu: "здание", AlternativesPl: []string{"domek"}, AlternativesRu: []string{"жилище"}}
-	cardK2 = Card{Id: "00000000-0000-0000-0000-000000000002", Kind: Translation, Pl: "stary", Ru: "старый", ExamplePl: "To jest stary dom.", ExampleRu: "Это старый дом.",
+	cardK2 = Card{Id: "00000000-0000-0000-0000-000000000002", Kind: CardKindTranslation, Pl: "stary", Ru: "старый", ExamplePl: "To jest stary dom.", ExampleRu: "Это старый дом.",
 		MeaningRu: "не новый", AlternativesPl: []string{}, AlternativesRu: []string{}}
-	cardK3 = Card{Id: "00000000-0000-0000-0000-000000000003", Kind: Translation, Pl: "praca", Ru: "работа", ExamplePl: "To jest praca.", ExampleRu: "Это работа.",
+	cardK3 = Card{Id: "00000000-0000-0000-0000-000000000003", Kind: CardKindTranslation, Pl: "praca", Ru: "работа", ExamplePl: "To jest praca.", ExampleRu: "Это работа.",
 		MeaningRu: "труд", AlternativesPl: []string{}, AlternativesRu: []string{}}
 )
+
+// grammarBody is the create body of the grammar card of the tests. It has no ASCII apostrophe, because
+// grammarFixture puts it in an SQL literal.
+const grammarBody = `{"kind":"grammar","pl":"psy","ru":"","examplePl":"Na podwórku biegają dwa ___.","exampleRu":"","meaningRu":"","alternativesPl":[],"alternativesRu":[],"grammar":{"topic":"e ruchome","used":"dwa piesy","right":"dwa psy","hint":"(pies)","facts":["rzeczownik","rodzaj męski żywotny"],"slots":["Mianownik","liczba mnoga","niemęskoosobowy","końcówka -y"],"rule":"W liczbie mnogiej „pies” traci „e”: psy.","examples":["pies → psy","dom → domy","kobieta → kobiety"],"table":{"title":"Mianownik, liczba mnoga: końcówki według rodzaju","columns":["Rodzaj","Końcówka","Przykład"],"groups":[{"title":"W liczbie mnogiej: męskoosobowy","rows":[{"names":["męski osobowy"],"endings":"-i, -y, -owie, -e","examples":["student → studenci"],"hit":false}]},{"title":"W liczbie mnogiej: niemęskoosobowy","rows":[{"names":["męski żywotny","męski nieżywotny","żeński"],"endings":"-y, -i, -e","examples":["pies → psy","dom → domy","kobieta → kobiety"],"hit":true},{"names":["nijaki"],"endings":"-a","examples":["okno → okna"],"hit":false}]}]}}}`
+
+// grammarCreate decodes grammarBody into a new card, so no two cards share a slice. It applies change when change is
+// not nil.
+func grammarCreate(change func(c *CardCreate)) CardCreate {
+	var c CardCreate
+	if err := json.Unmarshal([]byte(grammarBody), &c); err != nil {
+		panic(err)
+	}
+	if change != nil {
+		change(&c)
+	}
+	return c
+}
+
+// grammarRows gives n rows of a grammar table, each with one name and hit false.
+func grammarRows(n int) []GrammarRow {
+	rows := make([]GrammarRow, n)
+	for i := range rows {
+		rows[i] = GrammarRow{Names: []string{"x"}, Endings: "-x", Examples: []string{"x"}}
+	}
+	return rows
+}
+
+// grammarJSON is grammarCreate(change) as a create body. A nil list is null in the body. A field with omitempty is not
+// in the body when it is nil or empty.
+func grammarJSON(change func(c *CardCreate)) string {
+	b, err := json.Marshal(grammarCreate(change), json.FormatNilSliceAsNull(true))
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
+}
+
+// grammarFixture adds the grammar card G1 of grammarBody to Rodzina of groupFixture.
+const grammarFixture = `INSERT INTO cards (group_id, id, kind, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru, grammar)
+	SELECT (SELECT id FROM groups WHERE name = 'Rodzina'), '00000000-0000-0000-0000-000000000011', 'grammar', b->>'pl', '', b->>'examplePl', '', '', '[]', '[]', b->'grammar'
+	FROM (VALUES ('` + grammarBody + `'::jsonb)) AS v (b)`
+
+// cardG1 is the card of grammarFixture, with empty Russian texts. It is a function, because Card.Grammar is a pointer:
+// with a shared value, the change of one row would stay for the next rows.
+func cardG1() Card {
+	return Card{Id: "00000000-0000-0000-0000-000000000011", Kind: CardKindGrammar, Pl: "psy", ExamplePl: "Na podwórku biegają dwa ___.",
+		AlternativesPl: []string{}, AlternativesRu: []string{}, Grammar: &Grammar{Topic: "e ruchome", Used: "dwa piesy", Right: "dwa psy", Hint: "(pies)",
+			Facts: []string{"rzeczownik", "rodzaj męski żywotny"}, Slots: []string{"Mianownik", "liczba mnoga", "niemęskoosobowy", "końcówka -y"},
+			Rule: "W liczbie mnogiej „pies” traci „e”: psy.", Examples: []string{"pies → psy", "dom → domy", "kobieta → kobiety"},
+			Table: &GrammarTable{Title: "Mianownik, liczba mnoga: końcówki według rodzaju", Columns: []string{"Rodzaj", "Końcówka", "Przykład"}, Groups: []GrammarGroup{
+				{Title: new("W liczbie mnogiej: męskoosobowy"), Rows: []GrammarRow{
+					{Names: []string{"męski osobowy"}, Endings: "-i, -y, -owie, -e", Examples: []string{"student → studenci"}},
+				}},
+				{Title: new("W liczbie mnogiej: niemęskoosobowy"), Rows: []GrammarRow{
+					{Names: []string{"męski żywotny", "męski nieżywotny", "żeński"}, Endings: "-y, -i, -e", Examples: []string{"pies → psy", "dom → domy", "kobieta → kobiety"}, Hit: true},
+					{Names: []string{"nijaki"}, Endings: "-a", Examples: []string{"okno → okna"}},
+				}},
+			}}}}
+}
 
 // cardRow is a row of the table cards.
 type cardRow struct {
@@ -50,14 +109,14 @@ type cardRow struct {
 // https://www.postgresql.org/docs/16/queries-order.html
 func cardRows(t *testing.T, pool *pgxpool.Pool) []cardRow {
 	t.Helper()
-	rows, err := pool.Query(context.Background(), "SELECT id, kind, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru, group_id, archived FROM cards ORDER BY id")
+	rows, err := pool.Query(context.Background(), "SELECT id, kind, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru, grammar, group_id, archived FROM cards ORDER BY id")
 	if err != nil {
 		t.Fatal(err)
 	}
 	got, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (cardRow, error) {
 		var r cardRow
 		c := &r.card
-		err := row.Scan(&c.Id, &c.Kind, &c.Pl, &c.Ru, &c.ExamplePl, &c.ExampleRu, &c.MeaningRu, &c.AlternativesPl, &c.AlternativesRu, &r.group, &r.archived)
+		err := row.Scan(&c.Id, &c.Kind, &c.Pl, &c.Ru, &c.ExamplePl, &c.ExampleRu, &c.MeaningRu, &c.AlternativesPl, &c.AlternativesRu, &c.Grammar, &r.group, &r.archived)
 		return r, err
 	})
 	if err != nil {
@@ -68,10 +127,19 @@ func cardRows(t *testing.T, pool *pgxpool.Pool) []cardRow {
 
 func TestCreateCard(t *testing.T) {
 	const baseBody = `{"pl":"dom","ru":"дом","examplePl":"To jest dom.","exampleRu":"Это дом.","meaningRu":"здание"}`
-	base := Card{Kind: Translation, Pl: "dom", Ru: "дом", ExamplePl: "To jest dom.", ExampleRu: "Это дом.", MeaningRu: "здание", AlternativesPl: []string{}, AlternativesRu: []string{}}
+	base := Card{Kind: CardKindTranslation, Pl: "dom", Ru: "дом", ExamplePl: "To jest dom.", ExampleRu: "Это дом.", MeaningRu: "здание", AlternativesPl: []string{}, AlternativesRu: []string{}}
 	with := func(change func(*Card)) Card {
 		c := base
 		change(&c)
+		return c
+	}
+	// g1 is the card G1 without its ID. It applies change when change is not nil.
+	g1 := func(change func(*Card)) Card {
+		c := cardG1()
+		c.Id = ""
+		if change != nil {
+			change(&c)
+		}
 		return c
 	}
 	tests := []struct {
@@ -145,6 +213,31 @@ func TestCreateCard(t *testing.T) {
 		{name: "the first broken rule decides the text", sub: subOla, group: "rodzina",
 			body:       `{"pl":"","ru":"","examplePl":"To jest dom.","exampleRu":"Это дом.","meaningRu":"здание"}`,
 			wantStatus: 400, wantBody: plRule},
+		{name: "creates a grammar card", sub: subOla, group: "rodzina",
+			body:       grammarJSON(func(c *CardCreate) { c.Pl, c.Grammar.Hint = "  psy  ", " (pies) " }),
+			wantStatus: 201, want: g1(nil)},
+		{name: "a grammar card without the lists that can be empty", sub: subOla, group: "rodzina",
+			body: grammarJSON(func(c *CardCreate) {
+				c.AlternativesPl, c.AlternativesRu, c.Grammar.Facts, c.Grammar.Slots = nil, nil, nil, nil
+			}),
+			wantStatus: 201, want: g1(func(c *Card) { c.Grammar.Facts, c.Grammar.Slots = []string{}, []string{} })},
+		{name: "a grammar card with a Russian term is rejected", sub: subOla, group: "rodzina", body: grammarJSON(func(c *CardCreate) { c.Ru = "Собака" }),
+			wantStatus: 400, wantBody: `{"message":"ru, exampleRu and meaningRu must be empty for a grammar card"}`},
+		{name: "a grammar card without grammar is rejected", sub: subOla, group: "rodzina", body: grammarJSON(func(c *CardCreate) { c.Grammar = nil }),
+			wantStatus: 400, wantBody: `{"message":"grammar is required for a grammar card"}`},
+		{name: "a grammar card without a gap is rejected", sub: subOla, group: "rodzina",
+			body:       grammarJSON(func(c *CardCreate) { c.ExamplePl = "Na podwórku biegają dwa psy." }),
+			wantStatus: 400, wantBody: `{"message":"examplePl must have ___ exactly once"}`},
+		// The Russian texts stay empty, and checkCard refuses an empty ru. So the message also shows that this rule
+		// comes before checkCard.
+		{name: "a translation card with grammar is rejected", sub: subOla, group: "rodzina", body: grammarJSON(func(c *CardCreate) { c.Kind = nil }),
+			wantStatus: 400, wantBody: `{"message":"only a grammar card can have grammar"}`},
+		{name: "the kind translation gives a translation card", sub: subOla, group: "rodzina",
+			body:       `{"kind":"translation","pl":"dom","ru":"дом","examplePl":"To jest dom.","exampleRu":"Это дом.","meaningRu":"здание"}`,
+			wantStatus: 201, want: base},
+		{name: "an unknown kind is rejected", sub: subOla, group: "rodzina",
+			body:       `{"kind":"vocabulary","pl":"dom","ru":"дом","examplePl":"To jest dom.","exampleRu":"Это дом.","meaningRu":"здание"}`,
+			wantStatus: 400, wantBody: `{"message":"kind must be translation or grammar"}`},
 		{name: "a body that is not JSON is rejected", sub: subOla, group: "rodzina", body: `{"pl":`, wantStatus: 400, wantBody: notJSON},
 		{name: "a member of another group is refused", sub: subEwa, group: "rodzina", body: baseBody, wantStatus: 403, wantBody: notMember},
 		{name: "a user without a group is refused", sub: subJan, group: "rodzina", body: baseBody, wantStatus: 403, wantBody: notMember},
@@ -191,8 +284,8 @@ func TestCreateCard(t *testing.T) {
 			var row Card
 			var rowGroup string
 			var archived bool
-			if err := pool.QueryRow(ctx, "SELECT group_id, kind, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru, archived FROM cards WHERE id = $1", card.Id).
-				Scan(&rowGroup, &row.Kind, &row.Pl, &row.Ru, &row.ExamplePl, &row.ExampleRu, &row.MeaningRu, &row.AlternativesPl, &row.AlternativesRu, &archived); err != nil {
+			if err := pool.QueryRow(ctx, "SELECT group_id, kind, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru, grammar, archived FROM cards WHERE id = $1", card.Id).
+				Scan(&rowGroup, &row.Kind, &row.Pl, &row.Ru, &row.ExamplePl, &row.ExampleRu, &row.MeaningRu, &row.AlternativesPl, &row.AlternativesRu, &row.Grammar, &archived); err != nil {
 				t.Fatalf("card %q: %v", card.Id, err)
 			}
 			if rowGroup != rodzina || archived || !reflect.DeepEqual(row, tt.want) {
@@ -207,7 +300,7 @@ func TestCreateCard(t *testing.T) {
 
 func TestListCards(t *testing.T) {
 	dom := func(id string) Card {
-		return Card{Id: id, Kind: Translation, Pl: "dom", Ru: "дом", ExamplePl: "To jest dom.", ExampleRu: "Это дом.", MeaningRu: "здание", AlternativesPl: []string{}, AlternativesRu: []string{}}
+		return Card{Id: id, Kind: CardKindTranslation, Pl: "dom", Ru: "дом", ExamplePl: "To jest dom.", ExampleRu: "Это дом.", MeaningRu: "здание", AlternativesPl: []string{}, AlternativesRu: []string{}}
 	}
 	tests := []struct {
 		name       string
@@ -240,8 +333,9 @@ func TestListCards(t *testing.T) {
 		{name: "the card has all its fields", sub: subOla, wantStatus: 200,
 			setup: `INSERT INTO cards (group_id, id, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru)
 				VALUES ((SELECT id FROM groups WHERE name = 'Rodzina'), '00000000-0000-0000-0000-000000000001', 'źródło', 'источник', 'To jest źródło.', 'Это источник.', 'начало реки', '["zdrój"]', '[]')`,
-			want: []Card{{Id: "00000000-0000-0000-0000-000000000001", Kind: Translation, Pl: "źródło", Ru: "источник", ExamplePl: "To jest źródło.", ExampleRu: "Это источник.",
+			want: []Card{{Id: "00000000-0000-0000-0000-000000000001", Kind: CardKindTranslation, Pl: "źródło", Ru: "источник", ExamplePl: "To jest źródło.", ExampleRu: "Это источник.",
 				MeaningRu: "начало реки", AlternativesPl: []string{"zdrój"}, AlternativesRu: []string{}}}},
+		{name: "a grammar card has its grammar fields", sub: subOla, wantStatus: 200, setup: grammarFixture, want: []Card{cardG1()}},
 		{name: "a card with an empty ru keeps its place in the list", sub: subOla, wantStatus: 200,
 			setup: `INSERT INTO cards (group_id, pl, ru, example_pl, example_ru, meaning_ru)
 				SELECT (SELECT id FROM groups WHERE name = 'Rodzina'), v.pl, v.ru, 'example', 'example', 'meaning'
@@ -358,7 +452,7 @@ func TestSearchCards(t *testing.T) {
 			('Rodzina', '00000000-0000-0000-0000-000000000010', 'oko', 'глаз', '[]', '[]', false)
 		) AS v (grp, id, pl, ru, alt_pl, alt_ru, archived)`
 	// Polish order: ó is a letter after o, and ż after z.
-	all := []string{"dobry wieczór", "jeż", "oko", "to jest ok", "wieczorek", "wieczór", "zmierzch", "żółw"}
+	all := []string{"dobry wieczór", "jeż", "oko", "psy", "to jest ok", "wieczorek", "wieczór", "zmierzch", "żółw"}
 	tests := []struct {
 		name       string
 		sub        string
@@ -381,6 +475,7 @@ func TestSearchCards(t *testing.T) {
 			wantPl: []string{"dobry wieczór", "wieczorek", "wieczór"}},
 		// The ru of "to jest ok" is equal to the query, and "oko" starts with it.
 		{name: "the better rank of the two terms counts", sub: subOla, query: "q=ok", wantStatus: 200, wantPl: []string{"to jest ok", "oko"}},
+		{name: "a grammar card is found by its answer", sub: subOla, query: "q=psy", wantStatus: 200, wantPl: []string{"psy"}},
 		// %C5%BC is the letter ż.
 		{name: "a q of 200 letters passes", sub: subOla, query: "q=" + strings.Repeat("%C5%BC", 200), wantStatus: 200, wantBody: `{"cards":[]}`},
 		{name: "a q of 201 letters is rejected", sub: subOla, query: "q=" + strings.Repeat("%C5%BC", 201), wantStatus: 400,
@@ -392,7 +487,7 @@ func TestSearchCards(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			pool, srv, rodzina, _ := groupFixture(t)
-			if _, err := pool.Exec(ctx, searchFixture); err != nil {
+			if _, err := pool.Exec(ctx, searchFixture+"; "+grammarFixture); err != nil {
 				t.Fatal(err)
 			}
 			req := groupRequest("GET /v1/groups/{groupId}/cards", tt.sub, "", map[string]string{"groupId": rodzina})
@@ -435,7 +530,7 @@ func TestPatchCard(t *testing.T) {
 	tests := []struct {
 		name       string
 		sub        string
-		group      string // the group ID of the path; "rodzina" for the ID of Rodzina
+		group      string // the group ID of the path; "rodzina" for the ID of Rodzina, "praca" for the ID of Praca
 		card       string // the card ID of the path
 		body       string
 		wantStatus int
@@ -446,7 +541,7 @@ func TestPatchCard(t *testing.T) {
 			wantStatus: 200, want: with(func(c *Card) { c.Pl = "chata" })},
 		{name: "changes all fields", sub: subAdam, group: "rodzina", card: cardK1.Id,
 			body:       `{"pl":" zamek ","ru":" замок ","examplePl":" To jest zamek. ","exampleRu":" Это замок. ","meaningRu":" крепость ","alternativesPl":[" zamczysko "],"alternativesRu":["твердыня","дворец"]}`,
-			wantStatus: 200, want: Card{Id: cardK1.Id, Kind: Translation, Pl: "zamek", Ru: "замок", ExamplePl: "To jest zamek.", ExampleRu: "Это замок.", MeaningRu: "крепость",
+			wantStatus: 200, want: Card{Id: cardK1.Id, Kind: CardKindTranslation, Pl: "zamek", Ru: "замок", ExamplePl: "To jest zamek.", ExampleRu: "Это замок.", MeaningRu: "крепость",
 				AlternativesPl: []string{"zamczysko"}, AlternativesRu: []string{"твердыня", "дворец"}}},
 		{name: "an empty body changes nothing", sub: subOla, group: "rodzina", card: cardK1.Id, body: `{}`, wantStatus: 200, want: cardK1},
 		{name: "an empty list removes the terms", sub: subOla, group: "rodzina", card: cardK1.Id, body: `{"alternativesPl":[]}`,
@@ -478,6 +573,11 @@ func TestPatchCard(t *testing.T) {
 		{name: "a card ID that is not a UUID is not found", sub: subOla, group: "rodzina", card: "nope", body: `{"pl":"nowy"}`, wantStatus: 404, wantBody: cardNotFound},
 		{name: "an unknown card ID is not found", sub: subOla, group: "rodzina", card: "00000000-0000-0000-0000-000000000009", body: `{"pl":"nowy"}`,
 			wantStatus: 404, wantBody: cardNotFound},
+		{name: "a grammar card cannot be changed", sub: subOla, group: "rodzina", card: cardG1().Id, body: `{"pl":"psa"}`,
+			wantStatus: 409, wantBody: `{"message":"a grammar card cannot be changed"}`},
+		{name: "the body is checked before the kind", sub: subOla, group: "rodzina", card: cardG1().Id, body: `{"pl":""}`, wantStatus: 400, wantBody: plRule},
+		{name: "a grammar card of another group is not found", sub: subEwa, group: "praca", card: cardG1().Id, body: `{"pl":"psa"}`,
+			wantStatus: 404, wantBody: cardNotFound},
 		{name: "a member of another group is refused", sub: subEwa, group: "rodzina", card: cardK1.Id, body: `{"pl":"nowy"}`, wantStatus: 403, wantBody: notMember},
 		{name: "a user without a group is refused", sub: subJan, group: "rodzina", card: cardK1.Id, body: `{"pl":"nowy"}`, wantStatus: 403, wantBody: notMember},
 		{name: "a group ID that is not a UUID is refused", sub: subOla, group: "nope", card: cardK1.Id, body: `{"pl":"nowy"}`, wantStatus: 403, wantBody: notMember},
@@ -486,12 +586,15 @@ func TestPatchCard(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			pool, srv, rodzina, praca := groupFixture(t)
-			if _, err := pool.Exec(ctx, cardFixture); err != nil {
+			if _, err := pool.Exec(ctx, cardFixture+"; "+grammarFixture); err != nil {
 				t.Fatal(err)
 			}
 			groupID := tt.group
-			if groupID == "rodzina" {
+			switch groupID {
+			case "rodzina":
 				groupID = rodzina
+			case "praca":
+				groupID = praca
 			}
 
 			resp, err := srv.Handle(ctx, groupRequest("PATCH /v1/groups/{groupId}/cards/{cardId}", tt.sub, tt.body,
@@ -518,7 +621,7 @@ func TestPatchCard(t *testing.T) {
 				}
 				k1 = tt.want
 			}
-			want := []cardRow{{k1, rodzina, false}, {cardK2, rodzina, true}, {cardK3, praca, false}}
+			want := []cardRow{{k1, rodzina, false}, {cardK2, rodzina, true}, {cardK3, praca, false}, {cardG1(), rodzina, false}}
 			if got := cardRows(t, pool); !reflect.DeepEqual(got, want) {
 				t.Errorf("rows = %+v, want %+v", got, want)
 			}
@@ -537,6 +640,7 @@ func TestArchiveCard(t *testing.T) {
 		wantArchived []string // the IDs of the archived cards after the call, in ID order
 	}{
 		{name: "archives a card", sub: subOla, group: "rodzina", card: cardK1.Id, wantStatus: 204, wantArchived: []string{cardK1.Id, cardK2.Id}},
+		{name: "archives a grammar card", sub: subOla, group: "rodzina", card: cardG1().Id, wantStatus: 204, wantArchived: []string{cardK2.Id, cardG1().Id}},
 		{name: "an archived card is not found", sub: subAdam, group: "rodzina", card: cardK2.Id, wantStatus: 404, wantBody: cardNotFound, wantArchived: []string{cardK2.Id}},
 		{name: "a card of another group is not found", sub: subOla, group: "rodzina", card: cardK3.Id, wantStatus: 404, wantBody: cardNotFound, wantArchived: []string{cardK2.Id}},
 		{name: "a card ID that is not a UUID is not found", sub: subOla, group: "rodzina", card: "nope", wantStatus: 404, wantBody: cardNotFound, wantArchived: []string{cardK2.Id}},
@@ -550,7 +654,7 @@ func TestArchiveCard(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			pool, srv, rodzina, _ := groupFixture(t)
-			if _, err := pool.Exec(ctx, cardFixture); err != nil {
+			if _, err := pool.Exec(ctx, cardFixture+"; "+grammarFixture); err != nil {
 				t.Fatal(err)
 			}
 			groupID := tt.group
@@ -581,8 +685,196 @@ func TestArchiveCard(t *testing.T) {
 				t.Errorf("archived = %q, want %q", archived, tt.wantArchived)
 			}
 			// An archive changes only archived. reflect.DeepEqual treats a nil list and an empty list as different.
-			if want := []Card{cardK1, cardK2, cardK3}; !reflect.DeepEqual(cards, want) {
+			if want := []Card{cardK1, cardK2, cardK3, cardG1()}; !reflect.DeepEqual(cards, want) {
 				t.Errorf("cards = %+v, want %+v", cards, want)
+			}
+		})
+	}
+}
+
+func TestCheckGrammarCard(t *testing.T) {
+	tests := []struct {
+		name     string
+		change   func(c *CardCreate) // the change of the fixture grammarCreate(nil)
+		want     string              // the message; empty for a pass
+		wantCard func(c *CardCreate) // the change of the fixture that gives the card after the check; nil when the row does not compare the card
+	}{
+		{name: "spaces at the ends of each text are removed", change: func(c *CardCreate) {
+			pad := func(list []string) {
+				for i := range list {
+					list[i] = " " + list[i] + " "
+				}
+			}
+			g, table := c.Grammar, c.Grammar.Table
+			for _, s := range []*string{&c.Pl, &c.ExamplePl, &g.Topic, &g.Used, &g.Right, &g.Hint, &g.Rule, &table.Title, table.Groups[0].Title, table.Groups[1].Title} {
+				*s = " " + *s + " "
+			}
+			pad(g.Facts)
+			pad(g.Slots)
+			pad(g.Examples)
+			pad(table.Columns)
+			for _, r := range []*GrammarRow{&table.Groups[0].Rows[0], &table.Groups[1].Rows[0], &table.Groups[1].Rows[1]} {
+				pad(r.Names)
+				r.Endings = " " + r.Endings + " "
+				pad(r.Examples)
+			}
+			c.Ru, c.ExampleRu, c.MeaningRu = " ", " ", " "
+		}, wantCard: func(*CardCreate) {}},
+		{name: "the lists that the card does not have become empty lists", change: func(c *CardCreate) {
+			c.AlternativesPl, c.AlternativesRu, c.Grammar.Facts, c.Grammar.Slots = nil, nil, nil, nil
+		}, wantCard: func(c *CardCreate) {
+			c.AlternativesPl, c.AlternativesRu, c.Grammar.Facts, c.Grammar.Slots = &[]string{}, &[]string{}, []string{}, []string{}
+		}},
+		{name: "each text at its maximum passes", change: func(c *CardCreate) {
+			fill := func(list []string, n int) {
+				for i := range list {
+					list[i] = strings.Repeat("ż", n)
+				}
+			}
+			g, table := c.Grammar, c.Grammar.Table
+			c.Pl, c.ExamplePl, c.AlternativesPl = strings.Repeat("ż", 200), "___"+strings.Repeat("ż", 497), &[]string{strings.Repeat("ż", 200)}
+			g.Topic, g.Used, g.Right, g.Hint, g.Rule = strings.Repeat("ż", 40), strings.Repeat("ż", 200), strings.Repeat("ź", 200), strings.Repeat("ó", 200), strings.Repeat("ż", 500)
+			fill(g.Facts, 40)
+			fill(g.Slots, 40)
+			fill(g.Examples, 200)
+			table.Title = strings.Repeat("ż", 100)
+			fill(table.Columns, 40)
+			table.Groups[0].Title, table.Groups[1].Title = new(strings.Repeat("ż", 80)), new(strings.Repeat("ż", 80))
+			for _, r := range []*GrammarRow{&table.Groups[0].Rows[0], &table.Groups[1].Rows[0], &table.Groups[1].Rows[1]} {
+				fill(r.Names, 40)
+				r.Endings = strings.Repeat("ż", 60)
+				fill(r.Examples, 80)
+			}
+		}},
+		{name: "each list at its maximum passes", change: func(c *CardCreate) {
+			c.AlternativesPl = &[]string{"a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"}
+			c.Grammar.Facts = []string{"a", "b", "c", "d"}
+			c.Grammar.Slots = []string{"a", "b", "c", "d", "e"}
+			table := c.Grammar.Table
+			table.Groups = []GrammarGroup{{Rows: grammarRows(8)}, table.Groups[1], {Rows: grammarRows(1)}, {Rows: grammarRows(1)}}
+		}},
+		{name: "a card without a table passes", change: func(c *CardCreate) { c.Grammar.Table = nil }},
+		{name: "a group without a title passes", change: func(c *CardCreate) { c.Grammar.Table.Groups[0].Title = nil }},
+		{name: "two examples pass", change: func(c *CardCreate) { c.Grammar.Examples = []string{"pies → psy", "dom → domy"} }},
+		{name: "a table with one group of one row passes", change: func(c *CardCreate) {
+			c.Grammar.Table.Groups = []GrammarGroup{{Rows: []GrammarRow{c.Grammar.Table.Groups[1].Rows[0]}}}
+		}},
+		{name: "a hint with fewer words than used passes", change: func(c *CardCreate) {
+			c.Grammar.Used, c.Grammar.Right, c.Grammar.Hint = "do sklep", "do sklepu", "(sklep)"
+		}},
+		{name: "a hint with the same words as used passes", change: func(c *CardCreate) {
+			c.Grammar.Used, c.Grammar.Right, c.Grammar.Hint = "mój brat", "mojego brata", "(mój brat)"
+		}},
+		{name: "the words of used in another order pass", change: func(c *CardCreate) {
+			c.Grammar.Used, c.Grammar.Right, c.Grammar.Hint = "mój brat", "mojego brata", "brat mój i siostra"
+		}},
+		{name: "a word that starts with used is another word", change: func(c *CardCreate) {
+			c.Grammar.Used, c.Grammar.Right, c.Grammar.Hint = "pies", "psy", "(piesek, liczba mnoga)"
+		}},
+		{name: "201 letters in pl", change: func(c *CardCreate) { c.Pl = strings.Repeat("ż", 201) }, want: "pl must have 1 to 200 characters"},
+		{name: "501 letters in examplePl", change: func(c *CardCreate) { c.ExamplePl = "___" + strings.Repeat("ż", 498) },
+			want: "examplePl must have 1 to 500 characters"},
+		{name: "a sentence without a gap", change: func(c *CardCreate) { c.ExamplePl = "Na podwórku biegają dwa psy." }, want: "examplePl must have ___ exactly once"},
+		{name: "a sentence with two gaps", change: func(c *CardCreate) { c.ExamplePl = "___ biegają dwa ___." }, want: "examplePl must have ___ exactly once"},
+		{name: "9 alternatives", change: func(c *CardCreate) {
+			c.AlternativesPl = &[]string{"a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"}
+		}, want: "alternativesPl must have at most 8 terms of 1 to 200 characters"},
+		{name: "a Russian term", change: func(c *CardCreate) { c.Ru = "Собака" }, want: "ru, exampleRu and meaningRu must be empty for a grammar card"},
+		{name: "a Russian example", change: func(c *CardCreate) { c.ExampleRu = "Собака бежит." }, want: "ru, exampleRu and meaningRu must be empty for a grammar card"},
+		{name: "a Russian meaning", change: func(c *CardCreate) { c.MeaningRu = "собака" }, want: "ru, exampleRu and meaningRu must be empty for a grammar card"},
+		{name: "a Russian alternative", change: func(c *CardCreate) { c.AlternativesRu = &[]string{"собака"} }, want: "alternativesRu must be empty for a grammar card"},
+		{name: "no grammar", change: func(c *CardCreate) { c.Grammar = nil }, want: "grammar is required for a grammar card"},
+		{name: "41 letters in topic", change: func(c *CardCreate) { c.Grammar.Topic = strings.Repeat("ż", 41) }, want: "grammar.topic must have 1 to 40 characters"},
+		{name: "201 letters in used", change: func(c *CardCreate) { c.Grammar.Used = strings.Repeat("ż", 201) }, want: "grammar.used must have 1 to 200 characters"},
+		{name: "201 letters in right", change: func(c *CardCreate) { c.Grammar.Right = strings.Repeat("ż", 201) }, want: "grammar.right must have 1 to 200 characters"},
+		{name: "right equal to used with other capitals and spaces", change: func(c *CardCreate) { c.Grammar.Right = "Dwa   PIESY" },
+			want: "grammar.right must be different from grammar.used"},
+		{name: "201 letters in hint", change: func(c *CardCreate) { c.Grammar.Hint = strings.Repeat("ż", 201) }, want: "grammar.hint must have 1 to 200 characters"},
+		{name: "a hint with used and more words", change: func(c *CardCreate) {
+			c.Grammar.Used, c.Grammar.Right, c.Grammar.Hint = "kupuję", "kupiłem", "nie kupuję, tylko czas przeszły"
+		}, want: "grammar.hint must not contain grammar.used"},
+		{name: "used at the end of the hint", change: func(c *CardCreate) {
+			c.Grammar.Used, c.Grammar.Right, c.Grammar.Hint = "kupuję", "kupiłem", "czas przeszły, nie kupuję"
+		}, want: "grammar.hint must not contain grammar.used"},
+		{name: "the hint rule ignores capitals", change: func(c *CardCreate) {
+			c.Grammar.Used, c.Grammar.Right, c.Grammar.Hint = "kupuję", "kupiłem", "Nie KUPUJĘ, tylko czas przeszły"
+		}, want: "grammar.hint must not contain grammar.used"},
+		// The hint has e and U+0328 COMBINING OGONEK in place of ę. The mark is not a letter, so only the NFC form of the hint
+		// has the word kupuję.
+		{name: "a decomposed letter in the hint", change: func(c *CardCreate) {
+			c.Grammar.Used, c.Grammar.Right, c.Grammar.Hint = "kupuję", "kupiłem", "nie kupuje\u0328, tylko czas przeszły"
+		}, want: "grammar.hint must not contain grammar.used"},
+		{name: "five facts", change: func(c *CardCreate) { c.Grammar.Facts = []string{"a", "b", "c", "d", "e"} }, want: "grammar.facts must have at most 4 labels of 1 to 40 characters"},
+		{name: "a fact of 41 letters", change: func(c *CardCreate) { c.Grammar.Facts[0] = strings.Repeat("ż", 41) }, want: "grammar.facts must have at most 4 labels of 1 to 40 characters"},
+		{name: "six slots", change: func(c *CardCreate) { c.Grammar.Slots = []string{"a", "b", "c", "d", "e", "f"} }, want: "grammar.slots must have at most 5 labels of 1 to 40 characters"},
+		{name: "a slot of 41 letters", change: func(c *CardCreate) { c.Grammar.Slots[0] = strings.Repeat("ż", 41) }, want: "grammar.slots must have at most 5 labels of 1 to 40 characters"},
+		{name: "501 letters in rule", change: func(c *CardCreate) { c.Grammar.Rule = strings.Repeat("ż", 501) }, want: "grammar.rule must have 1 to 500 characters"},
+		{name: "a rule with a line break", change: func(c *CardCreate) {
+			c.Grammar.Rule = "W liczbie mnogiej „pies” traci „e”: psy.\nTak samo: sen, sny."
+		}, want: "grammar.rule must have 1 to 500 characters"},
+		{name: "one example", change: func(c *CardCreate) { c.Grammar.Examples = []string{"pies → psy"} }, want: "grammar.examples must have 2 or 3 texts of 1 to 200 characters"},
+		{name: "four examples", change: func(c *CardCreate) { c.Grammar.Examples = []string{"a", "b", "c", "d"} }, want: "grammar.examples must have 2 or 3 texts of 1 to 200 characters"},
+		{name: "an example of 201 letters", change: func(c *CardCreate) { c.Grammar.Examples[0] = strings.Repeat("ż", 201) },
+			want: "grammar.examples must have 2 or 3 texts of 1 to 200 characters"},
+		{name: "101 letters in the table title", change: func(c *CardCreate) { c.Grammar.Table.Title = strings.Repeat("ż", 101) },
+			want: "grammar.table.title must have 1 to 100 characters"},
+		{name: "two columns", change: func(c *CardCreate) { c.Grammar.Table.Columns = []string{"Rodzaj", "Końcówka"} },
+			want: "grammar.table.columns must have 3 texts of 1 to 40 characters"},
+		{name: "four columns", change: func(c *CardCreate) { c.Grammar.Table.Columns = []string{"Rodzaj", "Końcówka", "Przykład", "Uwaga"} },
+			want: "grammar.table.columns must have 3 texts of 1 to 40 characters"},
+		{name: "a column of 41 letters", change: func(c *CardCreate) { c.Grammar.Table.Columns[0] = strings.Repeat("ż", 41) },
+			want: "grammar.table.columns must have 3 texts of 1 to 40 characters"},
+		{name: "no group", change: func(c *CardCreate) { c.Grammar.Table.Groups = []GrammarGroup{} }, want: "grammar.table.groups must have 1 to 4 groups"},
+		{name: "five groups", change: func(c *CardCreate) {
+			c.Grammar.Table.Groups = append(c.Grammar.Table.Groups, GrammarGroup{Rows: grammarRows(1)}, GrammarGroup{Rows: grammarRows(1)}, GrammarGroup{Rows: grammarRows(1)})
+		}, want: "grammar.table.groups must have 1 to 4 groups"},
+		{name: "a blank group title", change: func(c *CardCreate) { c.Grammar.Table.Groups[0].Title = new(" ") }, want: "grammar.table.groups.title must have 1 to 80 characters"},
+		{name: "a group title of 81 letters", change: func(c *CardCreate) { c.Grammar.Table.Groups[0].Title = new(strings.Repeat("ż", 81)) },
+			want: "grammar.table.groups.title must have 1 to 80 characters"},
+		{name: "a group without rows", change: func(c *CardCreate) { c.Grammar.Table.Groups[0].Rows = []GrammarRow{} },
+			want: "grammar.table.groups.rows must have 1 to 8 rows in each group"},
+		{name: "nine rows in one group", change: func(c *CardCreate) { c.Grammar.Table.Groups[0].Rows = grammarRows(9) },
+			want: "grammar.table.groups.rows must have 1 to 8 rows in each group"},
+		{name: "a row without names", change: func(c *CardCreate) {
+			r := &c.Grammar.Table.Groups[1].Rows[0]
+			r.Names, r.Examples = []string{}, []string{}
+		}, want: "grammar.table.groups.rows.names must have 1 to 3 texts of 1 to 40 characters"},
+		{name: "a row with four names", change: func(c *CardCreate) {
+			r := &c.Grammar.Table.Groups[1].Rows[0]
+			r.Names, r.Examples = append(r.Names, "męski"), append(r.Examples, "x")
+		}, want: "grammar.table.groups.rows.names must have 1 to 3 texts of 1 to 40 characters"},
+		{name: "a name of 41 letters", change: func(c *CardCreate) { c.Grammar.Table.Groups[1].Rows[0].Names[0] = strings.Repeat("ż", 41) },
+			want: "grammar.table.groups.rows.names must have 1 to 3 texts of 1 to 40 characters"},
+		{name: "endings of 61 letters", change: func(c *CardCreate) { c.Grammar.Table.Groups[1].Rows[0].Endings = strings.Repeat("ż", 61) },
+			want: "grammar.table.groups.rows.endings must have 1 to 60 characters"},
+		{name: "fewer examples than names", change: func(c *CardCreate) { c.Grammar.Table.Groups[1].Rows[0].Examples = []string{"pies → psy"} },
+			want: "grammar.table.groups.rows.examples must have one text of 1 to 80 characters for each name"},
+		{name: "a row example of 81 letters", change: func(c *CardCreate) { c.Grammar.Table.Groups[1].Rows[0].Examples[0] = strings.Repeat("ż", 81) },
+			want: "grammar.table.groups.rows.examples must have one text of 1 to 80 characters for each name"},
+		{name: "thirteen rows", change: func(c *CardCreate) {
+			table := c.Grammar.Table
+			table.Groups[0].Rows = grammarRows(8)
+			table.Groups = append(table.Groups, GrammarGroup{Rows: grammarRows(3)})
+		}, want: "grammar.table must have at most 12 rows"},
+		{name: "no hit row", change: func(c *CardCreate) { c.Grammar.Table.Groups[1].Rows[0].Hit = false }, want: "grammar.table must have exactly one row with hit true"},
+		{name: "two hit rows", change: func(c *CardCreate) { c.Grammar.Table.Groups[0].Rows[0].Hit = true }, want: "grammar.table must have exactly one row with hit true"},
+		{name: "the first broken rule gives the message", change: func(c *CardCreate) { c.Pl, c.Grammar = "", nil }, want: "pl must have 1 to 200 characters"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := grammarCreate(tt.change)
+			if got := CheckGrammarCard(&c); got != tt.want {
+				t.Errorf("CheckGrammarCard() = %q, want %q", got, tt.want)
+			}
+			if tt.wantCard == nil {
+				return
+			}
+			// reflect.DeepEqual treats a nil list and an empty list as different. The JSON shows a nil list as null. It
+			// leaves out alternativesPl and alternativesRu when they are nil or empty, because their fields have omitempty.
+			if want := grammarCreate(tt.wantCard); !reflect.DeepEqual(c, want) {
+				gotJSON, _ := json.Marshal(c, json.FormatNilSliceAsNull(true))
+				wantJSON, _ := json.Marshal(want, json.FormatNilSliceAsNull(true))
+				t.Errorf("card = %s, want %s", gotJSON, wantJSON)
 			}
 		})
 	}

@@ -9,16 +9,16 @@ import (
 
 // Defines values for CardKind.
 const (
-	Grammar     CardKind = "grammar"
-	Translation CardKind = "translation"
+	CardKindGrammar     CardKind = "grammar"
+	CardKindTranslation CardKind = "translation"
 )
 
 // Valid indicates whether the value is a known member of the CardKind enum.
 func (e CardKind) Valid() bool {
 	switch e {
-	case Grammar:
+	case CardKindGrammar:
 		return true
-	case Translation:
+	case CardKindTranslation:
 		return true
 	default:
 		return false
@@ -127,45 +127,56 @@ func (e InvitationFailure) Valid() bool {
 	}
 }
 
-// Card defines model for Card.
+// Card A card of the group. A grammar card has the object grammar. A translation card has none.
 type Card struct {
 	AlternativesPl []string `json:"alternativesPl"`
 	AlternativesRu []string `json:"alternativesRu"`
 	ExamplePl      string   `json:"examplePl"`
 	ExampleRu      string   `json:"exampleRu"`
-	Id             string   `json:"id"`
-	Kind           CardKind `json:"kind"`
-	MeaningRu      string   `json:"meaningRu"`
-	Pl             string   `json:"pl"`
-	Ru             string   `json:"ru"`
+
+	// Grammar The grammar part of a grammar card. Spaces at the ends of each text are removed; then each text has the length of its field, and no control, line-break or text-direction character. The table is optional.
+	Grammar *Grammar `json:"grammar,omitempty"`
+	Id      string   `json:"id"`
+
+	// Kind translation: a card with a Polish and a Russian side. grammar: a card with a gap sentence in examplePl, the answer in pl, the object grammar, and empty Russian texts.
+	Kind      CardKind `json:"kind"`
+	MeaningRu string   `json:"meaningRu"`
+	Pl        string   `json:"pl"`
+	Ru        string   `json:"ru"`
 }
 
-// CardKind defines model for Card.Kind.
-type CardKind string
-
-// CardCreate defines model for CardCreate.
+// CardCreate Without kind, the card is a translation card. A grammar card must have grammar, empty ru, exampleRu and meaningRu, and no alternativesRu. A translation card must not have grammar.
 type CardCreate struct {
-	// AlternativesPl At most 8 other Polish terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. A list that the body does not have is an empty list.
+	// AlternativesPl At most 8 other Polish terms, or other accepted answers of a grammar card. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. A list that the body does not have is an empty list.
 	AlternativesPl *[]string `json:"alternativesPl,omitempty"`
 
-	// AlternativesRu At most 8 other Russian terms. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. A list that the body does not have is an empty list.
+	// AlternativesRu At most 8 other Russian terms. A grammar card has none. Spaces at the ends of each term are removed; then each term has 1 to 200 characters, and no control, line-break or text-direction character. A list that the body does not have is an empty list.
 	AlternativesRu *[]string `json:"alternativesRu,omitempty"`
 
-	// ExamplePl A Polish example. Spaces at the ends are removed; then it has 1 to 500 characters, and no control, line-break or text-direction character.
+	// ExamplePl A Polish example, or the gap sentence of a grammar card with ___ (three underscores) exactly once. Spaces at the ends are removed; then it has 1 to 500 characters, and no control, line-break or text-direction character.
 	ExamplePl string `json:"examplePl"`
 
-	// ExampleRu A Russian example. Spaces at the ends are removed; then it has 1 to 500 characters, and no control, line-break or text-direction character.
+	// ExampleRu A Russian example, or the empty text for a grammar card. Spaces at the ends are removed; then the example of a translation card has 1 to 500 characters, and no control, line-break or text-direction character.
 	ExampleRu string `json:"exampleRu"`
 
-	// MeaningRu The meaning in Russian. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+	// Grammar The grammar part of a grammar card. Spaces at the ends of each text are removed; then each text has the length of its field, and no control, line-break or text-direction character. The table is optional.
+	Grammar *Grammar `json:"grammar,omitempty"`
+
+	// Kind translation: a card with a Polish and a Russian side. grammar: a card with a gap sentence in examplePl, the answer in pl, the object grammar, and empty Russian texts.
+	Kind *CardKind `json:"kind,omitempty"`
+
+	// MeaningRu The meaning in Russian, or the empty text for a grammar card. Spaces at the ends are removed; then the meaning of a translation card has 1 to 200 characters, and no control, line-break or text-direction character.
 	MeaningRu string `json:"meaningRu"`
 
-	// Pl The Polish term. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+	// Pl The Polish term, or the answer of a grammar card: the words that fill the gap. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
 	Pl string `json:"pl"`
 
-	// Ru The Russian term. Spaces at the ends are removed; then it has 1 to 200 characters, and no control, line-break or text-direction character.
+	// Ru The Russian term, or the empty text for a grammar card. Spaces at the ends are removed; then the term of a translation card has 1 to 200 characters, and no control, line-break or text-direction character.
 	Ru string `json:"ru"`
 }
+
+// CardKind translation: a card with a Polish and a Russian side. grammar: a card with a gap sentence in examplePl, the answer in pl, the object grammar, and empty Russian texts.
+type CardKind string
 
 // CardUpdate defines model for CardUpdate.
 type CardUpdate struct {
@@ -235,6 +246,57 @@ type Error struct {
 
 // Grade The result of an answer. Each grade that is not correct counts as a miss.
 type Grade string
+
+// Grammar The grammar part of a grammar card. Spaces at the ends of each text are removed; then each text has the length of its field, and no control, line-break or text-direction character. The table is optional.
+type Grammar struct {
+	// Examples Short examples of the rule.
+	Examples []string `json:"examples"`
+
+	// Facts Facts about the word, for example the part of speech.
+	Facts []string `json:"facts"`
+
+	// Hint The hint next to the gap. A hint with more words than used does not contain the words of used in the same order. So the hint can show the form of the learner only alone, for example in brackets.
+	Hint string `json:"hint"`
+
+	// Right The correct form for the text of the learner. It is not equal to used. A difference of capitals or spaces only does not count.
+	Right string `json:"right"`
+
+	// Rule The rule in one or two sentences of simple Polish.
+	Rule string `json:"rule"`
+
+	// Slots Facts about the gap, for example the case and the number.
+	Slots []string `json:"slots"`
+
+	// Table A table of the rule. It has at most 12 rows, and exactly one row has hit true.
+	Table *GrammarTable `json:"table,omitempty"`
+
+	// Topic The grammar topic of the mistake: one short Polish label.
+	Topic string `json:"topic"`
+
+	// Used The wrong words as the learner wrote them.
+	Used string `json:"used"`
+}
+
+// GrammarGroup A group of rows of the table, with an optional title.
+type GrammarGroup struct {
+	Rows  []GrammarRow `json:"rows"`
+	Title *string      `json:"title,omitempty"`
+}
+
+// GrammarRow A row of the table. examples has one text for each name. hit is true for the row of the form of the card.
+type GrammarRow struct {
+	Endings  string   `json:"endings"`
+	Examples []string `json:"examples"`
+	Hit      bool     `json:"hit"`
+	Names    []string `json:"names"`
+}
+
+// GrammarTable A table of the rule. It has at most 12 rows, and exactly one row has hit true.
+type GrammarTable struct {
+	Columns []string       `json:"columns"`
+	Groups  []GrammarGroup `json:"groups"`
+	Title   string         `json:"title"`
+}
 
 // Group defines model for Group.
 type Group struct {
@@ -388,6 +450,7 @@ type ReviewCreate struct {
 
 // StudyCard defines model for StudyCard.
 type StudyCard struct {
+	// Card A card of the group. A grammar card has the object grammar. A translation card has none.
 	Card Card `json:"card"`
 
 	// ProgressVersion The version of the learner's progress for the card. 0 for a new card.

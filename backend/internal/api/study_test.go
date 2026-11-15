@@ -158,7 +158,7 @@ func TestGetStudyQueue(t *testing.T) {
 		((SELECT id FROM groups WHERE name = 'Rodzina'), '00000000-0000-0000-0000-000000000004', 'kot', 'кот', 'To jest kot.', 'Это кот.', 'животное', now() - interval '1 hour')`
 	// addProgress takes the rows (learner, card, correct, incorrect, last correct, last incorrect, version).
 	const addProgress = "INSERT INTO card_progress (user_id, card_id, correct, incorrect, last_correct_at, last_incorrect_at, version) VALUES "
-	cardK4 := Card{Id: "00000000-0000-0000-0000-000000000004", Kind: Translation, Pl: "kot", Ru: "кот", ExamplePl: "To jest kot.", ExampleRu: "Это кот.",
+	cardK4 := Card{Id: "00000000-0000-0000-0000-000000000004", Kind: CardKindTranslation, Pl: "kot", Ru: "кот", ExamplePl: "To jest kot.", ExampleRu: "Это кот.",
 		MeaningRu: "животное", AlternativesPl: []string{}, AlternativesRu: []string{}}
 	tests := []struct {
 		name         string

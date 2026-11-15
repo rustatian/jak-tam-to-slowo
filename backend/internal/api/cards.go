@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -20,17 +21,20 @@ import (
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/db"
 )
 
+var errGrammarCard = errors.New("the card is a grammar card")
+
 // cardColumns are the columns of a card in the order of scanCard.
-const cardColumns = "id, kind, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru"
+const cardColumns = "id, kind, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru, grammar"
 
 // scanCard scans the columns of cardColumns, then the next columns of the row into more.
 func scanCard(row pgx.Row, more ...any) (Card, error) {
 	var c Card
-	err := row.Scan(append([]any{&c.Id, &c.Kind, &c.Pl, &c.Ru, &c.ExamplePl, &c.ExampleRu, &c.MeaningRu, &c.AlternativesPl, &c.AlternativesRu}, more...)...)
+	err := row.Scan(append([]any{&c.Id, &c.Kind, &c.Pl, &c.Ru, &c.ExamplePl, &c.ExampleRu, &c.MeaningRu, &c.AlternativesPl, &c.AlternativesRu, &c.Grammar}, more...)...)
 	return c, err
 }
 
-// createCard adds a translation card to the group in the path.
+// createCard adds a translation card or a grammar card to the group in the path. A body without kind is a translation
+// card.
 func (s *Server) createCard(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
 	sub, fail := s.member(ctx, req)
 	if fail != nil {
@@ -41,17 +45,30 @@ func (s *Server) createCard(ctx context.Context, req events.APIGatewayV2HTTPRequ
 		return jsonResponse(http.StatusBadRequest, Error{Message: "invalid JSON body"})
 	}
 	// A list that the body does not have is stored as [].
-	in := CardUpdate{Pl: &body.Pl, Ru: &body.Ru, ExamplePl: &body.ExamplePl, ExampleRu: &body.ExampleRu, MeaningRu: &body.MeaningRu,
-		AlternativesPl: cmp.Or(body.AlternativesPl, &[]string{}), AlternativesRu: cmp.Or(body.AlternativesRu, &[]string{})}
-	if msg := checkCard(&in); msg != "" {
+	body.AlternativesPl, body.AlternativesRu = cmp.Or(body.AlternativesPl, &[]string{}), cmp.Or(body.AlternativesRu, &[]string{})
+	kind := *cmp.Or(body.Kind, new(CardKindTranslation))
+	var msg string
+	switch {
+	case !kind.Valid():
+		msg = "kind must be translation or grammar"
+	case kind == CardKindGrammar:
+		msg = CheckGrammarCard(&body)
+	case body.Grammar != nil:
+		msg = "only a grammar card can have grammar"
+	default:
+		msg = checkCard(&CardUpdate{Pl: &body.Pl, Ru: &body.Ru, ExamplePl: &body.ExamplePl, ExampleRu: &body.ExampleRu, MeaningRu: &body.MeaningRu,
+			AlternativesPl: body.AlternativesPl, AlternativesRu: body.AlternativesRu})
+	}
+	if msg != "" {
 		return jsonResponse(http.StatusBadRequest, Error{Message: msg})
 	}
 	var card Card
 	err := db.Tx(ctx, s.DB, func(tx pgx.Tx) error {
 		var err error
 		card, err = scanCard(tx.QueryRow(ctx,
-			"INSERT INTO cards (group_id, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING "+cardColumns,
-			req.PathParameters["groupId"], in.Pl, in.Ru, in.ExamplePl, in.ExampleRu, in.MeaningRu, in.AlternativesPl, in.AlternativesRu))
+			"INSERT INTO cards (group_id, kind, pl, ru, example_pl, example_ru, meaning_ru, alternatives_pl, alternatives_ru, grammar) "+
+				"VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING "+cardColumns,
+			req.PathParameters["groupId"], kind, body.Pl, body.Ru, body.ExamplePl, body.ExampleRu, body.MeaningRu, body.AlternativesPl, body.AlternativesRu, body.Grammar))
 		return err
 	})
 	if err != nil {
@@ -131,7 +148,8 @@ func searchKey(s string) string {
 	return polishBase.Replace(answerKey(s))
 }
 
-// patchCard changes the card fields that the body names. A field that the body leaves out keeps its value.
+// patchCard changes the card fields that the body names. A field that the body leaves out keeps its value. A grammar
+// card cannot be changed, so its answer is 409.
 func (s *Server) patchCard(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
 	sub, fail := s.member(ctx, req)
 	if fail != nil {
@@ -152,15 +170,30 @@ func (s *Server) patchCard(ctx context.Context, req events.APIGatewayV2HTTPReque
 		card, err = scanCard(tx.QueryRow(ctx,
 			"UPDATE cards SET pl = COALESCE($3, pl), ru = COALESCE($4, ru), example_pl = COALESCE($5, example_pl), example_ru = COALESCE($6, example_ru), "+
 				"meaning_ru = COALESCE($7, meaning_ru), alternatives_pl = COALESCE($8, alternatives_pl), alternatives_ru = COALESCE($9, alternatives_ru) "+
-				"WHERE group_id = $1 AND id::text = $2 AND NOT archived RETURNING "+cardColumns,
+				"WHERE group_id = $1 AND id::text = $2 AND NOT archived AND kind = 'translation' RETURNING "+cardColumns,
 			req.PathParameters["groupId"], req.PathParameters["cardId"],
 			update.Pl, update.Ru, update.ExamplePl, update.ExampleRu, update.MeaningRu, update.AlternativesPl, update.AlternativesRu))
-		return err
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		// The update skips a grammar card, so a card that the update did not change and that this read finds is a
+		// grammar card.
+		var found bool
+		if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM cards WHERE group_id = $1 AND id::text = $2 AND NOT archived)",
+			req.PathParameters["groupId"], req.PathParameters["cardId"]).Scan(&found); err != nil {
+			return err
+		}
+		if found {
+			return errGrammarCard
+		}
+		return pgx.ErrNoRows
 	})
-	if errors.Is(err, pgx.ErrNoRows) {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
 		return jsonResponse(http.StatusNotFound, Error{Message: "card not found"})
-	}
-	if err != nil {
+	case errors.Is(err, errGrammarCard):
+		return jsonResponse(http.StatusConflict, Error{Message: "a grammar card cannot be changed"})
+	case err != nil:
 		return serverError(ctx, req, sub, err)
 	}
 	return jsonResponse(http.StatusOK, card)
@@ -212,6 +245,116 @@ func checkCard(u *CardUpdate) (msg string) {
 	return ""
 }
 
+// CheckGrammarCard checks the create body of a grammar card. It trims each text of c in place. It sets each list that
+// can be empty and that c does not have to an empty list, so the stored card has [] and not null. msg is the 400 text
+// of the first broken rule. It is empty when c passes.
+func CheckGrammarCard(c *CardCreate) (msg string) {
+	c.AlternativesPl, c.AlternativesRu = cmp.Or(c.AlternativesPl, &[]string{}), cmp.Or(c.AlternativesRu, &[]string{})
+	c.Ru, c.ExampleRu, c.MeaningRu = strings.TrimSpace(c.Ru), strings.TrimSpace(c.ExampleRu), strings.TrimSpace(c.MeaningRu)
+	g := c.Grammar
+	switch {
+	case !checkText(&c.Pl, 200):
+		return "pl must have 1 to 200 characters"
+	case !checkText(&c.ExamplePl, 500):
+		return "examplePl must have 1 to 500 characters"
+	case strings.Count(c.ExamplePl, "___") != 1:
+		return "examplePl must have ___ exactly once"
+	case !checkTerms(c.AlternativesPl):
+		return "alternativesPl must have at most 8 terms of 1 to 200 characters"
+	case c.Ru != "" || c.ExampleRu != "" || c.MeaningRu != "":
+		return "ru, exampleRu and meaningRu must be empty for a grammar card"
+	case len(*c.AlternativesRu) > 0:
+		return "alternativesRu must be empty for a grammar card"
+	case g == nil:
+		return "grammar is required for a grammar card"
+	case !checkText(&g.Topic, 40):
+		return "grammar.topic must have 1 to 40 characters"
+	case !checkText(&g.Used, 200):
+		return "grammar.used must have 1 to 200 characters"
+	case !checkText(&g.Right, 200):
+		return "grammar.right must have 1 to 200 characters"
+	case answerKey(g.Right) == answerKey(g.Used):
+		return "grammar.right must be different from grammar.used"
+	case !checkText(&g.Hint, 200):
+		return "grammar.hint must have 1 to 200 characters"
+	case hintContainsUsed(g.Hint, g.Used):
+		return "grammar.hint must not contain grammar.used"
+	case !checkTexts(g.Facts, 0, 4, 40):
+		return "grammar.facts must have at most 4 labels of 1 to 40 characters"
+	case !checkTexts(g.Slots, 0, 5, 40):
+		return "grammar.slots must have at most 5 labels of 1 to 40 characters"
+	case !checkText(&g.Rule, 500):
+		return "grammar.rule must have 1 to 500 characters"
+	case !checkTexts(g.Examples, 2, 3, 200):
+		return "grammar.examples must have 2 or 3 texts of 1 to 200 characters"
+	}
+	if g.Facts == nil {
+		g.Facts = []string{}
+	}
+	if g.Slots == nil {
+		g.Slots = []string{}
+	}
+	table := g.Table
+	switch {
+	case table == nil:
+		return ""
+	case !checkText(&table.Title, 100):
+		return "grammar.table.title must have 1 to 100 characters"
+	case !checkTexts(table.Columns, 3, 3, 40):
+		return "grammar.table.columns must have 3 texts of 1 to 40 characters"
+	case len(table.Groups) < 1 || len(table.Groups) > 4:
+		return "grammar.table.groups must have 1 to 4 groups"
+	}
+	rows, hits := 0, 0
+	for i := range table.Groups {
+		group := &table.Groups[i]
+		switch {
+		case !checkText(group.Title, 80):
+			return "grammar.table.groups.title must have 1 to 80 characters"
+		case len(group.Rows) < 1 || len(group.Rows) > 8:
+			return "grammar.table.groups.rows must have 1 to 8 rows in each group"
+		}
+		for j := range group.Rows {
+			row := &group.Rows[j]
+			switch {
+			case !checkTexts(row.Names, 1, 3, 40):
+				return "grammar.table.groups.rows.names must have 1 to 3 texts of 1 to 40 characters"
+			case !checkText(&row.Endings, 60):
+				return "grammar.table.groups.rows.endings must have 1 to 60 characters"
+			case !checkTexts(row.Examples, len(row.Names), len(row.Names), 80):
+				return "grammar.table.groups.rows.examples must have one text of 1 to 80 characters for each name"
+			}
+			if row.Hit {
+				hits++
+			}
+		}
+		rows += len(group.Rows)
+	}
+	switch {
+	case rows > 12:
+		return "grammar.table must have at most 12 rows"
+	case hits != 1:
+		return "grammar.table must have exactly one row with hit true"
+	}
+	return ""
+}
+
+// hintContainsUsed reports that the hint has more words than used, and that the words of used are next to each other
+// in the hint in the same order. The words of a text are the runs of letters and digits in its answer key.
+func hintContainsUsed(hint, used string) bool {
+	notWord := func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }
+	h, u := strings.FieldsFunc(answerKey(hint), notWord), strings.FieldsFunc(answerKey(used), notWord)
+	if len(h) <= len(u) {
+		return false
+	}
+	for i := range len(h) - len(u) + 1 {
+		if slices.Equal(h[i:i+len(u)], u) {
+			return true
+		}
+	}
+	return false
+}
+
 // checkText applies trimmedText to the text that p points to, in place. A nil p passes.
 func checkText(p *string, max int) bool {
 	if p == nil {
@@ -228,14 +371,17 @@ func checkText(p *string, max int) bool {
 // https://pkg.go.dev/encoding/json#Marshal
 // https://github.com/jackc/pgx/blob/v5.12.0/pgtype/pgtype_default.go#L69
 func checkTerms(p *[]string) bool {
-	if p == nil {
-		return true
-	}
-	if len(*p) > 8 {
+	return p == nil || checkTexts(*p, 0, 8, 200)
+}
+
+// checkTexts applies checkText with length characters to each text of the list, in place. It reports that the list
+// has min to max texts and that each text passes.
+func checkTexts(list []string, min, max, length int) bool {
+	if len(list) < min || len(list) > max {
 		return false
 	}
-	for i := range *p {
-		if !checkText(&(*p)[i], 200) {
+	for i := range list {
+		if !checkText(&list[i], length) {
 			return false
 		}
 	}
