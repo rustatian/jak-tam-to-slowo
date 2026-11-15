@@ -173,7 +173,8 @@ Resources:
       AlarmActions:
         - !Ref AlarmTopic
 
-  # A failed run of the job function leaves a job that the poll route shows as failed after 120 seconds.
+  # A failed run of the job function leaves a job that the poll route shows as failed after 120 seconds for a draft
+  # and after 320 seconds for a grammar check.
   # The Errors metric has no value while the function does not run, so missing data counts as good.
   # Lambda does not run a failed event of this function again, so one failed event gives one error.
   JobsErrorsAlarm:
@@ -389,6 +390,18 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /v1/groups/{groupId}/drafts/{draftId}
             Method: GET
+        CreateGrammarCheck:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/groups/{groupId}/grammar-checks
+            Method: POST
+        GetGrammarCheck:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/groups/{groupId}/grammar-checks/{checkId}
+            Method: GET
 
   # Cognito calls this function before each sign-up and waits at most 5 seconds for its answer.
   # https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-working-with-lambda-triggers.html#important-lambda-considerations
@@ -472,7 +485,8 @@ Resources:
       Runtime: provided.al2023
       Architectures: [arm64]
       MemorySize: 128
-      Timeout: 60
+      # A grammar check makes at most two calls of 120 seconds each. The claim and the writes take less than 20 seconds.
+      Timeout: 260
       LoggingConfig:
         LogGroup: !Ref JobsLogGroup
       Environment:
@@ -494,8 +508,8 @@ Resources:
             - Effect: Allow
               Action: ssm:GetParameter
               Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/slowo/anthropic-api-key
-      # The poll route shows a job as failed after 120 seconds, so an event that waited longer than 60 seconds and a
-      # second run of a failed event have no use. The age can be 60 to 21,600 seconds, and the retries can be 0 to 2.
+      # The claim refuses a job of 60 seconds or more, so an event that waited longer than 60 seconds and a second run
+      # of a failed event have no use. The age can be 60 to 21,600 seconds, and the retries can be 0 to 2.
       # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-lambda-eventinvokeconfig.html
       # Lambda runs a failed event again, and it can send one event two times.
       # https://docs.aws.amazon.com/lambda/latest/dg/invocation-async-error-handling.html

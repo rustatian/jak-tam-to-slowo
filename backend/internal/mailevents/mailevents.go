@@ -45,7 +45,7 @@ func (h *Handler) Handle(ctx context.Context, event events.EventBridgeEvent) err
 			return err
 		}
 		// shortcut: one transaction deletes all old job rows, and Aurora DSQL lets a transaction change 3,000 rows.
-		// Delete in parts when one day can have more than 3,000 draft requests.
+		// Delete in parts when one day can have more than 3,000 jobs (drafts and grammar checks).
 		// https://docs.aws.amazon.com/aurora-dsql/latest/userguide/CHAP_quotas.html#SECTION_database-limits
 		return db.Tx(ctx, h.DB, func(tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, "DELETE FROM jobs WHERE created_at < now() - interval '1 hour'")

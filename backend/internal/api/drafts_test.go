@@ -145,29 +145,29 @@ func TestGetDraft(t *testing.T) {
 		wantBody   string // the exact error body; empty for 200
 		want       Draft  // the draft of a 200 row; its ID is the ID of the path
 	}{
-		{name: "a queued job", sub: subOla, draftID: j1, wantStatus: 200, want: Draft{Status: Queued},
+		{name: "a queued job", sub: subOla, draftID: j1, wantStatus: 200, want: Draft{Status: DraftStatusQueued},
 			setup: addJob + `('sub-ola', '` + j1 + `', 'draft', 'queued', '{"text":"słowo"}', NULL, NULL, now())`},
-		{name: "a running job", sub: subOla, draftID: j1, wantStatus: 200, want: Draft{Status: Running},
+		{name: "a running job", sub: subOla, draftID: j1, wantStatus: 200, want: Draft{Status: DraftStatusRunning},
 			setup: addJob + `('sub-ola', '` + j1 + `', 'draft', 'running', '{"text":"słowo"}', NULL, NULL, now())`},
 		// encoding/json/v2 leaves out a field with omitempty that is an empty list, so alternativesRu is absent.
 		// https://pkg.go.dev/encoding/json/v2#hdr-JSON_Representation_of_Go_structs
 		{name: "a done job with a card", sub: subOla, draftID: j1, wantStatus: 200,
 			setup: addJob + `('sub-ola', '` + j1 + `', 'draft', 'done', '{"text":"słowo"}', '` + cardResult + `', NULL, now())`,
-			want: Draft{Status: Done, Card: &CardCreate{Pl: "Słowo", Ru: "Слово", ExamplePl: "Nie znam tego słowa.", ExampleRu: "Я не знаю этого слова.",
+			want: Draft{Status: DraftStatusDone, Card: &CardCreate{Pl: "Słowo", Ru: "Слово", ExamplePl: "Nie znam tego słowa.", ExampleRu: "Я не знаю этого слова.",
 				MeaningRu: "Единица речи", AlternativesPl: &[]string{"Wyraz"}}}},
-		{name: "a done job with meanings", sub: subOla, draftID: j1, wantStatus: 200, want: Draft{Status: Done, Choices: choices},
+		{name: "a done job with meanings", sub: subOla, draftID: j1, wantStatus: 200, want: Draft{Status: DraftStatusDone, Choices: choices},
 			setup: addJob + `('sub-ola', '` + j1 + `', 'draft', 'done', '{"text":"słowo"}', '` + choicesResult + `', NULL, now())`},
-		{name: "a failed job", sub: subOla, draftID: j1, wantStatus: 200, want: Draft{Status: Failed, Error: new(Invalid)},
+		{name: "a failed job", sub: subOla, draftID: j1, wantStatus: 200, want: Draft{Status: DraftStatusFailed, Error: new(DraftErrorInvalid)},
 			setup: addJob + `('sub-ola', '` + j1 + `', 'draft', 'failed', '{"text":"słowo"}', NULL, 'invalid', now())`},
-		{name: "a queued job of 121 seconds reads as failed", sub: subOla, draftID: j1, wantStatus: 200, want: Draft{Status: Failed, Error: new(Unavailable)},
+		{name: "a queued job of 121 seconds reads as failed", sub: subOla, draftID: j1, wantStatus: 200, want: Draft{Status: DraftStatusFailed, Error: new(DraftErrorUnavailable)},
 			setup: addJob + `('sub-ola', '` + j1 + `', 'draft', 'queued', '{"text":"słowo"}', NULL, NULL, now() - interval '121 seconds')`},
-		{name: "a running job of 121 seconds reads as failed", sub: subOla, draftID: j1, wantStatus: 200, want: Draft{Status: Failed, Error: new(Unavailable)},
+		{name: "a running job of 121 seconds reads as failed", sub: subOla, draftID: j1, wantStatus: 200, want: Draft{Status: DraftStatusFailed, Error: new(DraftErrorUnavailable)},
 			setup: addJob + `('sub-ola', '` + j1 + `', 'draft', 'running', '{"text":"słowo"}', NULL, NULL, now() - interval '121 seconds')`},
-		{name: "a queued job of 110 seconds is queued", sub: subOla, draftID: j1, wantStatus: 200, want: Draft{Status: Queued},
+		{name: "a queued job of 110 seconds is queued", sub: subOla, draftID: j1, wantStatus: 200, want: Draft{Status: DraftStatusQueued},
 			setup: addJob + `('sub-ola', '` + j1 + `', 'draft', 'queued', '{"text":"słowo"}', NULL, NULL, now() - interval '110 seconds')`},
-		{name: "a done job of 121 seconds stays done", sub: subOla, draftID: j1, wantStatus: 200, want: Draft{Status: Done, Choices: choices},
+		{name: "a done job of 121 seconds stays done", sub: subOla, draftID: j1, wantStatus: 200, want: Draft{Status: DraftStatusDone, Choices: choices},
 			setup: addJob + `('sub-ola', '` + j1 + `', 'draft', 'done', '{"text":"słowo"}', '` + choicesResult + `', NULL, now() - interval '121 seconds')`},
-		{name: "a user without AI consent reads a draft", sub: subAdam, draftID: j2, wantStatus: 200, want: Draft{Status: Queued},
+		{name: "a user without AI consent reads a draft", sub: subAdam, draftID: j2, wantStatus: 200, want: Draft{Status: DraftStatusQueued},
 			setup: addJob + `('sub-adam', '` + j2 + `', 'draft', 'queued', '{"text":"słowo"}', NULL, NULL, now())`},
 		{name: "the job of another member is not found", sub: subOla, draftID: j2, wantStatus: 404, wantBody: draftNotFound,
 			setup: addJob + `('sub-adam', '` + j2 + `', 'draft', 'queued', '{"text":"słowo"}', NULL, NULL, now())`},
@@ -397,25 +397,25 @@ func TestDraftOutcomeCause(t *testing.T) {
 		wantCause string
 	}{
 		{name: "a card has no cause", answer: draft(), wantFail: "", wantCause: ""},
-		{name: "a refusal has no cause", answer: AIResponse{StopReason: "refusal"}, wantFail: Refused, wantCause: ""},
-		{name: "the output limit", answer: AIResponse{StopReason: "max_tokens", Text: draft().Text}, wantFail: Invalid, wantCause: "stop reason"},
-		{name: "a text that is not JSON", answer: AIResponse{StopReason: "end_turn", Text: "Słowo"}, wantFail: Invalid, wantCause: "not the JSON of the schema"},
-		{name: "a missing card field", answer: draft(`,"alternativesRu":[]`, ""), wantFail: Invalid, wantCause: "a card field is missing"},
-		{name: "a meaning of 201 letters", answer: draft(`"meaningRu":"Единица речи"`, `"meaningRu":"`+strings.Repeat("я", 201)+`"`), wantFail: Invalid,
+		{name: "a refusal has no cause", answer: AIResponse{StopReason: "refusal"}, wantFail: DraftErrorRefused, wantCause: ""},
+		{name: "the output limit", answer: AIResponse{StopReason: "max_tokens", Text: draft().Text}, wantFail: DraftErrorInvalid, wantCause: "stop reason"},
+		{name: "a text that is not JSON", answer: AIResponse{StopReason: "end_turn", Text: "Słowo"}, wantFail: DraftErrorInvalid, wantCause: "not the JSON of the schema"},
+		{name: "a missing card field", answer: draft(`,"alternativesRu":[]`, ""), wantFail: DraftErrorInvalid, wantCause: "a card field is missing"},
+		{name: "a meaning of 201 letters", answer: draft(`"meaningRu":"Единица речи"`, `"meaningRu":"`+strings.Repeat("я", 201)+`"`), wantFail: DraftErrorInvalid,
 			wantCause: "meaningRu must have 1 to 200 characters"},
-		{name: "9 alternatives", answer: draft(`["Wyraz"]`, `["w1","w2","w3","w4","w5","w6","w7","w8","w9"]`), wantFail: Invalid,
+		{name: "9 alternatives", answer: draft(`["Wyraz"]`, `["w1","w2","w3","w4","w5","w6","w7","w8","w9"]`), wantFail: DraftErrorInvalid,
 			wantCause: "alternativesPl must have at most 8 terms of 1 to 200 characters"},
-		{name: "9 choices", answer: choices(`["м1","м2","м3","м4","м5","м6","м7","м8","м9"]`), wantFail: Invalid,
+		{name: "9 choices", answer: choices(`["м1","м2","м3","м4","м5","м6","м7","м8","м9"]`), wantFail: DraftErrorInvalid,
 			wantCause: "9 choices, 9 distinct, 0 invalid, card false, meaning false"},
-		{name: "a choice of 201 letters", answer: choices(`["Овощ","` + strings.Repeat("я", 201) + `"]`), wantFail: Invalid,
+		{name: "a choice of 201 letters", answer: choices(`["Овощ","` + strings.Repeat("я", 201) + `"]`), wantFail: DraftErrorInvalid,
 			wantCause: "2 choices, 2 distinct, 1 invalid, card false, meaning false"},
-		{name: "an empty choice", answer: choices(`["Овощ",""]`), wantFail: Invalid,
+		{name: "an empty choice", answer: choices(`["Овощ",""]`), wantFail: DraftErrorInvalid,
 			wantCause: "2 choices, 2 distinct, 1 invalid, card false, meaning false"},
-		{name: "a choice with a line break", answer: choices(`["Овощ","Ору\nжие"]`), wantFail: Invalid,
+		{name: "a choice with a line break", answer: choices(`["Овощ","Ору\nжие"]`), wantFail: DraftErrorInvalid,
 			wantCause: "2 choices, 2 distinct, 1 invalid, card false, meaning false"},
-		{name: "two equal choices", answer: choices(`["Овощ"," Овощ "]`), wantFail: Invalid,
+		{name: "two equal choices", answer: choices(`["Овощ"," Овощ "]`), wantFail: DraftErrorInvalid,
 			wantCause: "2 choices, 1 distinct, 0 invalid, card false, meaning false"},
-		{name: "choices for an input with a meaning", input: DraftCreate{Text: "лук", MeaningRu: &meaning}, answer: choices(`["Овощ","Оружие"]`), wantFail: Invalid,
+		{name: "choices for an input with a meaning", input: DraftCreate{Text: "лук", MeaningRu: &meaning}, answer: choices(`["Овощ","Оружие"]`), wantFail: DraftErrorInvalid,
 			wantCause: "2 choices, 2 distinct, 0 invalid, card false, meaning true"},
 	}
 	for _, tt := range tests {
@@ -517,7 +517,7 @@ func TestClaimJobAtTheSameInstant(t *testing.T) {
 	claims := make(chan bool, 2)
 	for range 2 {
 		go func() {
-			_, claimed, err := srv.claimJob(ctx, subOla, j1)
+			_, _, claimed, err := srv.claimJob(ctx, subOla, j1)
 			if err != nil {
 				t.Errorf("claimJob returned error %v", err)
 			}
