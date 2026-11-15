@@ -1,5 +1,5 @@
-// Command jobs is the Lambda function that runs the draft jobs. The API function starts it with one event for each
-// stored job.
+// Command jobs is the Lambda function that runs the draft jobs and the grammar checks. The API function starts it
+// with one event for each stored job.
 package main
 
 import (

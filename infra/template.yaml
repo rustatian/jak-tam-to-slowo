@@ -173,7 +173,8 @@ Resources:
       AlarmActions:
         - !Ref AlarmTopic
 
-  # A failed run of the job function leaves a job that the poll route shows as failed after 120 seconds.
+  # A failed run of the job function leaves a job that the poll route shows as failed after 120 seconds for a draft
+  # and after 320 seconds for a grammar check.
   # The Errors metric has no value while the function does not run, so missing data counts as good.
   # Lambda does not run a failed event of this function again, so one failed event gives one error.
   JobsErrorsAlarm:
