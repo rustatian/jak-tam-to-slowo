@@ -203,6 +203,23 @@ let cardsCases: [CardsCase] = [
         calls: ["getMe", "listCards", "listCards"], inputs: ["listCards g1 o limit=50", "listCards g1 o limit=50 after=k1"], error: nil, cards: [dom], query: "o"
     ),
     CardsCase(
+        name: "loadMore after a failed search sends the search text of the list",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            listCards: [
+                .ok(.init(body: .json(.init(cards: [cebula], next: "k1")))),
+                .internalServerError(.init(body: .json(.init(message: "internal error")))),
+                .ok(.init(body: .json(.init(cards: [dom])))),
+            ]
+        ),
+        action: { cards, _ in
+            try await cards.load(query: "")
+            try? await cards.load(query: "x")
+            try await cards.loadMore()
+        },
+        calls: ["getMe", "listCards", "listCards", "listCards"], inputs: ["listCards g1 - limit=50", "listCards g1 x limit=50", "listCards g1 - limit=50 after=k1"], error: nil, cards: [cebula, dom], query: ""
+    ),
+    CardsCase(
         name: "loadMore without a next page calls nothing",
         answers: .init(getMe: [.ok(.init(body: .json(grouped)))], listCards: [.ok(.init(body: .json(.init(cards: [cebula]))))]),
         action: { cards, _ in
