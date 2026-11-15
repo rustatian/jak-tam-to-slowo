@@ -576,6 +576,9 @@ func TestListCardPages(t *testing.T) {
 		{name: "a card added before the next value does not come again", setup: pagesFixture, query: "limit=2", between: addCard("aaa"), wantPages: pagesOf2},
 		{name: "a card added after the next value comes on a later page", setup: pagesFixture, query: "limit=2", between: addCard("mama"),
 			wantPages: [][]string{{"adam", "Ąb"}, {"lato", "łódź"}, {"mama", "zamek"}, {"żaba"}}},
+		// For each ID, the key of „tak” has a + in standard base64 and a - in base64url.
+		{name: "a next value needs no escape in a query string", setup: addCard("„tak”") + "; " + addCard("zzz"), query: "limit=1",
+			wantPages: [][]string{{"„tak”"}, {"zzz"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
