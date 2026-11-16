@@ -240,7 +240,7 @@ func (s *Server) gradeWithAI(ctx context.Context, sub string, card Card, directi
 	system, input := gradePrompt, any(nil)
 	if card.Kind == CardKindGrammar {
 		// The input has no slots and no topic, because they name the form of pl, and the grade must accept each
-		// correct form of the word in the hint.
+		// correct form of the word of pl.
 		var grammar struct {
 			Card struct {
 				ExamplePl      string   `json:"examplePl"`
