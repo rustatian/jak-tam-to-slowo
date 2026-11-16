@@ -47,7 +47,7 @@ final class Study {
         switch try await api.getStudyQueue(.init(path: .init(groupId: groupId))) {
         case let .ok(ok):
             let answer = try ok.body.json
-            queue = answer.cards.filter { $0.card.kind == .translation }
+            queue = answer.cards
             nextDueAt = answer.nextDueAt
             if card == nil {
                 card = queue?.first
