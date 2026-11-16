@@ -22,7 +22,9 @@ struct GrammarCheckView: View {
                             .textInputAutocapitalization(.never)
                             .disabled(working)
                     }
-                    LabeledContent("Zdanie z luką") {
+                    // A LabeledContent row keeps the height of one line, so it cuts the wrapped sentence.
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Zdanie z luką")
                         TextField("Zdanie z luką", text: $card.examplePl, axis: .vertical)
                             .autocorrectionDisabled()
                             .disabled(working)
