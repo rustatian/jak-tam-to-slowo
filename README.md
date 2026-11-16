@@ -22,7 +22,7 @@ The app is in development. These screens exist today:
 
 | Grammar card | Grammar feedback | Grammar card in Słówka |
 |---|---|---|
-| <img src="docs/screenshots/grammar.png" width="240" alt="The Nauka tab with the gap sentence of a grammar card, its hint and a typed answer"> | <img src="docs/screenshots/grammar-feedback.png" width="240" alt="The grade of a wrong answer to a grammar card, with the gap sentence filled, an explanation of the AI model, the topic, the rule and the examples"> | <img src="docs/screenshots/grammar-card.png" width="240" alt="The screen of a grammar card in the Słówka tab, with the gap sentence, the hint, the answer, the wrong and the right form, the topic, the rule and the examples"> |
+| <img src="docs/screenshots/grammar.png" width="240" alt="The Nauka tab with the gap sentence of a grammar card, its hint and a typed answer"> | <img src="docs/screenshots/grammar-feedback.png" width="240" alt="The grade of a wrong answer to a grammar card, with the gap sentence filled, an explanation of the AI model, the topic, the rule and the examples"> | <img src="docs/screenshots/grammar-card.png" width="240" alt="The screen of a grammar card in the Słówka tab, with the gap sentence, the hint, the answer, the used form and the right form, the topic, the rule and the examples"> |
 
 ## Parts
 
