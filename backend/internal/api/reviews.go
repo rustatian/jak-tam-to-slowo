@@ -26,8 +26,8 @@ var (
 	errAskModel   = errors.New("the model must grade the answer")
 )
 
-// createReview grades an answer of the signed-in learner to a translation card of the group in the path, and counts
-// it in the progress row of the learner for the card.
+// createReview grades an answer of the signed-in learner to a card of the group in the path, and counts it in the
+// progress row of the learner for the card.
 func (s *Server) createReview(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
 	sub, fail := s.member(ctx, req)
 	if fail != nil {
@@ -82,7 +82,7 @@ func (s *Server) createReview(ctx context.Context, req events.APIGatewayV2HTTPRe
 		// A card without a progress row of the learner has the version 0.
 		card, err := scanCard(tx.QueryRow(ctx, "SELECT "+cardColumns+", COALESCE(version, 0) "+
 			"FROM cards LEFT JOIN card_progress ON card_progress.card_id = cards.id AND card_progress.user_id = $3 "+
-			"WHERE group_id = $1 AND cards.id::text = $2 AND NOT archived AND kind = 'translation'",
+			"WHERE group_id = $1 AND cards.id::text = $2 AND NOT archived",
 			req.PathParameters["groupId"], body.CardId, sub), &version)
 		if err != nil {
 			return err
@@ -155,9 +155,10 @@ func (s *Server) createReview(ctx context.Context, req events.APIGatewayV2HTTPRe
 	return jsonResponse(status, review)
 }
 
-// grade grades an answer to the card for the direction of the prompt. Only the terms of the answer side count.
+// grade grades an answer to the card for the direction of the prompt. Only the terms of the answer side count. A
+// grammar card always asks for the Polish text of the gap, so its answer side is Polish in each direction.
 func grade(card Card, direction Direction, answer string) Review {
-	polish := direction == RuPl
+	polish := direction == RuPl || card.Kind == CardKindGrammar
 	terms := append([]string{card.Ru}, card.AlternativesRu...)
 	if polish {
 		terms = append([]string{card.Pl}, card.AlternativesPl...)
@@ -181,6 +182,11 @@ func grade(card Card, direction Direction, answer string) Review {
 //go:embed grade_prompt.txt
 var gradePrompt string
 
+// gradeGrammarPrompt is the system prompt of a grade of the AI model for a grammar card.
+//
+//go:embed grade_grammar_prompt.txt
+var gradeGrammarPrompt string
+
 // gradeProperties is JSON text, because the model writes the properties of its answer in the order of the schema, and
 // the encoder writes a Go map with sorted keys. The order is the order of the prompt.
 // https://platform.claude.com/docs/en/build-with-claude/structured-outputs#property-ordering
@@ -188,6 +194,12 @@ const gradeProperties = `{"grade":{"type":"string","enum":["correct","almost","a
 
 // gradeSchema is the JSON schema of the answer of a grade of the AI model.
 var gradeSchema = map[string]any{"type": "object", "properties": jsontext.Value(gradeProperties), "required": []any{"grade", "explanation"}, "additionalProperties": false}
+
+// gradeGrammarProperties has explanation first, so the model writes the reason before it selects the grade.
+const gradeGrammarProperties = `{"explanation":{"type":"string"},"grade":{"type":"string","enum":["correct","almost","again"]}}`
+
+// gradeGrammarSchema is the JSON schema of the answer of a grade of the AI model for a grammar card.
+var gradeGrammarSchema = map[string]any{"type": "object", "properties": jsontext.Value(gradeGrammarProperties), "required": []any{"explanation", "grade"}, "additionalProperties": false}
 
 // aiGrade is the grade of the AI model for one answer.
 type aiGrade struct {
@@ -227,37 +239,61 @@ func gradeOutcome(resp AIResponse, callErr error) (g aiGrade, cause string) {
 	return g, ""
 }
 
-// gradeWithAI asks the AI model for a grade of the answer to the card for the direction, and writes one log line. ok
-// is false when the call failed or the answer broke a rule of gradeOutcome.
+// gradeWithAI asks the AI model for a grade of the answer to the card for the direction, and writes one log line. A
+// grammar card gets the grammar prompt, the grammar schema and an input without the direction, because it always asks
+// for the Polish text of the gap. ok is false when the call failed or the answer broke a rule of gradeOutcome.
 func (s *Server) gradeWithAI(ctx context.Context, sub string, card Card, direction Direction, answer string) (g aiGrade, ok bool) {
-	// The members have the names and the order of the input of the old app.
-	var input struct {
-		Card struct {
-			Pl             string   `json:"pl"`
-			Ru             string   `json:"ru"`
-			ExamplePl      string   `json:"examplePl"`
-			ExampleRu      string   `json:"exampleRu"`
-			MeaningRu      string   `json:"meaningRu"`
-			AlternativesPl []string `json:"alternativesPl"`
-			AlternativesRu []string `json:"alternativesRu"`
-		} `json:"card"`
-		Direction Direction `json:"direction"`
-		Answer    string    `json:"answer"`
+	system, schema, input := gradePrompt, gradeSchema, any(nil)
+	if card.Kind == CardKindGrammar {
+		// The input has no slots and no topic, because they name the form of pl, and the grade must accept each
+		// correct form of the word of pl.
+		var grammar struct {
+			Card struct {
+				ExamplePl      string   `json:"examplePl"`
+				Hint           string   `json:"hint"`
+				Pl             string   `json:"pl"`
+				AlternativesPl []string `json:"alternativesPl"`
+			} `json:"card"`
+			Answer string `json:"answer"`
+		}
+		c := &grammar.Card
+		c.ExamplePl = card.ExamplePl
+		c.Hint = card.Grammar.Hint
+		c.Pl = card.Pl
+		c.AlternativesPl = card.AlternativesPl
+		grammar.Answer = answer
+		system, schema, input = gradeGrammarPrompt, gradeGrammarSchema, grammar
+	} else {
+		// The members have the names and the order of the input of the old app.
+		var translation struct {
+			Card struct {
+				Pl             string   `json:"pl"`
+				Ru             string   `json:"ru"`
+				ExamplePl      string   `json:"examplePl"`
+				ExampleRu      string   `json:"exampleRu"`
+				MeaningRu      string   `json:"meaningRu"`
+				AlternativesPl []string `json:"alternativesPl"`
+				AlternativesRu []string `json:"alternativesRu"`
+			} `json:"card"`
+			Direction Direction `json:"direction"`
+			Answer    string    `json:"answer"`
+		}
+		c := &translation.Card
+		c.Pl = card.Pl
+		c.Ru = card.Ru
+		c.ExamplePl = card.ExamplePl
+		c.ExampleRu = card.ExampleRu
+		c.MeaningRu = card.MeaningRu
+		c.AlternativesPl = card.AlternativesPl
+		c.AlternativesRu = card.AlternativesRu
+		translation.Direction, translation.Answer = direction, answer
+		input = translation
 	}
-	c := &input.Card
-	c.Pl = card.Pl
-	c.Ru = card.Ru
-	c.ExamplePl = card.ExamplePl
-	c.ExampleRu = card.ExampleRu
-	c.MeaningRu = card.MeaningRu
-	c.AlternativesPl = card.AlternativesPl
-	c.AlternativesRu = card.AlternativesRu
-	input.Direction, input.Answer = direction, answer
 	// The texts of a stored card and of a decoded body are valid UTF-8, so the input always marshals.
 	text, _ := json.Marshal(input)
 	callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	start := time.Now()
-	resp, callErr := s.AI(callCtx, AIRequest{Model: "claude-sonnet-5-5", Effort: "low", MaxTokens: 16000, System: gradePrompt, Schema: gradeSchema, Input: string(text)})
+	resp, callErr := s.AI(callCtx, AIRequest{Model: "claude-sonnet-5-5", Effort: "low", MaxTokens: 16000, System: system, Schema: schema, Input: string(text)})
 	duration := time.Since(start)
 	cancel()
 	g, cause := gradeOutcome(resp, callErr)

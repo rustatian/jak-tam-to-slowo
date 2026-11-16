@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -49,6 +50,8 @@ func TestGrade(t *testing.T) {
 		{name: "only white space", card: slowo, direction: PlRu, answer: " \t\n ", wantGrade: Again, wantCorrection: "Слово"},
 		{name: "punctuation is a difference", card: slowo, direction: RuPl, answer: "słowo.", wantGrade: Again, wantCorrection: "Słowo"},
 		{name: "a mark that is not Polish is again", card: Card{Pl: "Exposé", Ru: "Экспозе"}, direction: RuPl, answer: "expose", wantGrade: Again, wantCorrection: "Exposé"},
+		{name: "an empty answer to a grammar card is again in the Russian direction", card: cardG1(), direction: PlRu, answer: "", wantGrade: Again, wantCorrection: "psy"},
+		{name: "a grammar answer without a Polish mark is almost in the Russian direction", card: Card{Kind: CardKindGrammar, Pl: "kupuję"}, direction: PlRu, answer: "kupuje", wantGrade: Almost, wantCorrection: "kupuję"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -109,17 +112,25 @@ func TestGradeOutcome(t *testing.T) {
 
 func TestGradeRequest(t *testing.T) {
 	// The properties keep their order on the wire. The top level is a Go map, so Deterministic writes its keys sorted.
-	const wantSchema = `{"additionalProperties":false,"properties":{"grade":{"type":"string","enum":["correct","almost","again"]},"explanation":{"type":"string"}},"required":["grade","explanation"],"type":"object"}`
+	const (
+		gradeFirst  = `{"additionalProperties":false,"properties":{"grade":{"type":"string","enum":["correct","almost","again"]},"explanation":{"type":"string"}},"required":["grade","explanation"],"type":"object"}`
+		reasonFirst = `{"additionalProperties":false,"properties":{"explanation":{"type":"string"},"grade":{"type":"string","enum":["correct","almost","again"]}},"required":["explanation","grade"],"type":"object"}`
+	)
 	dom := Card{Pl: "Dom", Ru: "Дом", ExamplePl: "To jest dom.", ExampleRu: "Это дом.", MeaningRu: "здание", AlternativesPl: []string{"Budynek"}}
 	tests := []struct {
-		name      string
-		direction Direction
-		wantInput string // the user message
+		name       string
+		card       Card
+		direction  Direction
+		wantSystem string
+		wantSchema string
+		wantInput  string // the user message
 	}{
-		{name: "ru-pl", direction: RuPl,
+		{name: "ru-pl", card: dom, direction: RuPl, wantSystem: gradePrompt, wantSchema: gradeFirst,
 			wantInput: `{"card":{"pl":"Dom","ru":"Дом","examplePl":"To jest dom.","exampleRu":"Это дом.","meaningRu":"здание","alternativesPl":["Budynek"],"alternativesRu":[]},"direction":"ru-pl","answer":" Chata "}`},
-		{name: "pl-ru", direction: PlRu,
+		{name: "pl-ru", card: dom, direction: PlRu, wantSystem: gradePrompt, wantSchema: gradeFirst,
 			wantInput: `{"card":{"pl":"Dom","ru":"Дом","examplePl":"To jest dom.","exampleRu":"Это дом.","meaningRu":"здание","alternativesPl":["Budynek"],"alternativesRu":[]},"direction":"pl-ru","answer":" Chata "}`},
+		{name: "a grammar card", card: cardG1(), direction: PlRu, wantSystem: gradeGrammarPrompt, wantSchema: reasonFirst,
+			wantInput: `{"card":{"examplePl":"Na podwórku biegają dwa ___.","hint":"(pies)","pl":"psy","alternativesPl":[]},"answer":" Chata "}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -133,7 +144,7 @@ func TestGradeRequest(t *testing.T) {
 			}}
 
 			before := time.Now()
-			got, ok := srv.gradeWithAI(context.Background(), subOla, dom, tt.direction, " Chata ")
+			got, ok := srv.gradeWithAI(context.Background(), subOla, tt.card, tt.direction, " Chata ")
 			after := time.Now()
 			if want := (aiGrade{grade: Correct, explanation: "Dobrze."}); got != want || !ok {
 				t.Errorf("gradeWithAI = %+v, %t, want %+v, true", got, ok, want)
@@ -147,11 +158,11 @@ func TestGradeRequest(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if string(gotSchema) != wantSchema {
-				t.Errorf("schema = %s, want %s", gotSchema, wantSchema)
+			if string(gotSchema) != tt.wantSchema {
+				t.Errorf("schema = %s, want %s", gotSchema, tt.wantSchema)
 			}
 			req.Schema = nil
-			if want := (AIRequest{Model: "claude-sonnet-5-5", Effort: "low", MaxTokens: 16000, System: gradePrompt, Input: tt.wantInput}); !reflect.DeepEqual(req, want) {
+			if want := (AIRequest{Model: "claude-sonnet-5-5", Effort: "low", MaxTokens: 16000, System: tt.wantSystem, Input: tt.wantInput}); !reflect.DeepEqual(req, want) {
 				t.Errorf("request = %+v, want %+v", req, want)
 			}
 			if earliest, latest := before.Add(15*time.Second), after.Add(15*time.Second); !hasDeadline || deadline.Before(earliest) || deadline.After(latest) {
@@ -243,9 +254,9 @@ func equalProgress(a, b progress) bool {
 		equalTime(a.lastCorrectAt, b.lastCorrectAt) && equalTime(a.lastIncorrectAt, b.lastIncorrectAt)
 }
 
-// wantProgress is the progress row of the caller for K1 after the request. A time is "new" for a time of the
-// request, "kept" for the time that the setup stored, and empty for NULL. The zero value is no row, because a row
-// that progressRows does not have reads as the zero progress.
+// wantProgress is the progress row of the caller for the card of the row after the request. A time is "new" for a
+// time of the request, "kept" for the time that the setup stored, and empty for NULL. The zero value is no row,
+// because a row that progressRows does not have reads as the zero progress.
 type wantProgress struct {
 	correct, incorrect             int
 	lastCorrectAt, lastIncorrectAt string
@@ -297,6 +308,7 @@ func TestCreateReview(t *testing.T) {
 		name        string
 		setup       string // the SQL text that runs after groupFixture and cardFixture
 		sub         string
+		card        string // the card of wantRow; K1 when empty
 		body        string
 		model       AIResponse // the answer of the fake model
 		modelErr    error
@@ -305,7 +317,8 @@ func TestCreateReview(t *testing.T) {
 		wantBody    string // the body for a status that is not 200 or 201
 		wantReview  Review // the body for 200 and 201
 		wantRow     wantProgress
-		wantCalls   int // the calls of the model
+		wantCalls   int    // the calls of the model
+		wantInput   string // the input of the model; modelInput when empty
 	}{
 		{name: "the first correct answer makes the progress row", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"),
 			wantStatus: 201, wantReview: Review{Grade: Correct, Correction: "dom"}, wantRow: wantProgress{1, 0, "new", "", 1}},
@@ -343,8 +356,16 @@ func TestCreateReview(t *testing.T) {
 		{name: "a card that does not exist", sub: subOla, body: reviewBody(attemptA1, "00000000-0000-0000-0000-000000000009", 0, RuPl, "dom"), wantStatus: 404, wantBody: cardNotFound},
 		{name: "an archived card", sub: subOla, body: reviewBody(attemptA1, cardK2.Id, 0, RuPl, "dom"), wantStatus: 404, wantBody: cardNotFound},
 		{name: "a card of another group", sub: subOla, body: reviewBody(attemptA1, cardK3.Id, 0, RuPl, "dom"), wantStatus: 404, wantBody: cardNotFound},
-		{name: "a grammar card", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"),
-			setup: "UPDATE cards SET kind = 'grammar' WHERE id = '00000000-0000-0000-0000-000000000001'", wantStatus: 404, wantBody: cardNotFound},
+		{name: "a grammar card takes the Polish answer in the Russian direction", setup: grammarFixture, sub: subOla, card: cardG1().Id,
+			body: reviewBody(attemptA1, cardG1().Id, 0, PlRu, "psy"), wantStatus: 201, wantReview: Review{Grade: Correct, Correction: "psy"}, wantRow: wantProgress{1, 0, "new", "", 1}},
+		{name: "the model grades an answer to a grammar card with the grammar input", setup: giveConsent + grammarFixture, sub: subOla, card: cardG1().Id,
+			body:  reviewBody(attemptA1, cardG1().Id, 0, RuPl, "piesy"),
+			model: modelAnswer("again", "W liczbie mnogiej „pies” traci „e”: psy."), wantInput: `{"card":{"examplePl":"Na podwórku biegają dwa ___.","hint":"(pies)","pl":"psy","alternativesPl":[]},"answer":"piesy"}`,
+			wantStatus: 201, wantReview: Review{Grade: Again, Correction: "psy", Explanation: new("W liczbie mnogiej „pies” traci „e”: psy.")}, wantRow: wantProgress{0, 1, "", "new", 1}, wantCalls: 1},
+		{name: "a repeat of a grammar card in the Russian direction gives the Polish answer", sub: subOla, card: cardG1().Id, body: reviewBody(attemptA1, cardG1().Id, 0, PlRu, "piesy"),
+			setup: grammarFixture + ";" + addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000011', 0, 1, NULL, now() - interval '1 hour', 1);" +
+				addReview + "('sub-ola', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000011', 'again')",
+			wantStatus: 200, wantReview: Review{Grade: Again, Correction: "psy"}, wantRow: wantProgress{0, 1, "", "kept", 1}},
 		{name: "the version 0 for a card with a progress row", sub: subOla, body: reviewBody(attemptA1, cardK1.Id, 0, RuPl, "dom"),
 			setup:      addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 1, 0, now() - interval '2 days', NULL, 1)",
 			wantStatus: 409, wantBody: notCurrent, wantRow: wantProgress{1, 0, "kept", "", 1}},
@@ -435,15 +456,15 @@ func TestCreateReview(t *testing.T) {
 			if _, err := pool.Exec(ctx, cardFixture+";"+tt.setup); err != nil {
 				t.Fatal(err)
 			}
-			key := progressKey{tt.sub, cardK1.Id}
+			key := progressKey{tt.sub, cmp.Or(tt.card, cardK1.Id)}
 			before := progressRows(t, pool)
 			wantReviews := reviewRows(t, pool)
 			// The rows of duringModel are not changes of the request, so the fake reads the snapshots again.
 			var calls atomic.Int64
 			srv.AI = func(_ context.Context, req AIRequest) (AIResponse, error) {
 				calls.Add(1)
-				if req.Input != modelInput {
-					t.Errorf("input of the model = %s, want %s", req.Input, modelInput)
+				if want := cmp.Or(tt.wantInput, modelInput); req.Input != want {
+					t.Errorf("input of the model = %s, want %s", req.Input, want)
 				}
 				if _, err := pool.Exec(ctx, tt.duringModel); err != nil {
 					t.Fatal(err)
