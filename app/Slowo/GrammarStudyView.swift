@@ -96,5 +96,7 @@ struct GrammarTableView: View {
             }
         }
         .font(.footnote)
+        // With a fixed height proposal a grid cuts the texts of its cells to one line.
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
