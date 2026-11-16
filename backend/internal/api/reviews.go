@@ -26,8 +26,8 @@ var (
 	errAskModel   = errors.New("the model must grade the answer")
 )
 
-// createReview grades an answer of the signed-in learner to a translation card of the group in the path, and counts
-// it in the progress row of the learner for the card.
+// createReview grades an answer of the signed-in learner to a card of the group in the path, and counts it in the
+// progress row of the learner for the card.
 func (s *Server) createReview(ctx context.Context, req events.APIGatewayV2HTTPRequest) events.APIGatewayV2HTTPResponse {
 	sub, fail := s.member(ctx, req)
 	if fail != nil {
@@ -82,7 +82,7 @@ func (s *Server) createReview(ctx context.Context, req events.APIGatewayV2HTTPRe
 		// A card without a progress row of the learner has the version 0.
 		card, err := scanCard(tx.QueryRow(ctx, "SELECT "+cardColumns+", COALESCE(version, 0) "+
 			"FROM cards LEFT JOIN card_progress ON card_progress.card_id = cards.id AND card_progress.user_id = $3 "+
-			"WHERE group_id = $1 AND cards.id::text = $2 AND NOT archived AND kind = 'translation'",
+			"WHERE group_id = $1 AND cards.id::text = $2 AND NOT archived",
 			req.PathParameters["groupId"], body.CardId, sub), &version)
 		if err != nil {
 			return err
@@ -155,9 +155,10 @@ func (s *Server) createReview(ctx context.Context, req events.APIGatewayV2HTTPRe
 	return jsonResponse(status, review)
 }
 
-// grade grades an answer to the card for the direction of the prompt. Only the terms of the answer side count.
+// grade grades an answer to the card for the direction of the prompt. Only the terms of the answer side count. A
+// grammar card always asks for the Polish text of the gap, so its answer side is Polish in each direction.
 func grade(card Card, direction Direction, answer string) Review {
-	polish := direction == RuPl
+	polish := direction == RuPl || card.Kind == CardKindGrammar
 	terms := append([]string{card.Ru}, card.AlternativesRu...)
 	if polish {
 		terms = append([]string{card.Pl}, card.AlternativesPl...)

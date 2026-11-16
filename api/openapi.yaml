@@ -353,7 +353,7 @@ paths:
       summary: The study queue of the signed-in learner.
       responses:
         "200":
-          description: At most 10 translation cards of the group that are not archived and that are new or due. First the cards with more misses for each correct answer, then the earlier due time (the creation time for a new card), then by ID.
+          description: At most 10 cards of the group that are not archived and that are new or due. First the cards with more misses for each correct answer, then the earlier due time (the creation time for a new card), then by ID.
           content:
             application/json:
               schema:
@@ -1115,14 +1115,14 @@ components:
           description: A UUID that the app makes for each answer. A repeat of the request with the same value gets the stored grade and counts nothing.
         cardId:
           type: string
-          description: The ID of a translation card of the group.
+          description: The ID of a card of the group.
         progressVersion:
           type: integer
           minimum: 0
           description: The progress version of the card from the study queue.
         direction:
           $ref: "#/components/schemas/Direction"
-          description: The direction of the prompt that the learner saw.
+          description: The direction of the prompt that the learner saw. A grammar card always asks for the Polish text of the gap, so the server grades its answer as ru-pl in each direction.
         answer:
           type: string
           maxLength: 500
@@ -1135,7 +1135,7 @@ components:
           $ref: "#/components/schemas/Grade"
         correction:
           type: string
-          description: The term of the answer side of the card. For a grade almost that the server gave without the AI model, it is the term that the answer matched.
+          description: The term of the answer side of the card. The answer side of a grammar card is Polish in each direction. For a grade almost that the server gave without the AI model, it is the term that the answer matched.
         explanation:
           type: string
           maxLength: 500

@@ -29,7 +29,7 @@ func (p progress) dueAt() time.Time {
 	return p.lastCorrectAt.Add(waits[min(max(p.correct-2*p.incorrect, 0), len(waits)-1)])
 }
 
-// studyRow is a translation card with the progress of the learner.
+// studyRow is a card with the progress of the learner.
 type studyRow struct {
 	card      Card
 	createdAt time.Time
@@ -78,7 +78,7 @@ func (s *Server) getStudyQueue(ctx context.Context, req events.APIGatewayV2HTTPR
 	// A new card has no progress row, so the join gives NULL in each progress column, and pgx refuses NULL for an int.
 	rows, err := s.DB.Query(ctx, "SELECT "+cardColumns+", created_at, COALESCE(correct, 0), COALESCE(incorrect, 0), last_correct_at, last_incorrect_at, COALESCE(version, 0) "+
 		"FROM cards LEFT JOIN card_progress ON card_progress.card_id = cards.id AND card_progress.user_id = $2 "+
-		"WHERE group_id = $1 AND NOT archived AND kind = 'translation'",
+		"WHERE group_id = $1 AND NOT archived",
 		req.PathParameters["groupId"], sub)
 	if err != nil {
 		return serverError(ctx, req, sub, err)

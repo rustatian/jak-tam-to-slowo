@@ -491,7 +491,7 @@ type Member struct {
 
 // Review defines model for Review.
 type Review struct {
-	// Correction The term of the answer side of the card. For a grade almost that the server gave without the AI model, it is the term that the answer matched.
+	// Correction The term of the answer side of the card. The answer side of a grammar card is Polish in each direction. For a grade almost that the server gave without the AI model, it is the term that the answer matched.
 	Correction string `json:"correction"`
 
 	// Explanation A short reason in simple Polish from the AI model. Only a grade that the model gave has it. A repeat of a stored attempt has none.
@@ -509,10 +509,10 @@ type ReviewCreate struct {
 	// AttemptId A UUID that the app makes for each answer. A repeat of the request with the same value gets the stored grade and counts nothing.
 	AttemptId string `json:"attemptId"`
 
-	// CardId The ID of a translation card of the group.
+	// CardId The ID of a card of the group.
 	CardId string `json:"cardId"`
 
-	// Direction The direction of the prompt that the learner saw.
+	// Direction The direction of the prompt that the learner saw. A grammar card always asks for the Polish text of the gap, so the server grades its answer as ru-pl in each direction.
 	Direction Direction `json:"direction"`
 
 	// ProgressVersion The progress version of the card from the study queue.
