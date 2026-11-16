@@ -112,14 +112,18 @@ func TestGradeRequest(t *testing.T) {
 	const wantSchema = `{"additionalProperties":false,"properties":{"grade":{"type":"string","enum":["correct","almost","again"]},"explanation":{"type":"string"}},"required":["grade","explanation"],"type":"object"}`
 	dom := Card{Pl: "Dom", Ru: "Дом", ExamplePl: "To jest dom.", ExampleRu: "Это дом.", MeaningRu: "здание", AlternativesPl: []string{"Budynek"}}
 	tests := []struct {
-		name      string
-		direction Direction
-		wantInput string // the user message
+		name       string
+		card       Card
+		direction  Direction
+		wantSystem string
+		wantInput  string // the user message
 	}{
-		{name: "ru-pl", direction: RuPl,
+		{name: "ru-pl", card: dom, direction: RuPl, wantSystem: gradePrompt,
 			wantInput: `{"card":{"pl":"Dom","ru":"Дом","examplePl":"To jest dom.","exampleRu":"Это дом.","meaningRu":"здание","alternativesPl":["Budynek"],"alternativesRu":[]},"direction":"ru-pl","answer":" Chata "}`},
-		{name: "pl-ru", direction: PlRu,
+		{name: "pl-ru", card: dom, direction: PlRu, wantSystem: gradePrompt,
 			wantInput: `{"card":{"pl":"Dom","ru":"Дом","examplePl":"To jest dom.","exampleRu":"Это дом.","meaningRu":"здание","alternativesPl":["Budynek"],"alternativesRu":[]},"direction":"pl-ru","answer":" Chata "}`},
+		{name: "a grammar card", card: cardG1(), direction: PlRu, wantSystem: gradeGrammarPrompt,
+			wantInput: `{"card":{"examplePl":"Na podwórku biegają dwa ___.","hint":"(pies)","pl":"psy","alternativesPl":[]},"answer":" Chata "}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -133,7 +137,7 @@ func TestGradeRequest(t *testing.T) {
 			}}
 
 			before := time.Now()
-			got, ok := srv.gradeWithAI(context.Background(), subOla, dom, tt.direction, " Chata ")
+			got, ok := srv.gradeWithAI(context.Background(), subOla, tt.card, tt.direction, " Chata ")
 			after := time.Now()
 			if want := (aiGrade{grade: Correct, explanation: "Dobrze."}); got != want || !ok {
 				t.Errorf("gradeWithAI = %+v, %t, want %+v, true", got, ok, want)
@@ -151,7 +155,7 @@ func TestGradeRequest(t *testing.T) {
 				t.Errorf("schema = %s, want %s", gotSchema, wantSchema)
 			}
 			req.Schema = nil
-			if want := (AIRequest{Model: "claude-sonnet-5-5", Effort: "low", MaxTokens: 16000, System: gradePrompt, Input: tt.wantInput}); !reflect.DeepEqual(req, want) {
+			if want := (AIRequest{Model: "claude-sonnet-5-5", Effort: "low", MaxTokens: 16000, System: tt.wantSystem, Input: tt.wantInput}); !reflect.DeepEqual(req, want) {
 				t.Errorf("request = %+v, want %+v", req, want)
 			}
 			if earliest, latest := before.Add(15*time.Second), after.Add(15*time.Second); !hasDeadline || deadline.Before(earliest) || deadline.After(latest) {

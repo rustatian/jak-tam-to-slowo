@@ -181,6 +181,11 @@ func grade(card Card, direction Direction, answer string) Review {
 //go:embed grade_prompt.txt
 var gradePrompt string
 
+// gradeGrammarPrompt is the system prompt of a grade of the AI model for a grammar card.
+//
+//go:embed grade_grammar_prompt.txt
+var gradeGrammarPrompt string
+
 // gradeProperties is JSON text, because the model writes the properties of its answer in the order of the schema, and
 // the encoder writes a Go map with sorted keys. The order is the order of the prompt.
 // https://platform.claude.com/docs/en/build-with-claude/structured-outputs#property-ordering
@@ -227,37 +232,61 @@ func gradeOutcome(resp AIResponse, callErr error) (g aiGrade, cause string) {
 	return g, ""
 }
 
-// gradeWithAI asks the AI model for a grade of the answer to the card for the direction, and writes one log line. ok
-// is false when the call failed or the answer broke a rule of gradeOutcome.
+// gradeWithAI asks the AI model for a grade of the answer to the card for the direction, and writes one log line. A
+// grammar card gets the grammar prompt and an input without the direction, because it always asks for the Polish text
+// of the gap. ok is false when the call failed or the answer broke a rule of gradeOutcome.
 func (s *Server) gradeWithAI(ctx context.Context, sub string, card Card, direction Direction, answer string) (g aiGrade, ok bool) {
-	// The members have the names and the order of the input of the old app.
-	var input struct {
-		Card struct {
-			Pl             string   `json:"pl"`
-			Ru             string   `json:"ru"`
-			ExamplePl      string   `json:"examplePl"`
-			ExampleRu      string   `json:"exampleRu"`
-			MeaningRu      string   `json:"meaningRu"`
-			AlternativesPl []string `json:"alternativesPl"`
-			AlternativesRu []string `json:"alternativesRu"`
-		} `json:"card"`
-		Direction Direction `json:"direction"`
-		Answer    string    `json:"answer"`
+	system, input := gradePrompt, any(nil)
+	if card.Kind == CardKindGrammar {
+		// The input has no slots and no topic, because they name the form of pl, and the grade must accept each
+		// correct form of the word in the hint.
+		var grammar struct {
+			Card struct {
+				ExamplePl      string   `json:"examplePl"`
+				Hint           string   `json:"hint"`
+				Pl             string   `json:"pl"`
+				AlternativesPl []string `json:"alternativesPl"`
+			} `json:"card"`
+			Answer string `json:"answer"`
+		}
+		c := &grammar.Card
+		c.ExamplePl = card.ExamplePl
+		c.Hint = card.Grammar.Hint
+		c.Pl = card.Pl
+		c.AlternativesPl = card.AlternativesPl
+		grammar.Answer = answer
+		system, input = gradeGrammarPrompt, grammar
+	} else {
+		// The members have the names and the order of the input of the old app.
+		var translation struct {
+			Card struct {
+				Pl             string   `json:"pl"`
+				Ru             string   `json:"ru"`
+				ExamplePl      string   `json:"examplePl"`
+				ExampleRu      string   `json:"exampleRu"`
+				MeaningRu      string   `json:"meaningRu"`
+				AlternativesPl []string `json:"alternativesPl"`
+				AlternativesRu []string `json:"alternativesRu"`
+			} `json:"card"`
+			Direction Direction `json:"direction"`
+			Answer    string    `json:"answer"`
+		}
+		c := &translation.Card
+		c.Pl = card.Pl
+		c.Ru = card.Ru
+		c.ExamplePl = card.ExamplePl
+		c.ExampleRu = card.ExampleRu
+		c.MeaningRu = card.MeaningRu
+		c.AlternativesPl = card.AlternativesPl
+		c.AlternativesRu = card.AlternativesRu
+		translation.Direction, translation.Answer = direction, answer
+		input = translation
 	}
-	c := &input.Card
-	c.Pl = card.Pl
-	c.Ru = card.Ru
-	c.ExamplePl = card.ExamplePl
-	c.ExampleRu = card.ExampleRu
-	c.MeaningRu = card.MeaningRu
-	c.AlternativesPl = card.AlternativesPl
-	c.AlternativesRu = card.AlternativesRu
-	input.Direction, input.Answer = direction, answer
 	// The texts of a stored card and of a decoded body are valid UTF-8, so the input always marshals.
 	text, _ := json.Marshal(input)
 	callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	start := time.Now()
-	resp, callErr := s.AI(callCtx, AIRequest{Model: "claude-sonnet-5-5", Effort: "low", MaxTokens: 16000, System: gradePrompt, Schema: gradeSchema, Input: string(text)})
+	resp, callErr := s.AI(callCtx, AIRequest{Model: "claude-sonnet-5-5", Effort: "low", MaxTokens: 16000, System: system, Schema: gradeSchema, Input: string(text)})
 	duration := time.Since(start)
 	cancel()
 	g, cause := gradeOutcome(resp, callErr)
