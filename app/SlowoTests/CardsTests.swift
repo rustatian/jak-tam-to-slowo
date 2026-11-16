@@ -94,10 +94,10 @@ let cardsCases: [CardsCase] = [
         calls: ["getMe", "listCards"], inputs: ["listCards g1 - limit=50"], error: nil, cards: [cebula], query: ""
     ),
     CardsCase(
-        name: "a grammar card is not in the list",
-        answers: .init(getMe: [.ok(.init(body: .json(grouped)))], listCards: [.ok(.init(body: .json(.init(cards: [cebula, rule, dom]))))]),
+        name: "a grammar card is in the list",
+        answers: .init(getMe: [.ok(.init(body: .json(grouped)))], listCards: [.ok(.init(body: .json(.init(cards: [cebula, psy, dom]))))]),
         action: { cards, _ in try await cards.load(query: "") },
-        calls: ["getMe", "listCards"], inputs: ["listCards g1 - limit=50"], error: nil, cards: [cebula, dom], query: ""
+        calls: ["getMe", "listCards"], inputs: ["listCards g1 - limit=50"], error: nil, cards: [cebula, psy, dom], query: ""
     ),
     CardsCase(
         name: "a group with no cards has an empty list",
@@ -238,16 +238,16 @@ let cardsCases: [CardsCase] = [
         calls: ["getMe", "listCards"], inputs: ["listCards g1 - limit=50"], error: nil, cards: [cebula], query: ""
     ),
     CardsCase(
-        name: "loadMore drops grammar cards and cards that the list shows",
+        name: "loadMore keeps grammar cards and drops cards that the list shows",
         answers: .init(
             getMe: [.ok(.init(body: .json(grouped)))],
-            listCards: [.ok(.init(body: .json(.init(cards: [cebula], next: "k1")))), .ok(.init(body: .json(.init(cards: [rule, cebula, dom]))))]
+            listCards: [.ok(.init(body: .json(.init(cards: [cebula], next: "k1")))), .ok(.init(body: .json(.init(cards: [psy, cebula, dom]))))]
         ),
         action: { cards, _ in
             try await cards.load(query: "")
             try await cards.loadMore()
         },
-        calls: ["getMe", "listCards", "listCards"], inputs: ["listCards g1 - limit=50", "listCards g1 - limit=50 after=k1"], error: nil, cards: [cebula, dom], query: ""
+        calls: ["getMe", "listCards", "listCards"], inputs: ["listCards g1 - limit=50", "listCards g1 - limit=50 after=k1"], error: nil, cards: [cebula, psy, dom], query: ""
     ),
     CardsCase(
         name: "a failed loadMore keeps the list and the next value",
@@ -295,6 +295,23 @@ let cardsCases: [CardsCase] = [
             try await cards.load(query: "")
         },
         calls: ["getMe", "listCards", "listCards", "listCards"], inputs: ["listCards g1 - limit=50", "listCards g1 - limit=50 after=k1", "listCards g1 - limit=51"], error: nil, cards: many + [cebula], query: ""
+    ),
+    CardsCase(
+        name: "a reload counts the grammar cards of the list",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            listCards: [
+                .ok(.init(body: .json(.init(cards: [psy] + many.dropLast(), next: "k1")))),
+                .ok(.init(body: .json(.init(cards: [cebula])))),
+                .ok(.init(body: .json(.init(cards: [psy] + many.dropLast() + [cebula])))),
+            ]
+        ),
+        action: { cards, _ in
+            try await cards.load(query: "")
+            try await cards.loadMore()
+            try await cards.load(query: "")
+        },
+        calls: ["getMe", "listCards", "listCards", "listCards"], inputs: ["listCards g1 - limit=50", "listCards g1 - limit=50 after=k1", "listCards g1 - limit=51"], error: nil, cards: [psy] + many.dropLast() + [cebula], query: ""
     ),
     CardsCase(
         name: "a new search text asks for one page",

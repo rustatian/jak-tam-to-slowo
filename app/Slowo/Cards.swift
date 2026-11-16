@@ -9,7 +9,7 @@ enum CardError: Error, Equatable {
     case unexpected
 }
 
-/// The loaded pages of the translation cards of the group of the signed-in user for a search text, as the server has them.
+/// The loaded pages of the cards of the group of the signed-in user for a search text, as the server has them.
 @MainActor
 @Observable
 final class Cards {
@@ -47,7 +47,7 @@ final class Cards {
         switch output {
         case let .ok(ok):
             let page = try ok.body.json
-            cards = page.cards.filter { $0.kind == .translation }
+            cards = page.cards
             next = page.next
             self.query = query
         case .forbidden:
@@ -69,7 +69,7 @@ final class Cards {
             let page = try ok.body.json
             // Another member can change a card between two pages, so a card of the list can come again.
             let shown = Set(cards?.map(\.id) ?? [])
-            cards?.append(contentsOf: page.cards.filter { $0.kind == .translation && !shown.contains($0.id) })
+            cards?.append(contentsOf: page.cards.filter { !shown.contains($0.id) })
             next = page.next
         case .forbidden:
             try await dropGroup()
