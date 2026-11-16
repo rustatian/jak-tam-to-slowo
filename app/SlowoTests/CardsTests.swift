@@ -31,6 +31,15 @@ let zamek = Components.Schemas.Card(
     id: "c7", kind: .translation, pl: "Zamek", ru: "Замок", examplePl: "To jest zamek.", exampleRu: "Это замок.", meaningRu: "крепость",
     alternativesPl: [], alternativesRu: []
 )
+/// A grammar card with its gap sentence and its grammar texts.
+let psy = Components.Schemas.Card(
+    id: "c8", kind: .grammar, pl: "psy", ru: "", examplePl: "Na podwórku biegają dwa ___.", exampleRu: "", meaningRu: "",
+    alternativesPl: [], alternativesRu: [],
+    grammar: .init(
+        topic: "e ruchome", used: "piesy", right: "psy", hint: "(pies)", facts: [], slots: [],
+        rule: "W liczbie mnogiej „pies” traci „e”: psy.", examples: ["pies → psy", "dom → domy", "kobieta → kobiety"]
+    )
+)
 /// The cards of one full page of the list.
 let many = (1...50).map { i in
     Components.Schemas.Card(

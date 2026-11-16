@@ -6,7 +6,7 @@ import UserNotifications
 
 let cebula0 = Components.Schemas.StudyCard(card: cebula, progressVersion: 0)
 let dom3 = Components.Schemas.StudyCard(card: dom, progressVersion: 3)
-let rule0 = Components.Schemas.StudyCard(card: rule, progressVersion: 0)
+let psy0 = Components.Schemas.StudyCard(card: psy, progressVersion: 0)
 let luk0 = Components.Schemas.StudyCard(card: luk, progressVersion: 0)
 let later = start.addingTimeInterval(600)
 let groupedPlRu = Components.Schemas.Me(id: "s1", email: "ola@example.com", displayName: "", direction: .plRu, reminder: false, groupId: "g1")
@@ -49,10 +49,10 @@ let studyCases: [StudyCase] = [
         calls: ["getStudyQueue"], inputs: ["getStudyQueue g1"], error: nil, queue: [], nextDueAt: later, card: nil, review: nil
     ),
     StudyCase(
-        name: "a grammar card stays out of the queue",
-        answers: .init(getMe: [.ok(.init(body: .json(grouped)))], getStudyQueue: [q([rule0, cebula0])]),
+        name: "a grammar card is in the queue",
+        answers: .init(getMe: [.ok(.init(body: .json(grouped)))], getStudyQueue: [q([psy0, cebula0])]),
         action: { study, _ in try await study.load() },
-        calls: ["getStudyQueue"], inputs: ["getStudyQueue g1"], error: nil, queue: [cebula0], nextDueAt: nil, card: cebula0, review: nil
+        calls: ["getStudyQueue"], inputs: ["getStudyQueue g1"], error: nil, queue: [psy0, cebula0], nextDueAt: nil, card: psy0, review: nil
     ),
     StudyCase(
         name: "a reload keeps the card on screen",

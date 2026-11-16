@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The card of the study queue with the answer field and the feedback, the texts for an empty queue, or the text for a user with no group.
+/// The card of the study queue (a translation card or a grammar card) with the answer field and the feedback, the texts for an empty queue, or the text for a user with no group.
 struct StudyView: View {
     let profile: Profile
     let study: Study
@@ -84,18 +84,24 @@ struct StudyView: View {
     }
 
     private func form(_ card: Components.Schemas.StudyCard, _ direction: Components.Schemas.Direction) -> some View {
-        let header: LocalizedStringKey = direction == .ruPl ? "Odpowiedź po polsku" : "Odpowiedź po rosyjsku"
+        let grammar = card.card.grammar
+        // The answer of a grammar card is a Polish form in both directions.
+        let header: LocalizedStringKey = grammar != nil || direction == .ruPl ? "Odpowiedź po polsku" : "Odpowiedź po rosyjsku"
         return Form {
             Section {
-                VStack(alignment: .leading) {
-                    switch direction {
-                    case .ruPl:
-                        Text(card.card.ru).font(.title)
-                        Text(card.card.meaningRu).foregroundStyle(.secondary)
-                        Text(card.card.exampleRu)
-                    case .plRu:
-                        Text(card.card.pl).font(.title)
-                        Text(card.card.examplePl)
+                if let grammar {
+                    GrammarPrompt(examplePl: card.card.examplePl, hint: grammar.hint)
+                } else {
+                    VStack(alignment: .leading) {
+                        switch direction {
+                        case .ruPl:
+                            Text(card.card.ru).font(.title)
+                            Text(card.card.meaningRu).foregroundStyle(.secondary)
+                            Text(card.card.exampleRu)
+                        case .plRu:
+                            Text(card.card.pl).font(.title)
+                            Text(card.card.examplePl)
+                        }
                     }
                 }
             }
@@ -116,12 +122,19 @@ struct StudyView: View {
                         case .almost: Label("Prawie dobrze", systemImage: "exclamationmark.circle.fill").foregroundStyle(.orange)
                         case .again: Label("Powtórz", systemImage: "xmark.circle.fill").foregroundStyle(.red)
                         }
-                        Text(review.correction).font(.title2)
-                        Text(direction == .ruPl ? card.card.examplePl : card.card.exampleRu)
-                        if let explanation = review.explanation {
-                            Text(explanation).foregroundStyle(.secondary)
+                        if grammar != nil {
+                            GrammarAnswer(examplePl: card.card.examplePl, answer: text, review: review)
+                        } else {
+                            Text(review.correction).font(.title2)
+                            Text(direction == .ruPl ? card.card.examplePl : card.card.exampleRu)
+                            if let explanation = review.explanation {
+                                Text(explanation).foregroundStyle(.secondary)
+                            }
                         }
                     }
+                }
+                if let grammar {
+                    GrammarRule(grammar: grammar)
                 }
             }
             Section {
