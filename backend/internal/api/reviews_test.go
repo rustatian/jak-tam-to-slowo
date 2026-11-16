@@ -112,20 +112,24 @@ func TestGradeOutcome(t *testing.T) {
 
 func TestGradeRequest(t *testing.T) {
 	// The properties keep their order on the wire. The top level is a Go map, so Deterministic writes its keys sorted.
-	const wantSchema = `{"additionalProperties":false,"properties":{"grade":{"type":"string","enum":["correct","almost","again"]},"explanation":{"type":"string"}},"required":["grade","explanation"],"type":"object"}`
+	const (
+		gradeFirst  = `{"additionalProperties":false,"properties":{"grade":{"type":"string","enum":["correct","almost","again"]},"explanation":{"type":"string"}},"required":["grade","explanation"],"type":"object"}`
+		reasonFirst = `{"additionalProperties":false,"properties":{"explanation":{"type":"string"},"grade":{"type":"string","enum":["correct","almost","again"]}},"required":["explanation","grade"],"type":"object"}`
+	)
 	dom := Card{Pl: "Dom", Ru: "Дом", ExamplePl: "To jest dom.", ExampleRu: "Это дом.", MeaningRu: "здание", AlternativesPl: []string{"Budynek"}}
 	tests := []struct {
 		name       string
 		card       Card
 		direction  Direction
 		wantSystem string
+		wantSchema string
 		wantInput  string // the user message
 	}{
-		{name: "ru-pl", card: dom, direction: RuPl, wantSystem: gradePrompt,
+		{name: "ru-pl", card: dom, direction: RuPl, wantSystem: gradePrompt, wantSchema: gradeFirst,
 			wantInput: `{"card":{"pl":"Dom","ru":"Дом","examplePl":"To jest dom.","exampleRu":"Это дом.","meaningRu":"здание","alternativesPl":["Budynek"],"alternativesRu":[]},"direction":"ru-pl","answer":" Chata "}`},
-		{name: "pl-ru", card: dom, direction: PlRu, wantSystem: gradePrompt,
+		{name: "pl-ru", card: dom, direction: PlRu, wantSystem: gradePrompt, wantSchema: gradeFirst,
 			wantInput: `{"card":{"pl":"Dom","ru":"Дом","examplePl":"To jest dom.","exampleRu":"Это дом.","meaningRu":"здание","alternativesPl":["Budynek"],"alternativesRu":[]},"direction":"pl-ru","answer":" Chata "}`},
-		{name: "a grammar card", card: cardG1(), direction: PlRu, wantSystem: gradeGrammarPrompt,
+		{name: "a grammar card", card: cardG1(), direction: PlRu, wantSystem: gradeGrammarPrompt, wantSchema: reasonFirst,
 			wantInput: `{"card":{"examplePl":"Na podwórku biegają dwa ___.","hint":"(pies)","pl":"psy","alternativesPl":[]},"answer":" Chata "}`},
 	}
 	for _, tt := range tests {
@@ -154,8 +158,8 @@ func TestGradeRequest(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if string(gotSchema) != wantSchema {
-				t.Errorf("schema = %s, want %s", gotSchema, wantSchema)
+			if string(gotSchema) != tt.wantSchema {
+				t.Errorf("schema = %s, want %s", gotSchema, tt.wantSchema)
 			}
 			req.Schema = nil
 			if want := (AIRequest{Model: "claude-sonnet-5-5", Effort: "low", MaxTokens: 16000, System: tt.wantSystem, Input: tt.wantInput}); !reflect.DeepEqual(req, want) {

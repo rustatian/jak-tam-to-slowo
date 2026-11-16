@@ -195,6 +195,12 @@ const gradeProperties = `{"grade":{"type":"string","enum":["correct","almost","a
 // gradeSchema is the JSON schema of the answer of a grade of the AI model.
 var gradeSchema = map[string]any{"type": "object", "properties": jsontext.Value(gradeProperties), "required": []any{"grade", "explanation"}, "additionalProperties": false}
 
+// gradeGrammarProperties has explanation first, so the model writes the reason before it selects the grade.
+const gradeGrammarProperties = `{"explanation":{"type":"string"},"grade":{"type":"string","enum":["correct","almost","again"]}}`
+
+// gradeGrammarSchema is the JSON schema of the answer of a grade of the AI model for a grammar card.
+var gradeGrammarSchema = map[string]any{"type": "object", "properties": jsontext.Value(gradeGrammarProperties), "required": []any{"explanation", "grade"}, "additionalProperties": false}
+
 // aiGrade is the grade of the AI model for one answer.
 type aiGrade struct {
 	grade       Grade
@@ -234,10 +240,10 @@ func gradeOutcome(resp AIResponse, callErr error) (g aiGrade, cause string) {
 }
 
 // gradeWithAI asks the AI model for a grade of the answer to the card for the direction, and writes one log line. A
-// grammar card gets the grammar prompt and an input without the direction, because it always asks for the Polish text
-// of the gap. ok is false when the call failed or the answer broke a rule of gradeOutcome.
+// grammar card gets the grammar prompt, the grammar schema and an input without the direction, because it always asks
+// for the Polish text of the gap. ok is false when the call failed or the answer broke a rule of gradeOutcome.
 func (s *Server) gradeWithAI(ctx context.Context, sub string, card Card, direction Direction, answer string) (g aiGrade, ok bool) {
-	system, input := gradePrompt, any(nil)
+	system, schema, input := gradePrompt, gradeSchema, any(nil)
 	if card.Kind == CardKindGrammar {
 		// The input has no slots and no topic, because they name the form of pl, and the grade must accept each
 		// correct form of the word of pl.
@@ -256,7 +262,7 @@ func (s *Server) gradeWithAI(ctx context.Context, sub string, card Card, directi
 		c.Pl = card.Pl
 		c.AlternativesPl = card.AlternativesPl
 		grammar.Answer = answer
-		system, input = gradeGrammarPrompt, grammar
+		system, schema, input = gradeGrammarPrompt, gradeGrammarSchema, grammar
 	} else {
 		// The members have the names and the order of the input of the old app.
 		var translation struct {
@@ -287,7 +293,7 @@ func (s *Server) gradeWithAI(ctx context.Context, sub string, card Card, directi
 	text, _ := json.Marshal(input)
 	callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	start := time.Now()
-	resp, callErr := s.AI(callCtx, AIRequest{Model: "claude-sonnet-5-5", Effort: "low", MaxTokens: 16000, System: system, Schema: gradeSchema, Input: string(text)})
+	resp, callErr := s.AI(callCtx, AIRequest{Model: "claude-sonnet-5-5", Effort: "low", MaxTokens: 16000, System: system, Schema: schema, Input: string(text)})
 	duration := time.Since(start)
 	cancel()
 	g, cause := gradeOutcome(resp, callErr)
