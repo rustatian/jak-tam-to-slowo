@@ -14,7 +14,7 @@ The app is in development. These screens exist today:
 
 | Words | Card | Add |
 |---|---|---|
-| <img src="docs/screenshots/words.png" width="240" alt="The Słówka tab with the cards of the group"> | <img src="docs/screenshots/card.png" width="240" alt="The form of a card with its fields"> | <img src="docs/screenshots/add.png" width="240" alt="The Dodaj tab with the meanings of a word and a card of the collection that matches the word"> |
+| <img src="docs/screenshots/words.png" width="240" alt="The Słówka tab with the cards of the group"> | <img src="docs/screenshots/card.png" width="240" alt="The form of a card with its fields"> | <img src="docs/screenshots/add.png" width="240" alt="The Dodaj tab in the mode Słówko, with the meanings of a word"> |
 
 | Study | Feedback | All done |
 |---|---|---|
@@ -23,6 +23,10 @@ The app is in development. These screens exist today:
 | Grammar card | Grammar feedback | Grammar card in Słówka |
 |---|---|---|
 | <img src="docs/screenshots/grammar.png" width="240" alt="The Nauka tab with the gap sentence of a grammar card, its hint and a typed answer"> | <img src="docs/screenshots/grammar-feedback.png" width="240" alt="The grade of a wrong answer to a grammar card, with the gap sentence filled, an explanation of the AI model, the topic, the rule and the examples"> | <img src="docs/screenshots/grammar-card.png" width="240" alt="The screen of a grammar card in the Słówka tab, with the gap sentence, the hint, the answer, the used form and the right form, the topic, the rule and the examples"> |
+
+| Check grammar | Cards of a check |
+|---|---|
+| <img src="docs/screenshots/add-grammar.png" width="240" alt="The Dodaj tab in the mode Gramatyka, with a Polish text of the learner and the button that starts the check"> | <img src="docs/screenshots/grammar-check.png" width="240" alt="The check screen with two grammar cards of a check, each with the topic, the used form, the right form, the answer, the gap sentence and the hint"> |
 
 ## Parts
 
