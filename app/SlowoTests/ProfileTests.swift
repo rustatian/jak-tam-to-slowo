@@ -28,18 +28,20 @@ final class FakeAPI: APIProtocol {
         var createReview: [Operations.CreateReview.Output] = []
         var createDraft: [Operations.CreateDraft.Output] = []
         var getDraft: [Operations.GetDraft.Output] = []
+        var createGrammarCheck: [Operations.CreateGrammarCheck.Output] = []
+        var getGrammarCheck: [Operations.GetGrammarCheck.Output] = []
         var previewInvitation: [Operations.PreviewInvitation.Output] = []
         var acceptInvitation: [Operations.AcceptInvitation.Output] = []
     }
 
     struct Empty: Error {}
 
-    private let state: Mutex<(answers: Answers, calls: [String], updates: [Components.Schemas.MeUpdate], inputs: [String], reviews: [Components.Schemas.ReviewCreate])>
+    private let state: Mutex<(answers: Answers, calls: [String], updates: [Components.Schemas.MeUpdate], inputs: [String], reviews: [Components.Schemas.ReviewCreate], created: [Components.Schemas.CardCreate])>
     /// Runs in `listCards` after the answer is taken, with the number of the `listCards` call, from 1.
     private let holdListCards: (@Sendable (_ call: Int) async -> Void)?
 
     init(_ answers: Answers, holdListCards: (@Sendable (_ call: Int) async -> Void)? = nil) {
-        state = Mutex((answers, [], [], [], []))
+        state = Mutex((answers, [], [], [], [], []))
         self.holdListCards = holdListCards
     }
 
@@ -47,6 +49,7 @@ final class FakeAPI: APIProtocol {
     var updates: [Components.Schemas.MeUpdate] { state.withLock { $0.updates } }
     var inputs: [String] { state.withLock { $0.inputs } }
     var reviews: [Components.Schemas.ReviewCreate] { state.withLock { $0.reviews } }
+    var created: [Components.Schemas.CardCreate] { state.withLock { $0.created } }
 
     private static func next<T>(_ queue: inout [T]) throws -> T {
         guard !queue.isEmpty else { throw Empty() }
@@ -156,6 +159,7 @@ final class FakeAPI: APIProtocol {
             s.calls.append("createCard")
             if case let .json(card) = input.body {
                 s.inputs.append("createCard \(input.path.groupId) \(card.pl)")
+                s.created.append(card)
             }
             return try Self.next(&s.answers.createCard)
         }
@@ -230,6 +234,24 @@ final class FakeAPI: APIProtocol {
             s.calls.append("getDraft")
             s.inputs.append("getDraft \(input.path.groupId) \(input.path.draftId)")
             return try Self.next(&s.answers.getDraft)
+        }
+    }
+
+    func createGrammarCheck(_ input: Operations.CreateGrammarCheck.Input) async throws -> Operations.CreateGrammarCheck.Output {
+        try state.withLock { s in
+            s.calls.append("createGrammarCheck")
+            if case let .json(check) = input.body {
+                s.inputs.append("createGrammarCheck \(input.path.groupId) \(check.text)")
+            }
+            return try Self.next(&s.answers.createGrammarCheck)
+        }
+    }
+
+    func getGrammarCheck(_ input: Operations.GetGrammarCheck.Input) async throws -> Operations.GetGrammarCheck.Output {
+        try state.withLock { s in
+            s.calls.append("getGrammarCheck")
+            s.inputs.append("getGrammarCheck \(input.path.groupId) \(input.path.checkId)")
+            return try Self.next(&s.answers.getGrammarCheck)
         }
     }
 
@@ -382,6 +404,10 @@ struct ErrorMessageCase: Sendable, CustomTestStringConvertible {
     ErrorMessageCase(name: "an invalid draft", error: DraftError.invalid, message: "Model AI zwrócił nieprawidłową fiszkę. Spróbuj ponownie."),
     ErrorMessageCase(name: "an unavailable model", error: DraftError.unavailable, message: "Model AI jest teraz niedostępny. Spróbuj ponownie."),
     ErrorMessageCase(name: "a draft text that the server refuses", error: DraftError.badText, message: "Sprawdź pola tekstowe."),
+    ErrorMessageCase(name: "a grammar check that the model refused", error: GrammarCheckError.refused, message: "Model AI odmówił odpowiedzi. Zmień tekst."),
+    ErrorMessageCase(name: "an invalid grammar check", error: GrammarCheckError.invalid, message: "Model AI zwrócił nieprawidłowe fiszki. Spróbuj ponownie."),
+    ErrorMessageCase(name: "an unavailable model for a grammar check", error: GrammarCheckError.unavailable, message: "Model AI jest teraz niedostępny. Spróbuj ponownie albo wpisz krótszy tekst."),
+    ErrorMessageCase(name: "a grammar check text that the server refuses", error: GrammarCheckError.badText, message: "Sprawdź pola tekstowe."),
     ErrorMessageCase(name: "a card that changed on another device", error: StudyError.changed, message: "Fiszka lub wynik się zmieniły."),
     ErrorMessageCase(name: "an unavailable model for a grade", error: StudyError.aiUnavailable, message: "Model AI jest teraz niedostępny. Spróbuj ponownie."),
     ErrorMessageCase(name: "a refused notification permission", error: ReminderError.denied, message: "Włącz powiadomienia aplikacji „Jak tam?” w Ustawieniach na iPhonie."),

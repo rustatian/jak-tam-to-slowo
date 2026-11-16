@@ -4,7 +4,7 @@ import OpenAPIRuntime
 /// The password rules of the user pool.
 let passwordRules = "Co najmniej 8 znaków, w tym wielka i mała litera, cyfra i znak specjalny."
 
-/// The Polish text for an error of a sign-in, sign-up, password reset, profile, group, invitation, card, draft, study or reminder call.
+/// The Polish text for an error of a sign-in, sign-up, password reset, profile, group, invitation, card, draft, grammar check, study or reminder call.
 func errorMessage(_ error: Error) -> String {
     // The generated API client wraps the transport error.
     let error = (error as? ClientError)?.underlyingError ?? error
@@ -27,7 +27,7 @@ func errorMessage(_ error: Error) -> String {
         return "To zaproszenie jest już nieważne."
     case InvitationError.tooManyTries:
         return "Zbyt wiele prób. Spróbuj ponownie później."
-    case CardError.rejected, DraftError.badText:
+    case CardError.rejected, DraftError.badText, GrammarCheckError.badText:
         return "Sprawdź pola tekstowe."
     case CardError.gone:
         return "Ta fiszka jest już w archiwum."
@@ -37,6 +37,12 @@ func errorMessage(_ error: Error) -> String {
         return "Model AI zwrócił nieprawidłową fiszkę. Spróbuj ponownie."
     case DraftError.unavailable, StudyError.aiUnavailable:
         return "Model AI jest teraz niedostępny. Spróbuj ponownie."
+    case GrammarCheckError.refused:
+        return "Model AI odmówił odpowiedzi. Zmień tekst."
+    case GrammarCheckError.invalid:
+        return "Model AI zwrócił nieprawidłowe fiszki. Spróbuj ponownie."
+    case GrammarCheckError.unavailable:
+        return "Model AI jest teraz niedostępny. Spróbuj ponownie albo wpisz krótszy tekst."
     case ReminderError.denied:
         return "Włącz powiadomienia aplikacji „Jak tam?” w Ustawieniach na iPhonie."
     case StudyError.changed:

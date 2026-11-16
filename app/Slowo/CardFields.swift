@@ -65,7 +65,7 @@ struct CardFields: Hashable {
     }
 }
 
-private func trimmed(_ text: String) -> String {
+func trimmed(_ text: String) -> String {
     text.trimmingCharacters(in: .whitespacesAndNewlines)
 }
 

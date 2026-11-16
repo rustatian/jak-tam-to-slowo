@@ -51,6 +51,7 @@ struct SignedInView: View {
     @State private var study: Study
     @State private var reminder: Reminder
     @State private var draft: CardDraft
+    @State private var check: GrammarCheck
     @State private var failed = false
     @State private var offeringConsent = false
     @State private var tab = AppTab.study
@@ -65,11 +66,14 @@ struct SignedInView: View {
         let profile = Profile(api: api)
         _profile = State(initialValue: profile)
         _membership = State(initialValue: Membership(api: api, profile: profile))
-        _cards = State(initialValue: Cards(api: api, profile: profile))
+        // The grammar check creates its cards through the object of the Słówka tab, so the list shows them with no pull.
+        let cards = Cards(api: api, profile: profile)
+        _cards = State(initialValue: cards)
         let reminder = Reminder(center: UNUserNotificationCenter.current(), profile: profile)
         _reminder = State(initialValue: reminder)
         _study = State(initialValue: Study(api: api, profile: profile, reminder: reminder))
         _draft = State(initialValue: CardDraft(api: api, profile: profile))
+        _check = State(initialValue: GrammarCheck(api: api, profile: profile, collection: cards))
     }
 
     var body: some View {
@@ -87,7 +91,7 @@ struct SignedInView: View {
                 }
                 Tab("Dodaj", systemImage: "plus.circle", value: .add) {
                     NavigationStack {
-                        AddView(profile: profile, cards: cards, draft: draft) { offeringConsent = true }
+                        AddView(profile: profile, cards: cards, draft: draft, check: check) { offeringConsent = true }
                     }
                 }
                 Tab("Zawody", systemImage: "flag.checkered", value: .contests) {
