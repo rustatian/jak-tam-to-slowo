@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The translation cards of the group with a search field, or the text for a user with no group.
+/// The cards of the group with a search field, or the text for a user with no group.
 struct WordsView: View {
     let profile: Profile
     let cards: Cards
@@ -31,7 +31,13 @@ struct WordsView: View {
         }
         .navigationTitle("Słówka")
         // The destination sits outside the List, so the form stays open when a load removes the row of its card.
-        .navigationDestination(for: Components.Schemas.Card.self) { CardEditView(card: $0, cards: cards) }
+        .navigationDestination(for: Components.Schemas.Card.self) { card in
+            if let grammar = card.grammar {
+                GrammarCardView(card: card, grammar: grammar, cards: cards)
+            } else {
+                CardEditView(card: card, cards: cards)
+            }
+        }
         .task(id: LoadKey(groupId: profile.me?.groupId, query: query)) {
             // A new text cancels this task, so a load starts 300 ms after the last change of the text.
             if !query.isEmpty {
@@ -50,8 +56,14 @@ struct WordsView: View {
                         NavigationLink(value: card) {
                             VStack(alignment: .leading) {
                                 Text(card.pl)
-                                Text(card.ru + " · " + card.meaningRu)
-                                    .foregroundStyle(.secondary)
+                                if let grammar = card.grammar {
+                                    Text(grammar.topic + " · " + card.examplePl)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                } else {
+                                    Text(card.ru + " · " + card.meaningRu)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }
