@@ -24,9 +24,9 @@ struct GrammarFields: Identifiable, Equatable {
         trimmed(pl) == card.pl ? card.alternativesPl ?? [] : []
     }
 
-    /// The trimmed `examplePl` has `___` exactly once, as non-overlapping matches.
+    /// `examplePl` has `___` exactly once, as non-overlapping matches.
     var hasOneGap: Bool {
-        trimmed(examplePl).components(separatedBy: "___").count == 2
+        examplePl.components(separatedBy: "___").count == 2
     }
 
     /// `pl` has 1 to 200 code points, `examplePl` has 1 to 500, and `hasOneGap`.

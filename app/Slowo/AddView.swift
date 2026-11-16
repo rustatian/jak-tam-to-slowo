@@ -42,7 +42,7 @@ struct AddView: View {
     private var canRequest: Bool { profile.me?.aiConsentAt != nil && fits(text, 200) && !waiting }
 
     /// A new check cannot replace the cards of a check that are not saved or removed.
-    private var canCheck: Bool { profile.me?.aiConsentAt != nil && fits(grammarText, 500) && !check.waiting && check.cards.isEmpty }
+    private var canCheck: Bool { fits(grammarText, 500) && !check.waiting && check.cards.isEmpty }
 
     /// The fields of a draft card. Back from the check screen sets nil, which drops the draft.
     private var checked: Binding<CardFields?> {
@@ -71,7 +71,7 @@ struct AddView: View {
             }
         }
         .navigationDestination(for: Components.Schemas.Card.self) { CardEditView(card: $0, cards: cards) }
-        // The check screen closes when the model has no card: after the save or the removal of the last card.
+        // The check screen shows only while the model has a card, so it closes after the save or the removal of the last card.
         .navigationDestination(isPresented: Binding(get: { checking && !check.cards.isEmpty }, set: { checking = $0 })) {
             GrammarCheckView(check: check) {
                 grammarText = ""
@@ -253,8 +253,7 @@ struct AddView: View {
         Task {
             do {
                 try await check.request(text: grammarText)
-                // A 403 ends with no card. The profile then loads again and shows the current state.
-                checking = !check.cards.isEmpty
+                checking = true
             } catch {
                 self.error = errorMessage(error)
             }
