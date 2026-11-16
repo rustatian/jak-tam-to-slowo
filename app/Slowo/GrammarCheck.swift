@@ -106,6 +106,23 @@ final class GrammarCheck {
         throw GrammarCheckError.unavailable
     }
 
+    /// Takes one card from the list.
+    func remove(_ id: Int) {
+        cards.removeAll { $0.id == id }
+    }
+
+    /// Creates the cards of the list one after the other, first card first. A created card leaves the list at once. An error stops the save and keeps the cards that are left.
+    func save() async throws {
+        while let first = cards.first {
+            // Without a result the user is not a member of the group any more, so no card can be saved.
+            guard try await collection.create(first.create) != nil else {
+                cards = []
+                return
+            }
+            remove(first.id)
+        }
+    }
+
     /// Removes the cards and the result of a check with no mistake.
     func reset() {
         cards = []

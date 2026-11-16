@@ -36,12 +36,12 @@ final class FakeAPI: APIProtocol {
 
     struct Empty: Error {}
 
-    private let state: Mutex<(answers: Answers, calls: [String], updates: [Components.Schemas.MeUpdate], inputs: [String], reviews: [Components.Schemas.ReviewCreate])>
+    private let state: Mutex<(answers: Answers, calls: [String], updates: [Components.Schemas.MeUpdate], inputs: [String], reviews: [Components.Schemas.ReviewCreate], created: [Components.Schemas.CardCreate])>
     /// Runs in `listCards` after the answer is taken, with the number of the `listCards` call, from 1.
     private let holdListCards: (@Sendable (_ call: Int) async -> Void)?
 
     init(_ answers: Answers, holdListCards: (@Sendable (_ call: Int) async -> Void)? = nil) {
-        state = Mutex((answers, [], [], [], []))
+        state = Mutex((answers, [], [], [], [], []))
         self.holdListCards = holdListCards
     }
 
@@ -49,6 +49,7 @@ final class FakeAPI: APIProtocol {
     var updates: [Components.Schemas.MeUpdate] { state.withLock { $0.updates } }
     var inputs: [String] { state.withLock { $0.inputs } }
     var reviews: [Components.Schemas.ReviewCreate] { state.withLock { $0.reviews } }
+    var created: [Components.Schemas.CardCreate] { state.withLock { $0.created } }
 
     private static func next<T>(_ queue: inout [T]) throws -> T {
         guard !queue.isEmpty else { throw Empty() }
@@ -158,6 +159,7 @@ final class FakeAPI: APIProtocol {
             s.calls.append("createCard")
             if case let .json(card) = input.body {
                 s.inputs.append("createCard \(input.path.groupId) \(card.pl)")
+                s.created.append(card)
             }
             return try Self.next(&s.answers.createCard)
         }

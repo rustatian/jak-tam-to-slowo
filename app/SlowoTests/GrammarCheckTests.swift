@@ -228,6 +228,21 @@ let checkCases: [CheckCase] = [
         cards: [psyDraft, napisalamDraft]
     ),
     CheckCase(
+        name: "a reset keeps a check that has no final answer",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))], createGrammarCheck: [checkAccepted()],
+            getGrammarCheck: [.internalServerError(.init(body: .json(.init(message: "internal error")))), checkRead(checkCards)]
+        ),
+        action: { check in
+            try? await check.request(text: "dwa piesy")
+            check.reset()
+            try await check.request(text: "dwa piesy")
+        },
+        calls: ["getMe", "createGrammarCheck", "getGrammarCheck", "getGrammarCheck"],
+        inputs: ["createGrammarCheck g1 dwa piesy", "getGrammarCheck g1 k1", "getGrammarCheck g1 k1"],
+        cards: [psyDraft, napisalamDraft]
+    ),
+    CheckCase(
         name: "another text after a failed read starts a new check",
         answers: .init(
             getMe: [.ok(.init(body: .json(grouped)))], createGrammarCheck: [checkAccepted(), checkAccepted("k2")],
@@ -334,4 +349,126 @@ func grammarCheck(_ c: CheckCase) async throws {
     #expect(!check.waiting)
     await #expect(throws: FakeAPI.Empty.self) { try await check.request(text: "dwa piesy") }
     #expect(api.calls == ["getMe", "createGrammarCheck", "getGrammarCheck", "getGrammarCheck"])
+}
+
+/// `psyDraft` after a change of the answer to `psiaki`.
+let psiakiDraft: Components.Schemas.CardCreate = {
+    var card = psyDraft
+    card.pl = "psiaki"
+    card.alternativesPl = []
+    return card
+}()
+
+let cardCreated: Operations.CreateCard.Output = .created(.init(body: .json(psy)))
+let cardRefused: Operations.CreateCard.Output = .badRequest(.init(body: .json(.init(message: "pl must have 1 to 200 characters"))))
+let cardForbidden: Operations.CreateCard.Output = .forbidden(.init(body: .json(.init(message: "not a member of this group"))))
+
+struct SaveCase: Sendable, CustomTestStringConvertible {
+    let name: String
+    /// The cards of the done check.
+    let drafts: [Components.Schemas.CardCreate]
+    var getMe = 1
+    var createCard: [Operations.CreateCard.Output] = []
+    let action: @Sendable @MainActor (GrammarCheck) async throws -> Void
+    var error: CardError?
+    /// The bodies of the `createCard` calls, in the order of the calls.
+    var created: [Components.Schemas.CardCreate] = []
+    /// The IDs of the cards that stay in the model.
+    var left: [Int] = []
+
+    var testDescription: String { name }
+}
+
+let saveCases: [SaveCase] = [
+    SaveCase(
+        name: "save creates each card in the order of the screen",
+        drafts: [psyDraft, napisalamDraft], createCard: [cardCreated, cardCreated],
+        action: { try await $0.save() },
+        created: [psyDraft, napisalamDraft], left: []
+    ),
+    SaveCase(
+        name: "a changed answer goes out with no other answers",
+        drafts: [psyDraft, napisalamDraft], createCard: [cardCreated, cardCreated],
+        action: { check in
+            check.cards[0].pl = "psiaki"
+            try await check.save()
+        },
+        created: [psiakiDraft, napisalamDraft], left: []
+    ),
+    SaveCase(
+        name: "a refused card stops the save",
+        drafts: [psyDraft, napisalamDraft, psyDraft], createCard: [cardCreated, cardRefused],
+        action: { try await $0.save() },
+        error: .rejected,
+        created: [psyDraft, napisalamDraft], left: [1, 2]
+    ),
+    SaveCase(
+        name: "a second save sends only the cards that are left",
+        drafts: [psyDraft, napisalamDraft, psyDraft], createCard: [cardCreated, cardRefused, cardCreated, cardCreated],
+        action: { check in
+            try? await check.save()
+            try await check.save()
+        },
+        created: [psyDraft, napisalamDraft, napisalamDraft, psyDraft], left: []
+    ),
+    SaveCase(
+        name: "a lost membership ends the save",
+        drafts: [psyDraft, napisalamDraft], getMe: 2, createCard: [cardForbidden],
+        action: { try await $0.save() },
+        created: [psyDraft], left: []
+    ),
+    SaveCase(
+        name: "remove takes one card",
+        drafts: [psyDraft, napisalamDraft],
+        action: { $0.remove(0) },
+        left: [1]
+    ),
+    SaveCase(
+        name: "the removal of each card leaves no card",
+        drafts: [psyDraft, napisalamDraft],
+        action: { check in
+            check.remove(0)
+            check.remove(1)
+        },
+        left: []
+    ),
+    SaveCase(
+        name: "a removed card is not saved",
+        drafts: [psyDraft, napisalamDraft], createCard: [cardCreated],
+        action: { check in
+            check.remove(0)
+            try await check.save()
+        },
+        created: [napisalamDraft], left: []
+    ),
+    SaveCase(
+        name: "reset removes the cards",
+        drafts: [psyDraft, napisalamDraft],
+        action: { $0.reset() },
+        left: []
+    ),
+]
+
+@MainActor
+@Test(arguments: saveCases)
+func grammarCheckSave(_ c: SaveCase) async throws {
+    let api = FakeAPI(.init(
+        getMe: Array(repeating: .ok(.init(body: .json(grouped))), count: c.getMe), createCard: c.createCard,
+        createGrammarCheck: [checkAccepted()], getGrammarCheck: [checkRead(.init(id: "k1", status: .done, cards: c.drafts))]
+    ))
+    let profile = Profile(api: api)
+    try await profile.load()
+    let check = GrammarCheck(api: api, profile: profile, collection: Cards(api: api, profile: profile), pause: .zero)
+    try await check.request(text: "dwa piesy")
+
+    var thrown: CardError?
+    do {
+        try await c.action(check)
+    } catch let error as CardError {
+        thrown = error
+    }
+
+    #expect(thrown == c.error)
+    #expect(api.created == c.created)
+    #expect(check.cards.map(\.id) == c.left)
 }
