@@ -20,5 +20,7 @@ filter:
     - /v1/groups/{groupId}/reviews
     - /v1/groups/{groupId}/drafts
     - /v1/groups/{groupId}/drafts/{draftId}
+    - /v1/groups/{groupId}/grammar-checks
+    - /v1/groups/{groupId}/grammar-checks/{checkId}
     - /v1/invitations/{token}
     - /v1/invitations/{token}/acceptance

@@ -28,6 +28,8 @@ final class FakeAPI: APIProtocol {
         var createReview: [Operations.CreateReview.Output] = []
         var createDraft: [Operations.CreateDraft.Output] = []
         var getDraft: [Operations.GetDraft.Output] = []
+        var createGrammarCheck: [Operations.CreateGrammarCheck.Output] = []
+        var getGrammarCheck: [Operations.GetGrammarCheck.Output] = []
         var previewInvitation: [Operations.PreviewInvitation.Output] = []
         var acceptInvitation: [Operations.AcceptInvitation.Output] = []
     }
@@ -233,6 +235,24 @@ final class FakeAPI: APIProtocol {
         }
     }
 
+    func createGrammarCheck(_ input: Operations.CreateGrammarCheck.Input) async throws -> Operations.CreateGrammarCheck.Output {
+        try state.withLock { s in
+            s.calls.append("createGrammarCheck")
+            if case let .json(check) = input.body {
+                s.inputs.append("createGrammarCheck \(input.path.groupId) \(check.text)")
+            }
+            return try Self.next(&s.answers.createGrammarCheck)
+        }
+    }
+
+    func getGrammarCheck(_ input: Operations.GetGrammarCheck.Input) async throws -> Operations.GetGrammarCheck.Output {
+        try state.withLock { s in
+            s.calls.append("getGrammarCheck")
+            s.inputs.append("getGrammarCheck \(input.path.groupId) \(input.path.checkId)")
+            return try Self.next(&s.answers.getGrammarCheck)
+        }
+    }
+
     func previewInvitation(_ input: Operations.PreviewInvitation.Input) async throws -> Operations.PreviewInvitation.Output {
         try state.withLock { s in
             s.calls.append("previewInvitation")
@@ -382,6 +402,10 @@ struct ErrorMessageCase: Sendable, CustomTestStringConvertible {
     ErrorMessageCase(name: "an invalid draft", error: DraftError.invalid, message: "Model AI zwrócił nieprawidłową fiszkę. Spróbuj ponownie."),
     ErrorMessageCase(name: "an unavailable model", error: DraftError.unavailable, message: "Model AI jest teraz niedostępny. Spróbuj ponownie."),
     ErrorMessageCase(name: "a draft text that the server refuses", error: DraftError.badText, message: "Sprawdź pola tekstowe."),
+    ErrorMessageCase(name: "a grammar check that the model refused", error: GrammarCheckError.refused, message: "Model AI odmówił odpowiedzi. Zmień tekst."),
+    ErrorMessageCase(name: "an invalid grammar check", error: GrammarCheckError.invalid, message: "Model AI zwrócił nieprawidłowe fiszki. Spróbuj ponownie."),
+    ErrorMessageCase(name: "an unavailable model for a grammar check", error: GrammarCheckError.unavailable, message: "Model AI jest teraz niedostępny. Spróbuj ponownie albo wpisz krótszy tekst."),
+    ErrorMessageCase(name: "a grammar check text that the server refuses", error: GrammarCheckError.badText, message: "Sprawdź pola tekstowe."),
     ErrorMessageCase(name: "a card that changed on another device", error: StudyError.changed, message: "Fiszka lub wynik się zmieniły."),
     ErrorMessageCase(name: "an unavailable model for a grade", error: StudyError.aiUnavailable, message: "Model AI jest teraz niedostępny. Spróbuj ponownie."),
     ErrorMessageCase(name: "a refused notification permission", error: ReminderError.denied, message: "Włącz powiadomienia aplikacji „Jak tam?” w Ustawieniach na iPhonie."),
