@@ -85,6 +85,13 @@ let checkCases: [CheckCase] = [
         clean: true
     ),
     CheckCase(
+        name: "a run of line breaks in the text becomes one space",
+        answers: .init(getMe: [.ok(.init(body: .json(grouped)))], createGrammarCheck: [checkAccepted()], getGrammarCheck: [checkRead(checkClean)]),
+        action: { try await $0.request(text: "dwa\n\npiesy") },
+        calls: ["getMe", "createGrammarCheck", "getGrammarCheck"], inputs: ["createGrammarCheck g1 dwa piesy", "getGrammarCheck g1 k1"],
+        clean: true
+    ),
+    CheckCase(
         name: "a refused check",
         answers: .init(
             getMe: [.ok(.init(body: .json(grouped)))], createGrammarCheck: [checkAccepted()],
