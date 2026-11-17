@@ -39,7 +39,7 @@ func main() {
 	poolID := os.Getenv("USER_POOL_ID")
 	mailer := sesv2.NewFromConfig(cfg)
 	from := os.Getenv("MAIL_FROM")
-	// The configuration set of the stage publishes the bounces and the complaints of the emails.
+	// The configuration set of the stack publishes the bounces and the complaints of the emails.
 	configurationSet := os.Getenv("MAIL_CONFIGURATION_SET")
 	functions := awslambda.NewFromConfig(cfg)
 	jobsFunction := os.Getenv("JOBS_FUNCTION")

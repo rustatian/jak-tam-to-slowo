@@ -17,7 +17,7 @@ import (
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/sesmail"
 )
 
-const usage = "usage: admin new-group -endpoint <ClusterEndpoint> -stage <dev|prod> <email>"
+const usage = "usage: admin new-group -endpoint <ClusterEndpoint> <email>"
 
 func main() {
 	if len(os.Args) < 2 || os.Args[1] != "new-group" {
@@ -26,11 +26,10 @@ func main() {
 	flags := flag.NewFlagSet("new-group", flag.ContinueOnError)
 	endpoint := flags.String("endpoint", "", "DSQL cluster endpoint (stack output ClusterEndpoint)")
 	region := flags.String("region", "eu-central-1", "region of the cluster and of Amazon SES")
-	stage := flags.String("stage", "", "dev or prod; the emails go out with the SES configuration set slowo-<stage>")
 	if err := flags.Parse(os.Args[2:]); err != nil {
 		log.Fatal(err)
 	}
-	if *endpoint == "" || (*stage != "dev" && *stage != "prod") || flags.NArg() != 1 {
+	if *endpoint == "" || flags.NArg() != 1 {
 		log.Fatal(usage)
 	}
 
@@ -46,7 +45,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	srv := &api.Server{DB: pool, Send: sesmail.Sender(sesv2.NewFromConfig(cfg), "noreply@slowo.rustatian.me", "slowo-"+*stage)}
+	srv := &api.Server{DB: pool, Send: sesmail.Sender(sesv2.NewFromConfig(cfg), "noreply@slowo.rustatian.me", "slowo-prod")}
 	if err := srv.InviteToNewGroup(ctx, flags.Arg(0)); err != nil {
 		log.Fatal(err)
 	}

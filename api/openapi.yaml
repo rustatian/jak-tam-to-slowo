@@ -4,7 +4,6 @@ info:
   version: 0.1.0
 servers:
   - url: https://api.slowo.rustatian.me
-  - url: https://api-dev.slowo.rustatian.me
 security:
   - cognito: []
 paths:

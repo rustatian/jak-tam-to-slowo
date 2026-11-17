@@ -1,11 +1,8 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: Backend of Jak tam to słowo (stacks slowo-dev and slowo-prod).
+Description: Backend of Jak tam to słowo, the production stack.
 
 Parameters:
-  Stage:
-    Type: String
-    AllowedValues: [dev, prod]
   HostedZoneId:
     Type: AWS::Route53::HostedZone::Id
     Description: The zone slowo.rustatian.me (stack slowo-shared).
@@ -15,14 +12,14 @@ Parameters:
     NoEcho: true
     Description: The email address that gets the alarms of the stack.
 
-Conditions:
-  IsProd: !Equals [!Ref Stage, prod]
-
 Resources:
   UserPool:
     Type: AWS::Cognito::UserPool
     Properties:
-      UserPoolName: !Sub slowo-${Stage}
+      UserPoolName: slowo-prod
+      # The pool holds the accounts, so a delete request for the pool must fail.
+      # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-cognito-userpool.html#cfn-cognito-userpool-deletionprotection
+      DeletionProtection: ACTIVE
       UserPoolTier: ESSENTIALS
       # Sign-up is open, and PreSignUpFunction lets only a request with the token of a pending invitation pass.
       AdminCreateUserConfig:
@@ -71,10 +68,10 @@ Resources:
   Certificate:
     Type: AWS::CertificateManager::Certificate
     Properties:
-      DomainName: !If [IsProd, api.slowo.rustatian.me, api-dev.slowo.rustatian.me]
+      DomainName: api.slowo.rustatian.me
       ValidationMethod: DNS
       DomainValidationOptions:
-        - DomainName: !If [IsProd, api.slowo.rustatian.me, api-dev.slowo.rustatian.me]
+        - DomainName: api.slowo.rustatian.me
           HostedZoneId: !Ref HostedZoneId
 
   HttpApi:
@@ -92,7 +89,7 @@ Resources:
               issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
               audience: [!Ref UserPoolClient]
       Domain:
-        DomainName: !If [IsProd, api.slowo.rustatian.me, api-dev.slowo.rustatian.me]
+        DomainName: api.slowo.rustatian.me
         CertificateArn: !Ref Certificate
         Route53:
           HostedZoneId: !Ref HostedZoneId
@@ -108,7 +105,7 @@ Resources:
   MailConfigurationSet:
     Type: AWS::SES::ConfigurationSet
     Properties:
-      Name: !Sub slowo-${Stage}
+      Name: slowo-prod
 
   MailEventDestination:
     Type: AWS::SES::ConfigurationSetEventDestination
@@ -143,7 +140,7 @@ Resources:
   AlarmTopic:
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: !Sub slowo-${Stage}-alarms
+      TopicName: slowo-prod-alarms
       Subscription:
         - Protocol: email
           Endpoint: !Ref AlarmEmail
@@ -157,7 +154,7 @@ Resources:
   MailEventsErrorsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmName: !Sub slowo-${Stage}-mail-events-errors
+      AlarmName: slowo-prod-mail-events-errors
       AlarmDescription: The events function of the invitations returned an error.
       Namespace: AWS/Lambda
       MetricName: Errors
@@ -180,7 +177,7 @@ Resources:
   JobsErrorsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmName: !Sub slowo-${Stage}-jobs-errors
+      AlarmName: slowo-prod-jobs-errors
       AlarmDescription: The job function returned an error.
       Namespace: AWS/Lambda
       MetricName: Errors
@@ -199,7 +196,7 @@ Resources:
   Cluster:
     Type: AWS::DSQL::Cluster
     Properties:
-      DeletionProtectionEnabled: !If [IsProd, true, false]
+      DeletionProtectionEnabled: true
 
   ApiFunction:
     Type: AWS::Serverless::Function
@@ -457,7 +454,7 @@ Resources:
         MailEvent:
           Type: EventBridgeRule
           Properties:
-            # Dev and prod share the default event bus. The tag names the configuration set of the email.
+            # The default event bus gets the mail events of the account. The tag names the configuration set of the email.
             # https://docs.aws.amazon.com/ses/latest/dg/monitoring-eventbridge.html
             Pattern:
               source: [aws.ses]
@@ -471,7 +468,7 @@ Resources:
           Properties:
             # The function gets the Input as its event. A rate schedule has its first run when it is created.
             # https://docs.aws.amazon.com/scheduler/latest/UserGuide/schedule-types.html#rate-based
-            Name: !Sub slowo-${Stage}-expired-invitations
+            Name: slowo-prod-expired-invitations
             ScheduleExpression: rate(1 day)
             Input: '{"detail-type": "Scheduled Event"}'
 
@@ -523,9 +520,7 @@ Outputs:
   UserPoolClientId:
     Value: !Ref UserPoolClient
   ApiUrl:
-    Value: !Sub
-      - https://${Domain}
-      - Domain: !If [IsProd, api.slowo.rustatian.me, api-dev.slowo.rustatian.me]
+    Value: https://api.slowo.rustatian.me
   ClusterEndpoint:
     Value: !GetAtt Cluster.Endpoint
   ApiFunctionRoleArn:
