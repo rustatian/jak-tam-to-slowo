@@ -112,6 +112,8 @@ struct SignedInView: View {
                     }
                 }
             }
+            // The keyboard covers the tab bar, so a drag on a screen hides the keyboard.
+            .scrollDismissesKeyboard(.immediately)
             // A new group has its own due time. The next queue answer schedules the notification again.
             .onChange(of: profile.me?.groupId) { reminder.clear() }
             // SwiftUI calls each setter with false also when the code closes the sheet.
