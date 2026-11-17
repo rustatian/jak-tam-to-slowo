@@ -11,7 +11,7 @@ import (
 	"github.com/rustatian/jak-tam-to-slowo/backend/internal/api"
 )
 
-// Sender returns the send function for api.Server. The configuration set of the stage publishes the bounces and
+// Sender returns the send function for api.Server. The configuration set of the stack publishes the bounces and
 // the complaints of the emails.
 func Sender(client *sesv2.Client, from, configurationSet string) func(context.Context, api.Mail) error {
 	// The emails have letters outside ASCII, and SES uses 7-bit ASCII when the content names no character set.
