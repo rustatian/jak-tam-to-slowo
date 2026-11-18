@@ -60,7 +60,7 @@ struct StudyView: View {
                             Label("Na dziś wszystko gotowe.", systemImage: "checkmark.circle")
                         } description: {
                             VStack {
-                                Text("Następna powtórka: " + nextDueAt.formatted(.dateTime.day().month(.wide).hour().minute().locale(Locale(identifier: "pl_PL"))))
+                                Text(nextReviewText(nextDueAt))
                                 errorText
                             }
                         }
@@ -196,4 +196,13 @@ struct StudyView: View {
             }
         }
     }
+}
+
+/// The text of the next review on the "all done" state. A no-break space keeps the time on the line of its preposition.
+func nextReviewText(_ nextDueAt: Date) -> String {
+    var text = "Następna powtórka: " + nextDueAt.formatted(.dateTime.day().month(.wide).hour().minute().locale(Locale(identifier: "pl_PL")))
+    if let space = text.lastIndex(of: " ") {
+        text.replaceSubrange(space...space, with: "\u{00A0}")
+    }
+    return text
 }

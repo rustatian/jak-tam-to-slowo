@@ -14,6 +14,8 @@ enum StudyError: Error, Equatable {
 @Observable
 final class Study {
     private(set) var queue: [Components.Schemas.StudyCard]?
+    /// The number of due cards of the last queue answer. It can be larger than the number of cards in `queue`.
+    private(set) var due: Int?
     private(set) var nextDueAt: Date?
     /// The card on screen. A reload keeps it, so it can be absent from `queue`.
     private(set) var card: Components.Schemas.StudyCard?
@@ -48,6 +50,7 @@ final class Study {
         case let .ok(ok):
             let answer = try ok.body.json
             queue = answer.cards
+            due = answer.due
             nextDueAt = answer.nextDueAt
             if card == nil {
                 card = queue?.first
@@ -114,6 +117,7 @@ final class Study {
 
     private func clear() {
         queue = nil
+        due = nil
         nextDueAt = nil
         card = nil
         review = nil
