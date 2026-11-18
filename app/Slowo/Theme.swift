@@ -70,8 +70,10 @@ struct PrimaryButtonStyle: ButtonStyle {
                 .frame(maxWidth: .infinity, minHeight: 56)
                 .background(Theme.accent, in: shape)
                 .offset(y: configuration.isPressed ? edge : 0)
+                .background { shape.fill(Theme.accent.mix(with: .black, by: 0.3)).offset(y: edge) }
                 .padding(.bottom, edge)
-                .background(Theme.accent.mix(with: .black, by: 0.3), in: shape)
+                // One layer, so the label keeps its contrast on the face when the button is not active.
+                .compositingGroup()
                 .opacity(isEnabled ? 1 : 0.45)
                 .contentShape(shape)
         }

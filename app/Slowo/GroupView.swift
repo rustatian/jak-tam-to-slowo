@@ -267,17 +267,18 @@ private struct MemberRow: View {
     /// The name after a circle with its first letter.
     private func label(_ name: String) -> some View {
         HStack(spacing: 12) {
-            ZStack {
-                Circle().fill(Theme.accent)
-                if let first = member.displayName.first {
-                    Text(first.uppercased()).font(.headline)
-                } else {
-                    Image(systemName: "person.fill")
+            // The letter is in an overlay, so the row separator starts at the name.
+            Circle().fill(Theme.accent)
+                .frame(width: 36, height: 36)
+                .overlay {
+                    if let first = member.displayName.first {
+                        Text(first.uppercased()).font(.headline)
+                    } else {
+                        Image(systemName: "person.fill")
+                    }
                 }
-            }
-            .foregroundStyle(Theme.onAccent)
-            .frame(width: 36, height: 36)
-            .accessibilityHidden(true)
+                .foregroundStyle(Theme.onAccent)
+                .accessibilityHidden(true)
             Text(name)
         }
     }
