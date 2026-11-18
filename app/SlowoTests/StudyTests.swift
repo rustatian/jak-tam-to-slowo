@@ -11,8 +11,8 @@ let luk0 = Components.Schemas.StudyCard(card: luk, progressVersion: 0, correct: 
 let later = start.addingTimeInterval(600)
 let groupedPlRu = Components.Schemas.Me(id: "s1", email: "ola@example.com", displayName: "", direction: .plRu, reminder: false, groupId: "g1")
 
-func q(_ cards: [Components.Schemas.StudyCard], next: Date? = nil) -> Operations.GetStudyQueue.Output {
-    .ok(.init(body: .json(.init(cards: cards, due: cards.count, nextDueAt: next))))
+func q(_ cards: [Components.Schemas.StudyCard], due: Int? = nil, next: Date? = nil) -> Operations.GetStudyQueue.Output {
+    .ok(.init(body: .json(.init(cards: cards, due: due ?? cards.count, nextDueAt: next))))
 }
 
 func graded(_ grade: Components.Schemas.Grade, _ correction: String) -> Components.Schemas.Review {
@@ -28,6 +28,8 @@ struct StudyCase: Sendable, CustomTestStringConvertible {
     let inputs: [String]
     let error: StudyError?
     let queue: [Components.Schemas.StudyCard]?
+    /// The number of due cards of the last queue answer that loaded.
+    let due: Int?
     let nextDueAt: Date?
     let card: Components.Schemas.StudyCard?
     let review: Components.Schemas.Review?
@@ -40,19 +42,25 @@ let studyCases: [StudyCase] = [
         name: "load reads the queue of the group",
         answers: .init(getMe: [.ok(.init(body: .json(grouped)))], getStudyQueue: [q([cebula0, dom3], next: later)]),
         action: { study, _ in try await study.load() },
-        calls: ["getStudyQueue"], inputs: ["getStudyQueue g1"], error: nil, queue: [cebula0, dom3], nextDueAt: later, card: cebula0, review: nil
+        calls: ["getStudyQueue"], inputs: ["getStudyQueue g1"], error: nil, queue: [cebula0, dom3], due: 2, nextDueAt: later, card: cebula0, review: nil
+    ),
+    StudyCase(
+        name: "a load keeps the number of due cards",
+        answers: .init(getMe: [.ok(.init(body: .json(grouped)))], getStudyQueue: [q([cebula0, dom3], due: 12)]),
+        action: { study, _ in try await study.load() },
+        calls: ["getStudyQueue"], inputs: ["getStudyQueue g1"], error: nil, queue: [cebula0, dom3], due: 12, nextDueAt: nil, card: cebula0, review: nil
     ),
     StudyCase(
         name: "an empty queue keeps the next due time",
         answers: .init(getMe: [.ok(.init(body: .json(grouped)))], getStudyQueue: [q([], next: later)]),
         action: { study, _ in try await study.load() },
-        calls: ["getStudyQueue"], inputs: ["getStudyQueue g1"], error: nil, queue: [], nextDueAt: later, card: nil, review: nil
+        calls: ["getStudyQueue"], inputs: ["getStudyQueue g1"], error: nil, queue: [], due: 0, nextDueAt: later, card: nil, review: nil
     ),
     StudyCase(
         name: "a grammar card is in the queue",
         answers: .init(getMe: [.ok(.init(body: .json(grouped)))], getStudyQueue: [q([psy0, cebula0])]),
         action: { study, _ in try await study.load() },
-        calls: ["getStudyQueue"], inputs: ["getStudyQueue g1"], error: nil, queue: [psy0, cebula0], nextDueAt: nil, card: psy0, review: nil
+        calls: ["getStudyQueue"], inputs: ["getStudyQueue g1"], error: nil, queue: [psy0, cebula0], due: 2, nextDueAt: nil, card: psy0, review: nil
     ),
     StudyCase(
         name: "a reload keeps the card on screen",
@@ -62,7 +70,7 @@ let studyCases: [StudyCase] = [
             try await study.load()
         },
         calls: ["getStudyQueue", "getStudyQueue"], inputs: ["getStudyQueue g1", "getStudyQueue g1"],
-        error: nil, queue: [dom3, luk0], nextDueAt: later, card: cebula0, review: nil
+        error: nil, queue: [dom3, luk0], due: 2, nextDueAt: later, card: cebula0, review: nil
     ),
     StudyCase(
         name: "a failed reload keeps the queue",
@@ -75,7 +83,7 @@ let studyCases: [StudyCase] = [
             try await study.load()
         },
         calls: ["getStudyQueue", "getStudyQueue"], inputs: ["getStudyQueue g1", "getStudyQueue g1"],
-        error: .unexpected, queue: [cebula0], nextDueAt: later, card: cebula0, review: nil
+        error: .unexpected, queue: [cebula0], due: 1, nextDueAt: later, card: cebula0, review: nil
     ),
     StudyCase(
         name: "a refused load loads the profile and clears the state",
@@ -88,7 +96,7 @@ let studyCases: [StudyCase] = [
             try await study.load()
         },
         calls: ["getStudyQueue", "getStudyQueue", "getMe"], inputs: ["getStudyQueue g1", "getStudyQueue g1"],
-        error: nil, queue: nil, nextDueAt: nil, card: nil, review: nil
+        error: nil, queue: nil, due: nil, nextDueAt: nil, card: nil, review: nil
     ),
     StudyCase(
         name: "a move to another group clears the state first",
@@ -102,7 +110,7 @@ let studyCases: [StudyCase] = [
             try await study.load()
         },
         calls: ["getStudyQueue", "getMe", "getStudyQueue"], inputs: ["getStudyQueue g1", "getStudyQueue g2"],
-        error: .unexpected, queue: nil, nextDueAt: nil, card: nil, review: nil
+        error: .unexpected, queue: nil, due: nil, nextDueAt: nil, card: nil, review: nil
     ),
     StudyCase(
         name: "a learner without a group sees no queue",
@@ -112,7 +120,7 @@ let studyCases: [StudyCase] = [
             try await profile.load()
             try await study.load()
         },
-        calls: ["getStudyQueue", "getMe"], inputs: ["getStudyQueue g1"], error: nil, queue: nil, nextDueAt: nil, card: nil, review: nil
+        calls: ["getStudyQueue", "getMe"], inputs: ["getStudyQueue g1"], error: nil, queue: nil, due: nil, nextDueAt: nil, card: nil, review: nil
     ),
     StudyCase(
         name: "a correct answer shows the feedback and loads the queue again",
@@ -126,7 +134,7 @@ let studyCases: [StudyCase] = [
             try await study.answer(" dom ")
         },
         calls: ["getStudyQueue", "createReview", "getStudyQueue"], inputs: ["getStudyQueue g1", "createReview g1 c2 3 ru-pl dom", "getStudyQueue g1"],
-        error: nil, queue: [luk0], nextDueAt: later, card: dom3, review: graded(.correct, "Dom")
+        error: nil, queue: [luk0], due: 1, nextDueAt: later, card: dom3, review: graded(.correct, "Dom")
     ),
     StudyCase(
         name: "show answer sends an empty answer",
@@ -140,7 +148,7 @@ let studyCases: [StudyCase] = [
             try await study.answer("")
         },
         calls: ["getStudyQueue", "createReview", "getStudyQueue"], inputs: ["getStudyQueue g1", "createReview g1 c2 3 ru-pl -", "getStudyQueue g1"],
-        error: nil, queue: [luk0], nextDueAt: nil, card: dom3, review: graded(.again, "Dom")
+        error: nil, queue: [luk0], due: 1, nextDueAt: nil, card: dom3, review: graded(.again, "Dom")
     ),
     StudyCase(
         name: "a repeat of a counted answer shows the stored grade",
@@ -154,7 +162,7 @@ let studyCases: [StudyCase] = [
             try await study.answer("dom")
         },
         calls: ["getStudyQueue", "createReview", "getStudyQueue"], inputs: ["getStudyQueue g1", "createReview g1 c2 3 ru-pl dom", "getStudyQueue g1"],
-        error: nil, queue: [luk0], nextDueAt: nil, card: dom3, review: graded(.almost, "Dom")
+        error: nil, queue: [luk0], due: 1, nextDueAt: nil, card: dom3, review: graded(.almost, "Dom")
     ),
     StudyCase(
         name: "the answer goes in the direction of the profile",
@@ -168,7 +176,7 @@ let studyCases: [StudyCase] = [
             try await study.answer("дом")
         },
         calls: ["getStudyQueue", "createReview", "getStudyQueue"], inputs: ["getStudyQueue g1", "createReview g1 c2 3 pl-ru дом", "getStudyQueue g1"],
-        error: nil, queue: [luk0], nextDueAt: nil, card: dom3, review: graded(.correct, "Дом")
+        error: nil, queue: [luk0], due: 1, nextDueAt: nil, card: dom3, review: graded(.correct, "Дом")
     ),
     StudyCase(
         name: "a failed reload after an answer keeps the old queue",
@@ -182,7 +190,21 @@ let studyCases: [StudyCase] = [
             try await study.answer("dom")
         },
         calls: ["getStudyQueue", "createReview", "getStudyQueue"], inputs: ["getStudyQueue g1", "createReview g1 c2 3 ru-pl dom", "getStudyQueue g1"],
-        error: nil, queue: [dom3, luk0], nextDueAt: nil, card: dom3, review: graded(.correct, "Dom")
+        error: nil, queue: [dom3, luk0], due: 2, nextDueAt: nil, card: dom3, review: graded(.correct, "Dom")
+    ),
+    StudyCase(
+        name: "a failed reload after the answer keeps the number",
+        answers: .init(
+            getMe: [.ok(.init(body: .json(grouped)))],
+            getStudyQueue: [q([dom3, luk0], due: 12), .internalServerError(.init(body: .json(.init(message: "x"))))],
+            createReview: [.created(.init(body: .json(graded(.correct, "Dom"))))]
+        ),
+        action: { study, _ in
+            try await study.load()
+            try await study.answer("dom")
+        },
+        calls: ["getStudyQueue", "createReview", "getStudyQueue"], inputs: ["getStudyQueue g1", "createReview g1 c2 3 ru-pl dom", "getStudyQueue g1"],
+        error: nil, queue: [dom3, luk0], due: 12, nextDueAt: nil, card: dom3, review: graded(.correct, "Dom")
     ),
     StudyCase(
         name: "next shows the next card",
@@ -197,7 +219,7 @@ let studyCases: [StudyCase] = [
             study.next()
         },
         calls: ["getStudyQueue", "createReview", "getStudyQueue"], inputs: ["getStudyQueue g1", "createReview g1 c2 3 ru-pl dom", "getStudyQueue g1"],
-        error: nil, queue: [luk0], nextDueAt: nil, card: luk0, review: nil
+        error: nil, queue: [luk0], due: 1, nextDueAt: nil, card: luk0, review: nil
     ),
     StudyCase(
         name: "next after a failed reload skips the answered card",
@@ -212,7 +234,7 @@ let studyCases: [StudyCase] = [
             study.next()
         },
         calls: ["getStudyQueue", "createReview", "getStudyQueue"], inputs: ["getStudyQueue g1", "createReview g1 c2 3 ru-pl dom", "getStudyQueue g1"],
-        error: nil, queue: [luk0], nextDueAt: nil, card: luk0, review: nil
+        error: nil, queue: [luk0], due: 2, nextDueAt: nil, card: luk0, review: nil
     ),
     StudyCase(
         name: "next after the last card shows the empty state",
@@ -227,7 +249,7 @@ let studyCases: [StudyCase] = [
             study.next()
         },
         calls: ["getStudyQueue", "createReview", "getStudyQueue"], inputs: ["getStudyQueue g1", "createReview g1 c2 3 ru-pl dom", "getStudyQueue g1"],
-        error: nil, queue: [], nextDueAt: later, card: nil, review: nil
+        error: nil, queue: [], due: 0, nextDueAt: later, card: nil, review: nil
     ),
     StudyCase(
         name: "a stale progress version shows the next card",
@@ -241,7 +263,7 @@ let studyCases: [StudyCase] = [
             try await study.answer("dom")
         },
         calls: ["getStudyQueue", "createReview", "getStudyQueue"], inputs: ["getStudyQueue g1", "createReview g1 c2 3 ru-pl dom", "getStudyQueue g1"],
-        error: .changed, queue: [cebula0, luk0], nextDueAt: nil, card: cebula0, review: nil
+        error: .changed, queue: [cebula0, luk0], due: 2, nextDueAt: nil, card: cebula0, review: nil
     ),
     StudyCase(
         name: "an archived card shows the next card",
@@ -255,7 +277,7 @@ let studyCases: [StudyCase] = [
             try await study.answer("dom")
         },
         calls: ["getStudyQueue", "createReview", "getStudyQueue"], inputs: ["getStudyQueue g1", "createReview g1 c2 3 ru-pl dom", "getStudyQueue g1"],
-        error: .changed, queue: [cebula0, luk0], nextDueAt: nil, card: cebula0, review: nil
+        error: .changed, queue: [cebula0, luk0], due: 2, nextDueAt: nil, card: cebula0, review: nil
     ),
     StudyCase(
         name: "a conflict with a failed reload shows the next card",
@@ -269,7 +291,7 @@ let studyCases: [StudyCase] = [
             try await study.answer("dom")
         },
         calls: ["getStudyQueue", "createReview", "getStudyQueue"], inputs: ["getStudyQueue g1", "createReview g1 c2 3 ru-pl dom", "getStudyQueue g1"],
-        error: .changed, queue: [luk0], nextDueAt: nil, card: luk0, review: nil
+        error: .changed, queue: [luk0], due: 2, nextDueAt: nil, card: luk0, review: nil
     ),
     StudyCase(
         name: "a conflict on the last card shows a card of the new queue",
@@ -283,7 +305,7 @@ let studyCases: [StudyCase] = [
             try await study.answer("dom")
         },
         calls: ["getStudyQueue", "createReview", "getStudyQueue"], inputs: ["getStudyQueue g1", "createReview g1 c2 3 ru-pl dom", "getStudyQueue g1"],
-        error: .changed, queue: [cebula0], nextDueAt: later, card: cebula0, review: nil
+        error: .changed, queue: [cebula0], due: 1, nextDueAt: later, card: cebula0, review: nil
     ),
     StudyCase(
         name: "an unavailable AI model keeps the card",
@@ -297,7 +319,7 @@ let studyCases: [StudyCase] = [
             try await study.answer("dom")
         },
         calls: ["getStudyQueue", "createReview"], inputs: ["getStudyQueue g1", "createReview g1 c2 3 ru-pl dom"],
-        error: .aiUnavailable, queue: [dom3, luk0], nextDueAt: nil, card: dom3, review: nil
+        error: .aiUnavailable, queue: [dom3, luk0], due: 2, nextDueAt: nil, card: dom3, review: nil
     ),
     StudyCase(
         name: "a refused answer is an unexpected error",
@@ -311,7 +333,7 @@ let studyCases: [StudyCase] = [
             try await study.answer("dom")
         },
         calls: ["getStudyQueue", "createReview"], inputs: ["getStudyQueue g1", "createReview g1 c2 3 ru-pl dom"],
-        error: .unexpected, queue: [dom3, luk0], nextDueAt: nil, card: dom3, review: nil
+        error: .unexpected, queue: [dom3, luk0], due: 2, nextDueAt: nil, card: dom3, review: nil
     ),
     StudyCase(
         name: "a server error of a review keeps the card",
@@ -325,7 +347,7 @@ let studyCases: [StudyCase] = [
             try await study.answer("dom")
         },
         calls: ["getStudyQueue", "createReview"], inputs: ["getStudyQueue g1", "createReview g1 c2 3 ru-pl dom"],
-        error: .unexpected, queue: [dom3, luk0], nextDueAt: nil, card: dom3, review: nil
+        error: .unexpected, queue: [dom3, luk0], due: 2, nextDueAt: nil, card: dom3, review: nil
     ),
     StudyCase(
         name: "a refused review loads the profile and clears the state",
@@ -339,7 +361,7 @@ let studyCases: [StudyCase] = [
             try await study.answer("dom")
         },
         calls: ["getStudyQueue", "createReview", "getMe"], inputs: ["getStudyQueue g1", "createReview g1 c2 3 ru-pl dom"],
-        error: nil, queue: nil, nextDueAt: nil, card: nil, review: nil
+        error: nil, queue: nil, due: nil, nextDueAt: nil, card: nil, review: nil
     ),
 ]
 
@@ -362,6 +384,7 @@ func study(_ c: StudyCase) async throws {
     #expect(api.calls == ["getMe"] + c.calls)
     #expect(api.inputs == c.inputs)
     #expect(study.queue == c.queue)
+    #expect(study.due == c.due)
     #expect(study.nextDueAt == c.nextDueAt)
     #expect(study.card == c.card)
     #expect(study.review == c.review)

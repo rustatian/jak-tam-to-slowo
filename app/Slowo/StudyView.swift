@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The card of the study queue (a translation card or a grammar card) with the answer field and the feedback, the texts for an empty queue, or the text for a user with no group.
+/// The card of the study queue (a translation card or a grammar card) with the queue strip and the answer field, the texts for an empty queue, or the text for a user with no group.
 struct StudyView: View {
     let profile: Profile
     let study: Study
@@ -10,6 +10,7 @@ struct StudyView: View {
     @State private var failed = false
     @State private var error: String?
     @Environment(\.scenePhase) private var scenePhase
+    @FocusState private var focused: Bool
 
     /// The condition of "Sprawdź" and of the Return key. An empty answer counts as a miss, so only "Pokaż odpowiedź" sends it.
     private var canCheck: Bool { fits(text, 500) && !working }
@@ -39,6 +40,16 @@ struct StudyView: View {
         }
         .groundBackground()
         .navigationTitle("Nauka")
+        .toolbar {
+            if study.card != nil, let due = study.due {
+                ToolbarItem(placement: .topBarTrailing) {
+                    // With no glass background the bar cuts the text to its minimum width.
+                    Text("\(due) w kolejce").font(.subheadline.bold()).foregroundStyle(.secondary).fixedSize()
+                }
+                // Plain text: the glass background of a bar item is for a control.
+                .sharedBackgroundVisibility(.hidden)
+            }
+        }
         .task(id: profile.me?.groupId) { await load() }
         .onChange(of: scenePhase) { _, phase in
             // Cards become due while the app is in the background.
@@ -60,7 +71,7 @@ struct StudyView: View {
                             Label("Na dziś wszystko gotowe.", systemImage: "checkmark.circle")
                         } description: {
                             VStack {
-                                Text("Następna powtórka: " + nextDueAt.formatted(.dateTime.day().month(.wide).hour().minute().locale(Locale(identifier: "pl_PL"))))
+                                Text(nextReviewText(nextDueAt))
                                 errorText
                             }
                         }
@@ -88,75 +99,67 @@ struct StudyView: View {
         let grammar = card.card.grammar
         // The answer of a grammar card is a Polish form in both directions.
         let header: LocalizedStringKey = grammar != nil || direction == .ruPl ? "Odpowiedź po polsku" : "Odpowiedź po rosyjsku"
-        return ThemedForm {
-            Section {
-                if let grammar {
-                    GrammarPrompt(examplePl: card.card.examplePl, hint: grammar.hint)
-                } else {
-                    VStack(alignment: .leading) {
-                        switch direction {
-                        case .ruPl:
-                            Text(card.card.ru).font(.title)
-                            Text(card.card.meaningRu).foregroundStyle(.secondary)
-                            Text(card.card.exampleRu)
-                        case .plRu:
-                            Text(card.card.pl).font(.title)
-                            Text(card.card.examplePl)
+        let strip = QueueStrip(card: card, grade: study.review?.grade, queue: study.queue ?? [], due: study.due ?? 0)
+        let fieldShape = RoundedRectangle(cornerRadius: 16)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                QueueStripView(strip: strip)
+                StudyCardView(
+                    card: card, direction: direction, review: study.review, answer: text, edges: min(2, strip.segments.count - 1 + strip.more)
+                ) { study.next() }
+                // A new card starts with new view state.
+                .id(card.card.id)
+                if study.review != nil, let grammar {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(grammar.topic).font(.headline)
+                        GrammarRuleBody(grammar: grammar)
+                    }
+                    .cardStyle()
+                    if let table = grammar.table {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(table.title).font(.headline)
+                            GrammarTableView(table: table)
                         }
+                        .cardStyle()
                     }
                 }
-            }
-            Section {
-                TextField(header, text: fieldText)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .disabled(working || study.review != nil)
-                    .onSubmit { if canCheck { send(text) } }
-            } header: {
-                Text(header)
-            }
-            if let review = study.review {
-                Section {
-                    VStack(alignment: .leading) {
-                        switch review.grade {
-                        case .correct: Label("Dobrze", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                        case .almost: Label("Prawie dobrze", systemImage: "exclamationmark.circle.fill").foregroundStyle(.orange)
-                        case .again: Label("Powtórz", systemImage: "xmark.circle.fill").foregroundStyle(.red)
-                        }
-                        if grammar != nil {
-                            GrammarAnswer(examplePl: card.card.examplePl, answer: text, review: review)
-                        } else {
-                            Text(review.correction).font(.title2)
-                            Text(direction == .ruPl ? card.card.examplePl : card.card.exampleRu)
-                            if let explanation = review.explanation {
-                                Text(explanation).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(header).font(.footnote.bold()).foregroundStyle(.secondary)
+                    TextField(header, text: fieldText)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .disabled(working || study.review != nil)
+                        .onSubmit { if canCheck { send(text) } }
+                        .focused($focused)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 56)
+                        .background(Theme.surface, in: fieldShape)
+                        .overlay { fieldShape.strokeBorder(focused ? Theme.accent : Theme.line, lineWidth: 2) }
+                        // The text field has the height of one line. A tap on the other area of the box also gives the focus.
+                        .onTapGesture { focused = true }
                 }
-                if let grammar {
-                    GrammarRule(grammar: grammar)
-                }
-            }
-            Section {
                 if study.review == nil {
                     Button("Sprawdź") { send(text) }
+                        .buttonStyle(PrimaryButtonStyle())
                         .disabled(!canCheck)
                     Button("Pokaż odpowiedź") {
                         text = ""
                         send("")
                     }
                     .disabled(working)
+                    .frame(maxWidth: .infinity)
                     if working {
-                        ProgressView("Sprawdzanie odpowiedzi…")
+                        ProgressView("Sprawdzanie odpowiedzi…").frame(maxWidth: .infinity)
                     }
                 } else {
-                    // Always active: a tap during the reload inside `answer` shows the next card with the progress view until the call ends.
-                    Button("Dalej") { study.next() }
+                    Label("Przesuń fiszkę, aby przejść dalej", systemImage: "arrow.left.arrow.right")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
                 }
-            } footer: {
                 errorText
             }
+            .padding(16)
         }
         .refreshable { await load() }
     }
@@ -196,4 +199,13 @@ struct StudyView: View {
             }
         }
     }
+}
+
+/// The text of the next review on the "all done" state. A no-break space keeps the time on the line of its preposition.
+func nextReviewText(_ nextDueAt: Date) -> String {
+    var text = "Następna powtórka: " + nextDueAt.formatted(.dateTime.day().month(.wide).hour().minute().locale(Locale(identifier: "pl_PL")))
+    if let space = text.lastIndex(of: " ") {
+        text.replaceSubrange(space...space, with: "\u{00A0}")
+    }
+    return text
 }

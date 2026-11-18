@@ -18,11 +18,11 @@ The app is in development. These screens exist today:
 
 | Study | Feedback | All done |
 |---|---|---|
-| <img src="docs/screenshots/study.png" width="240" alt="The Nauka tab with a card of the queue and a typed answer"> | <img src="docs/screenshots/feedback.png" width="240" alt="The grade of a wrong answer, with the right term, the example and an explanation of the AI model"> | <img src="docs/screenshots/all-done.png" width="240" alt="The Nauka tab when no card is due, with the time of the next review"> |
+| <img src="docs/screenshots/study.png" width="240" alt="The Nauka tab with the number of due cards, the queue strip, a card of the queue and a typed answer"> | <img src="docs/screenshots/feedback.png" width="240" alt="The grade of a wrong answer: the card with a red border, its weight, the right term and the examples"> | <img src="docs/screenshots/all-done.png" width="240" alt="The Nauka tab when no card is due, with the time of the next review"> |
 
 | Grammar card | Grammar feedback | Grammar card in Słówka |
 |---|---|---|
-| <img src="docs/screenshots/grammar.png" width="240" alt="The Nauka tab with the gap sentence of a grammar card, its hint and a typed answer"> | <img src="docs/screenshots/grammar-feedback.png" width="240" alt="The grade of a wrong answer to a grammar card, with the gap sentence filled, an explanation of the AI model, the topic, the rule and the examples"> | <img src="docs/screenshots/grammar-card.png" width="240" alt="The screen of a grammar card in the Słówka tab, with the gap sentence, the hint, the answer, the used form and the right form, the topic, the rule and the examples"> |
+| <img src="docs/screenshots/grammar.png" width="240" alt="The Nauka tab with the gap sentence of a grammar card, its hint and a typed answer"> | <img src="docs/screenshots/grammar-feedback.png" width="240" alt="The grade of a wrong answer to a grammar card: the card with a red border, its weight and the gap sentence filled, then the topic, the rule and the examples"> | <img src="docs/screenshots/grammar-card.png" width="240" alt="The screen of a grammar card in the Słówka tab, with the gap sentence, the hint, the answer, the used form and the right form, the topic, the rule and the examples"> |
 
 | Check grammar | Cards of a check |
 |---|---|

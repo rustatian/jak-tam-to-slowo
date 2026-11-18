@@ -42,17 +42,26 @@ struct GrammarAnswer: View {
     }
 }
 
+/// The rule text of a grammar card and its examples.
+struct GrammarRuleBody: View {
+    let grammar: Components.Schemas.Grammar
+
+    var body: some View {
+        Text(grammar.rule)
+        // Texts can repeat, so the position identifies each item.
+        ForEach(Array(grammar.examples.enumerated()), id: \.offset) { _, example in
+            Text(example)
+        }
+    }
+}
+
 /// The rule of a grammar card under its topic with the examples, and the table. The body is one or two sections of a form.
 struct GrammarRule: View {
     let grammar: Components.Schemas.Grammar
 
     var body: some View {
         Section {
-            Text(grammar.rule)
-            // Texts can repeat, so the position identifies each item.
-            ForEach(Array(grammar.examples.enumerated()), id: \.offset) { _, example in
-                Text(example)
-            }
+            GrammarRuleBody(grammar: grammar)
         } header: {
             Text(grammar.topic)
         }

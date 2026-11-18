@@ -60,6 +60,8 @@ An iPhone app for Russian speakers who learn Polish: its words and its grammar. 
 
 **Grade**: The result of a review: correct, almost or again.
 
+**Weight**: The number that sorts the queue: (incorrect count + 1) / (correct count + 1) of the learner for the card. A higher weight comes first. After a grade of almost or again, the Nauka tab shows the new weight of the card.
+
 **Dictation**: An answer or a new word that the learner speaks. The iOS keyboard changes the speech into text. The text goes into the editable field, and the learner sends it.
 
 ### Races
