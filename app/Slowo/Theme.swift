@@ -78,6 +78,24 @@ struct PrimaryButtonStyle: ButtonStyle {
     }
 }
 
+/// A short label in a capsule, for the kind of a card.
+struct Chip: View {
+    let text: LocalizedStringKey
+
+    init(_ text: LocalizedStringKey) {
+        self.text = text
+    }
+
+    var body: some View {
+        // The text is primary: the accent on this capsule has a contrast below 4.5:1.
+        Text(text)
+            .font(.caption.bold())
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Theme.accent.opacity(0.1), in: Capsule())
+    }
+}
+
 extension View {
     /// Fills the available space and puts the ground color behind the view, also under the safe areas.
     func groundBackground() -> some View {

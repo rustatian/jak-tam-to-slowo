@@ -246,9 +246,13 @@ private struct MemberRow: View {
     var body: some View {
         let name = member.displayName.isEmpty ? "Bez nazwy" : member.displayName
         if isMe {
-            LabeledContent(name, value: "Ty")
+            LabeledContent {
+                Text("Ty")
+            } label: {
+                label(name)
+            }
         } else {
-            Text(name)
+            label(name)
                 // The swipe button has no role: a destructive role removes the row at once and closes the dialog on it.
                 .swipeActions {
                     Button("Usuń") { confirmRemove = true }
@@ -257,6 +261,24 @@ private struct MemberRow: View {
                 .confirmationDialog("Usunąć osobę „\(name)” z grupy?", isPresented: $confirmRemove, titleVisibility: .visible) {
                     Button("Usuń", role: .destructive, action: remove)
                 }
+        }
+    }
+
+    /// The name after a circle with its first letter.
+    private func label(_ name: String) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(Theme.accent)
+                if let first = member.displayName.first {
+                    Text(first.uppercased()).font(.headline)
+                } else {
+                    Image(systemName: "person.fill")
+                }
+            }
+            .foregroundStyle(Theme.onAccent)
+            .frame(width: 36, height: 36)
+            .accessibilityHidden(true)
+            Text(name)
         }
     }
 }

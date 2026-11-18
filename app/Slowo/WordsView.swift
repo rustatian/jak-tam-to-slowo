@@ -56,7 +56,10 @@ struct WordsView: View {
                     ForEach(list, id: \.id) { card in
                         NavigationLink(value: card) {
                             VStack(alignment: .leading) {
-                                Text(card.pl)
+                                HStack {
+                                    Text(card.pl)
+                                    if card.grammar != nil { Chip("Gramatyka") }
+                                }
                                 if let grammar = card.grammar {
                                     Text(grammar.topic + " · " + card.examplePl)
                                         .foregroundStyle(.secondary)
