@@ -61,6 +61,7 @@ struct AddView: View {
                 form
             }
         }
+        .groundBackground()
         .navigationTitle("Dodaj")
         // The destination sits outside the Form and outside the branch for no group, so a change of the branch does not close the check screen.
         .navigationDestination(item: checked) {
@@ -110,7 +111,7 @@ struct AddView: View {
     }
 
     private var form: some View {
-        Form {
+        ThemedForm {
             Picker("Dodaj", selection: $mode) {
                 Text("Słówko").tag(Mode.word)
                 Text("Gramatyka").tag(Mode.grammar)
@@ -146,18 +147,24 @@ struct AddView: View {
             } else {
                 Button("Przygotuj fiszkę") { request() }
                     .disabled(!canRequest)
+                    .primaryButtonRow()
+            }
+        }
+        // The primary button is the only row of its section, so the other rows have their own section.
+        if waiting || saved != nil || error != nil {
+            Section {
                 if waiting {
                     ProgressView("Proszę czekać…")
                 }
-            }
-            if let saved {
-                NavigationLink("Otwórz fiszkę", value: saved)
-            }
-        } footer: {
-            if let error {
-                Text(error).foregroundStyle(.red)
-            } else if saved != nil {
-                Text("Fiszka zapisana.")
+                if let saved {
+                    NavigationLink("Otwórz fiszkę", value: saved)
+                }
+            } footer: {
+                if let error {
+                    Text(error).foregroundStyle(.red)
+                } else if saved != nil {
+                    Text("Fiszka zapisana.")
+                }
             }
         }
         if case let .choices(meanings) = draft.step {
@@ -192,21 +199,26 @@ struct AddView: View {
             } else {
                 Button("Sprawdź gramatykę") { requestCheck() }
                     .disabled(!canCheck)
+                    .primaryButtonRow()
+            }
+        }
+        if check.waiting || !check.cards.isEmpty || error != nil || check.clean || grammarSaved {
+            Section {
                 if check.waiting {
                     ProgressView("Sprawdzanie gramatyki…")
                     Text("To może potrwać kilka minut.").foregroundStyle(.secondary)
                 }
-            }
-            if !check.cards.isEmpty {
-                Button("Sprawdź fiszki") { checking = true }
-            }
-        } footer: {
-            if let error {
-                Text(error).foregroundStyle(.red)
-            } else if check.clean {
-                Text("Nie znaleziono błędów gramatycznych.")
-            } else if grammarSaved {
-                Text("Zapisano.")
+                if !check.cards.isEmpty {
+                    Button("Sprawdź fiszki") { checking = true }
+                }
+            } footer: {
+                if let error {
+                    Text(error).foregroundStyle(.red)
+                } else if check.clean {
+                    Text("Nie znaleziono błędów gramatycznych.")
+                } else if grammarSaved {
+                    Text("Zapisano.")
+                }
             }
         }
     }

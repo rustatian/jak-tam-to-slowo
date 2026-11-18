@@ -29,6 +29,7 @@ struct WordsView: View {
                     .searchable(text: $search, prompt: "Szukaj słówek")
             }
         }
+        .groundBackground()
         .navigationTitle("Słówka")
         // The destination sits outside the List, so the form stays open when a load removes the row of its card.
         .navigationDestination(for: Components.Schemas.Card.self) { card in
@@ -50,12 +51,15 @@ struct WordsView: View {
 
     @ViewBuilder private var content: some View {
         if let list = cards.cards {
-            List {
+            ThemedList {
                 Section {
                     ForEach(list, id: \.id) { card in
                         NavigationLink(value: card) {
                             VStack(alignment: .leading) {
-                                Text(card.pl)
+                                HStack {
+                                    Text(card.pl)
+                                    if card.grammar != nil { Chip("Gramatyka") }
+                                }
                                 if let grammar = card.grammar {
                                     Text(grammar.topic + " · " + card.examplePl)
                                         .foregroundStyle(.secondary)

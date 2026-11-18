@@ -42,7 +42,7 @@ struct CardEditView: View {
     private var change: Components.Schemas.CardUpdate? { fields.changes(from: CardFields(card)) }
 
     var body: some View {
-        Form {
+        ThemedForm {
             CardFieldsForm(fields: $fields)
             Section {
                 Button("Do archiwum", role: .destructive) { confirmArchive = true }
@@ -103,7 +103,7 @@ struct CardCheckView: View {
     }
 
     var body: some View {
-        Form {
+        ThemedForm {
             CardFieldsForm(fields: $fields)
         }
         .alert(error, isPresented: $failed) {}

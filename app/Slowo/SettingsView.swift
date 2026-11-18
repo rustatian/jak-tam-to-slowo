@@ -13,7 +13,7 @@ struct SettingsView: View {
     @State private var confirmLogOut = false
 
     var body: some View {
-        Form {
+        ThemedForm {
             if let me = profile.me {
                 Section("Profil") {
                     NavigationLink {
@@ -121,7 +121,7 @@ struct NameView: View {
     }
 
     var body: some View {
-        Form {
+        ThemedForm {
             Section {
                 TextField(title, text: $name)
                     .textInputAutocapitalization(.words)

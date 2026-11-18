@@ -22,7 +22,11 @@ struct SlowoApp: App {
             // `onOpenURL` sits on one container of both branches, so it stays in place when the branch changes.
             ZStack {
                 if session.isSignedIn {
+                    // The sign-in screens keep the system look. The sheets of the signed-in screens take the tint and the font from here.
                     SignedInView(api: api, session: session, link: link)
+                        .tint(Theme.accent)
+                        .fontDesign(.rounded)
+                        .groundBackground()
                 } else {
                     SignInView(session: session, link: link)
                 }
@@ -150,6 +154,6 @@ struct SignedInView: View {
     }
 
     private func placeholder(_ title: LocalizedStringKey, systemImage: String) -> some View {
-        ContentUnavailableView(title, systemImage: systemImage, description: Text("Wkrótce"))
+        ContentUnavailableView(title, systemImage: systemImage, description: Text("Wkrótce")).groundBackground()
     }
 }

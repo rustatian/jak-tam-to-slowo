@@ -13,6 +13,7 @@ struct GroupView: View {
     var body: some View {
         // The ZStack keeps one identity for all states, so a change of the state does not start the task again.
         ZStack { content }
+            .groundBackground()
             .navigationTitle(profile.me?.groupId == nil ? "Grupa" : membership.group?.name ?? "Grupa")
             .task(id: profile.me?.groupId) { await load() }
     }
@@ -21,7 +22,7 @@ struct GroupView: View {
         if profile.me?.groupId == nil {
             CreateGroupView(membership: membership)
         } else if let group = membership.group {
-            List {
+            ThemedList {
                 Section {
                     NavigationLink {
                         NameView(title: "Nazwa grupy", name: group.name) { try await membership.rename($0) }
@@ -113,7 +114,7 @@ private struct CreateGroupView: View {
     @State private var error: String?
 
     var body: some View {
-        Form {
+        ThemedForm {
             Section {
                 TextField("Nazwa grupy", text: $name)
                     .textInputAutocapitalization(.words)
@@ -130,6 +131,7 @@ private struct CreateGroupView: View {
             Section {
                 Button("Załóż grupę") { Task { await create() } }
                     .disabled(working || trimmedName(name) == nil)
+                    .primaryButtonRow()
             }
         }
     }
@@ -244,9 +246,13 @@ private struct MemberRow: View {
     var body: some View {
         let name = member.displayName.isEmpty ? "Bez nazwy" : member.displayName
         if isMe {
-            LabeledContent(name, value: "Ty")
+            LabeledContent {
+                Text("Ty")
+            } label: {
+                label(name)
+            }
         } else {
-            Text(name)
+            label(name)
                 // The swipe button has no role: a destructive role removes the row at once and closes the dialog on it.
                 .swipeActions {
                     Button("Usuń") { confirmRemove = true }
@@ -255,6 +261,25 @@ private struct MemberRow: View {
                 .confirmationDialog("Usunąć osobę „\(name)” z grupy?", isPresented: $confirmRemove, titleVisibility: .visible) {
                     Button("Usuń", role: .destructive, action: remove)
                 }
+        }
+    }
+
+    /// The name after a circle with its first letter.
+    private func label(_ name: String) -> some View {
+        HStack(spacing: 12) {
+            // The letter is in an overlay, so the row separator starts at the name.
+            Circle().fill(Theme.accent)
+                .frame(width: 36, height: 36)
+                .overlay {
+                    if let first = member.displayName.first {
+                        Text(first.uppercased()).font(.headline)
+                    } else {
+                        Image(systemName: "person.fill")
+                    }
+                }
+                .foregroundStyle(Theme.onAccent)
+                .accessibilityHidden(true)
+            Text(name)
         }
     }
 }

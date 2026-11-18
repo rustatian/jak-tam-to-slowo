@@ -13,7 +13,7 @@ struct GrammarCardView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        Form {
+        ThemedForm {
             Section("Zdanie") {
                 GrammarPrompt(examplePl: card.examplePl, hint: grammar.hint)
             }

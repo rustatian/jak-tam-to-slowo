@@ -17,6 +17,7 @@ struct InvitationView: View {
     var body: some View {
         NavigationStack {
             content
+                .groundBackground()
                 .navigationTitle("Zaproszenie")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -30,7 +31,7 @@ struct InvitationView: View {
 
     @ViewBuilder private var content: some View {
         if let preview = link.preview {
-            Form {
+            ThemedForm {
                 Section {
                     line(preview)
                 }
@@ -94,6 +95,7 @@ struct InvitationView: View {
                 Task { await accept(profile, newGroup: newGroup) }
             }
             .disabled(working || (newGroup && trimmedName(groupName) == nil) || (needsDisplayName && trimmedName(displayName) == nil))
+            .primaryButtonRow()
             .confirmationDialog("Opuścić obecną grupę?", isPresented: $confirmLeave, titleVisibility: .visible) {
                 Button(newGroup ? "Opuść i załóż grupę" : "Opuść i dołącz", role: .destructive) {
                     Task { await accept(profile, newGroup: newGroup, leaveGroup: true) }
