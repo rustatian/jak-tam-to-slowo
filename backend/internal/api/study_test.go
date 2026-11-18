@@ -58,34 +58,46 @@ func TestStudyQueue(t *testing.T) {
 		overLimit = append(overLimit, row(fmt.Sprintf("n%02d", i), t0.Add(time.Duration(i-13)*time.Millisecond), progress{}))
 	}
 	tests := []struct {
-		name         string
-		rows         []studyRow
-		now          time.Time
-		wantIDs      []string
-		wantVersions []int
-		wantNext     *time.Time
+		name          string
+		rows          []studyRow
+		now           time.Time
+		wantIDs       []string
+		wantVersions  []int
+		wantDue       int
+		wantCorrect   []int // in the order of wantIDs
+		wantIncorrect []int
+		wantNext      *time.Time
 	}{
 		{
-			name:         "new cards are due, the oldest first",
-			rows:         []studyRow{a, b, c, d},
-			now:          t0,
-			wantIDs:      []string{"d", "b", "c", "a"},
-			wantVersions: []int{0, 0, 0, 0},
+			name:          "new cards are due, the oldest first",
+			rows:          []studyRow{a, b, c, d},
+			now:           t0,
+			wantIDs:       []string{"d", "b", "c", "a"},
+			wantVersions:  []int{0, 0, 0, 0},
+			wantDue:       4,
+			wantCorrect:   []int{0, 0, 0, 0},
+			wantIncorrect: []int{0, 0, 0, 0},
 		},
 		{
-			name:         "1 ms before the due time the card waits",
-			rows:         waiting,
-			now:          t0.Add(-time.Second + 24*time.Hour - time.Millisecond),
-			wantIDs:      []string{"d", "b", "c"},
-			wantVersions: []int{0, 0, 0},
-			wantNext:     new(t0.Add(-time.Second + 24*time.Hour)),
+			name:          "1 ms before the due time the card waits",
+			rows:          waiting,
+			now:           t0.Add(-time.Second + 24*time.Hour - time.Millisecond),
+			wantIDs:       []string{"d", "b", "c"},
+			wantVersions:  []int{0, 0, 0},
+			wantDue:       3,
+			wantCorrect:   []int{0, 0, 0},
+			wantIncorrect: []int{0, 0, 0},
+			wantNext:      new(t0.Add(-time.Second + 24*time.Hour)),
 		},
 		{
-			name:         "at the due time the card is in the queue",
-			rows:         waiting,
-			now:          t0.Add(-time.Second + 24*time.Hour),
-			wantIDs:      []string{"d", "b", "c", "a"},
-			wantVersions: []int{0, 0, 0, 3},
+			name:          "at the due time the card is in the queue",
+			rows:          waiting,
+			now:           t0.Add(-time.Second + 24*time.Hour),
+			wantIDs:       []string{"d", "b", "c", "a"},
+			wantVersions:  []int{0, 0, 0, 3},
+			wantDue:       4,
+			wantCorrect:   []int{0, 0, 0, 1},
+			wantIncorrect: []int{0, 0, 0, 0},
 		},
 		{
 			name: "more misses for each correct answer come first",
@@ -95,9 +107,12 @@ func TestStudyQueue(t *testing.T) {
 				c,
 				d,
 			},
-			now:          t0,
-			wantIDs:      []string{"a", "d", "c", "b"},
-			wantVersions: []int{3, 0, 0, 2},
+			now:           t0,
+			wantIDs:       []string{"a", "d", "c", "b"},
+			wantVersions:  []int{3, 0, 0, 2},
+			wantDue:       4,
+			wantCorrect:   []int{1, 0, 0, 2},
+			wantIncorrect: []int{3, 0, 0, 0},
 		},
 		{
 			name: "equal weights: the earlier time, then the ID",
@@ -107,17 +122,33 @@ func TestStudyQueue(t *testing.T) {
 				row("b", t0.Add(-400*time.Millisecond), progress{}),
 				row("a", t0.Add(-100*time.Millisecond), progress{1, 1, new(t0.Add(-24 * time.Hour)), new(t0.Add(-time.Hour)), 2}),
 			},
-			now:          t0,
-			wantIDs:      []string{"a", "b", "c", "d"},
-			wantVersions: []int{2, 0, 0, 0},
+			now:           t0,
+			wantIDs:       []string{"a", "b", "c", "d"},
+			wantVersions:  []int{2, 0, 0, 0},
+			wantDue:       4,
+			wantCorrect:   []int{1, 0, 0, 0},
+			wantIncorrect: []int{1, 0, 0, 0},
 		},
 		{
-			name:         "the queue has the first 10 cards",
-			rows:         overLimit,
-			now:          t0,
-			wantIDs:      []string{"n01", "n02", "n03", "n04", "n05", "n06", "n07", "n08", "n09", "n10"},
-			wantVersions: make([]int, 10),
-			wantNext:     new(t0.Add(24 * time.Hour)),
+			name:          "the queue has the first 10 cards",
+			rows:          overLimit,
+			now:           t0,
+			wantIDs:       []string{"n01", "n02", "n03", "n04", "n05", "n06", "n07", "n08", "n09", "n10"},
+			wantVersions:  make([]int, 10),
+			wantDue:       12,
+			wantCorrect:   make([]int, 10),
+			wantIncorrect: make([]int, 10),
+			wantNext:      new(t0.Add(24 * time.Hour)),
+		},
+		{
+			name:          "exactly 10 due cards",
+			rows:          overLimit[3:],
+			now:           t0,
+			wantIDs:       []string{"n01", "n02", "n03", "n04", "n05", "n06", "n07", "n08", "n09", "n10"},
+			wantVersions:  make([]int, 10),
+			wantDue:       10,
+			wantCorrect:   make([]int, 10),
+			wantIncorrect: make([]int, 10),
 		},
 		{
 			name: "nextDueAt is the earliest due time after now",
@@ -127,23 +158,34 @@ func TestStudyQueue(t *testing.T) {
 				row("c", c.createdAt, progress{1, 0, new(t0.Add(-time.Hour)), nil, 1}),
 				d,
 			},
-			now:          t0,
-			wantIDs:      []string{"d"},
-			wantVersions: []int{0},
-			wantNext:     new(t0.Add(5 * time.Minute)),
+			now:           t0,
+			wantIDs:       []string{"d"},
+			wantVersions:  []int{0},
+			wantDue:       1,
+			wantCorrect:   []int{0},
+			wantIncorrect: []int{0},
+			wantNext:      new(t0.Add(5 * time.Minute)),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := studyQueue(tt.rows, tt.now)
 			var ids []string
-			var versions []int
+			var versions, correct, incorrect []int
 			for _, sc := range got.Cards {
 				ids = append(ids, sc.Card.Id)
 				versions = append(versions, sc.ProgressVersion)
+				correct = append(correct, sc.Correct)
+				incorrect = append(incorrect, sc.Incorrect)
 			}
 			if !slices.Equal(ids, tt.wantIDs) || !slices.Equal(versions, tt.wantVersions) {
 				t.Errorf("studyQueue() cards = %v, versions %v, want %v, versions %v", ids, versions, tt.wantIDs, tt.wantVersions)
+			}
+			if got.Due != tt.wantDue {
+				t.Errorf("studyQueue() Due = %d, want %d", got.Due, tt.wantDue)
+			}
+			if !slices.Equal(correct, tt.wantCorrect) || !slices.Equal(incorrect, tt.wantIncorrect) {
+				t.Errorf("studyQueue() correct = %v, incorrect %v, want %v, incorrect %v", correct, incorrect, tt.wantCorrect, tt.wantIncorrect)
 			}
 			if (got.NextDueAt == nil) != (tt.wantNext == nil) || got.NextDueAt != nil && !got.NextDueAt.Equal(*tt.wantNext) {
 				t.Errorf("studyQueue() NextDueAt = %v, want %v", got.NextDueAt, tt.wantNext)
@@ -161,19 +203,22 @@ func TestGetStudyQueue(t *testing.T) {
 	cardK4 := Card{Id: "00000000-0000-0000-0000-000000000004", Kind: CardKindTranslation, Pl: "kot", Ru: "кот", ExamplePl: "To jest kot.", ExampleRu: "Это кот.",
 		MeaningRu: "животное", AlternativesPl: []string{}, AlternativesRu: []string{}}
 	tests := []struct {
-		name         string
-		setup        string // the SQL text that runs after groupFixture
-		sub          string
-		wantStatus   int
-		wantBody     string // empty when the answer is checked by want, wantVersions and the next fields
-		want         []Card // the full cards of the queue in order
-		wantVersions []int
-		nextFrom     string        // the column of the progress row of Ola for K1 that nextDueAt counts from; empty for no nextDueAt
-		nextWait     time.Duration // nextDueAt minus the time in nextFrom
+		name          string
+		setup         string // the SQL text that runs after groupFixture
+		sub           string
+		wantStatus    int
+		wantBody      string // empty when the answer is checked by the want fields and the next fields
+		want          []Card // the full cards of the queue in order
+		wantVersions  []int
+		wantDue       int
+		wantCorrect   []int // in the order of want
+		wantIncorrect []int
+		nextFrom      string        // the column of the progress row of Ola for K1 that nextDueAt counts from; empty for no nextDueAt
+		nextWait      time.Duration // nextDueAt minus the time in nextFrom
 	}{
-		{name: "a group without cards has an empty queue", sub: subOla, wantStatus: 200, wantBody: `{"cards":[]}`},
+		{name: "a group without cards has an empty queue", sub: subOla, wantStatus: 200, wantBody: `{"cards":[],"due":0}`},
 		{name: "new cards have the version 0, the oldest first", setup: cardFixture + "; " + addK4, sub: subOla, wantStatus: 200,
-			want: []Card{cardK4, cardK1}, wantVersions: []int{0, 0}},
+			want: []Card{cardK4, cardK1}, wantVersions: []int{0, 0}, wantDue: 2, wantCorrect: []int{0, 0}, wantIncorrect: []int{0, 0}},
 		{name: "a card that waits after a correct answer is not in the queue", sub: subOla, wantStatus: 200,
 			setup:    cardFixture + "; " + addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 1, 0, now() - interval '1 hour', NULL, 1)",
 			nextFrom: "last_correct_at", nextWait: 24 * time.Hour},
@@ -182,20 +227,20 @@ func TestGetStudyQueue(t *testing.T) {
 			nextFrom: "last_incorrect_at", nextWait: 10 * time.Minute},
 		{name: "a due card has its progress version", sub: subOla, wantStatus: 200,
 			setup: cardFixture + "; " + addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000001', 1, 0, now() - interval '2 days', NULL, 3)",
-			want:  []Card{cardK1}, wantVersions: []int{3}},
+			want:  []Card{cardK1}, wantVersions: []int{3}, wantDue: 1, wantCorrect: []int{1}, wantIncorrect: []int{0}},
 		{name: "the card with more misses for each correct answer comes first", sub: subOla, wantStatus: 200,
 			setup: cardFixture + "; " + addK4 + "; " + addProgress +
 				"('sub-ola', '00000000-0000-0000-0000-000000000001', 1, 3, now() - interval '2 days', now() - interval '1 hour', 4), " +
 				"('sub-ola', '00000000-0000-0000-0000-000000000004', 2, 0, now() - interval '4 days', NULL, 2)",
-			want: []Card{cardK1, cardK4}, wantVersions: []int{4, 2}},
+			want: []Card{cardK1, cardK4}, wantVersions: []int{4, 2}, wantDue: 2, wantCorrect: []int{1, 2}, wantIncorrect: []int{3, 0}},
 		{name: "the progress of another learner does not count", sub: subOla, wantStatus: 200,
 			setup: cardFixture + "; " + addProgress + "('sub-adam', '00000000-0000-0000-0000-000000000001', 1, 0, now() - interval '1 hour', NULL, 1)",
-			want:  []Card{cardK1}, wantVersions: []int{0}},
+			want:  []Card{cardK1}, wantVersions: []int{0}, wantDue: 1, wantCorrect: []int{0}, wantIncorrect: []int{0}},
 		{name: "a grammar card is in the queue with its grammar", setup: cardFixture + "; " + grammarFixture, sub: subOla, wantStatus: 200,
-			want: []Card{cardK1, cardG1()}, wantVersions: []int{0, 0}},
+			want: []Card{cardK1, cardG1()}, wantVersions: []int{0, 0}, wantDue: 2, wantCorrect: []int{0, 0}, wantIncorrect: []int{0, 0}},
 		{name: "an archived card that waits gives no nextDueAt", sub: subOla, wantStatus: 200,
 			setup: cardFixture + "; " + addProgress + "('sub-ola', '00000000-0000-0000-0000-000000000002', 1, 0, now() - interval '1 hour', NULL, 1)",
-			want:  []Card{cardK1}, wantVersions: []int{0}},
+			want:  []Card{cardK1}, wantVersions: []int{0}, wantDue: 1, wantCorrect: []int{0}, wantIncorrect: []int{0}},
 		{name: "a member of another group is refused", setup: cardFixture, sub: subEwa, wantStatus: 403, wantBody: notMember},
 		{name: "a user without a group is refused", setup: cardFixture, sub: subJan, wantStatus: 403, wantBody: notMember},
 	}
@@ -239,14 +284,22 @@ func TestGetStudyQueue(t *testing.T) {
 				t.Fatalf("body %s: %v", resp.Body, err)
 			}
 			var cards []Card
-			var versions []int
+			var versions, correct, incorrect []int
 			for _, sc := range queue.Cards {
 				cards = append(cards, sc.Card)
 				versions = append(versions, sc.ProgressVersion)
+				correct = append(correct, sc.Correct)
+				incorrect = append(incorrect, sc.Incorrect)
 			}
 			// reflect.DeepEqual treats a nil list and an empty list as different.
 			if !reflect.DeepEqual(cards, tt.want) || !slices.Equal(versions, tt.wantVersions) {
 				t.Errorf("cards = %+v, versions %v, want %+v, versions %v", cards, versions, tt.want, tt.wantVersions)
+			}
+			if queue.Due != tt.wantDue {
+				t.Errorf("due = %d, want %d", queue.Due, tt.wantDue)
+			}
+			if !slices.Equal(correct, tt.wantCorrect) || !slices.Equal(incorrect, tt.wantIncorrect) {
+				t.Errorf("correct = %v, incorrect %v, want %v, incorrect %v", correct, incorrect, tt.wantCorrect, tt.wantIncorrect)
 			}
 			var members map[string]any
 			if err := json.Unmarshal([]byte(resp.Body), &members); err != nil {

@@ -63,8 +63,9 @@ func studyQueue(rows []studyRow, now time.Time) StudyQueue {
 		wb := (b.progress.incorrect + 1) * (a.progress.correct + 1)
 		return cmp.Or(cmp.Compare(wb, wa), a.at.Compare(b.at), cmp.Compare(a.card.Id, b.card.Id))
 	})
+	q.Due = len(due)
 	for _, r := range due[:min(len(due), 10)] {
-		q.Cards = append(q.Cards, StudyCard{Card: r.card, ProgressVersion: r.progress.version})
+		q.Cards = append(q.Cards, StudyCard{Card: r.card, ProgressVersion: r.progress.version, Correct: r.progress.correct, Incorrect: r.progress.incorrect})
 	}
 	return q
 }
