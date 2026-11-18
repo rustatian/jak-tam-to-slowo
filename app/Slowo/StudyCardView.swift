@@ -40,6 +40,9 @@ struct StudyCardView: View {
     let edges: Int
     let next: () -> Void
 
+    /// The horizontal offset of the card during a swipe.
+    @State private var offset: CGFloat = 0
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -60,6 +63,15 @@ struct StudyCardView: View {
             content
         }
         .cardStyle(border: border)
+        .offset(x: offset)
+        .rotationEffect(.degrees(offset / 20))
+        .simultaneousGesture(swipe, isEnabled: review != nil)
+        .accessibilityElement(children: .combine)
+        .accessibilityActions {
+            if review != nil {
+                Button("Dalej", action: next)
+            }
+        }
         .background {
             ForEach(0..<edges, id: \.self) { edge in
                 RoundedRectangle(cornerRadius: 24)
@@ -71,6 +83,29 @@ struct StudyCardView: View {
             }
         }
         .padding(.bottom, CGFloat(edges) * 10)
+    }
+
+    /// A horizontal drag moves the card. A long or fast drag sends the card out of the screen and shows the next card.
+    private var swipe: some Gesture {
+        DragGesture(minimumDistance: 20)
+            .onChanged { drag in
+                // A vertical drag scrolls the screen.
+                if abs(drag.translation.width) > abs(drag.translation.height) {
+                    offset = drag.translation.width
+                }
+            }
+            .onEnded { drag in
+                let thrown = offset * drag.predictedEndTranslation.width > 0 && abs(drag.predictedEndTranslation.width) > 300
+                if abs(offset) > 100 || thrown {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        offset = offset > 0 ? 600 : -600
+                    } completion: {
+                        next()
+                    }
+                } else {
+                    withAnimation(.spring) { offset = 0 }
+                }
+            }
     }
 
     private var border: Color {
