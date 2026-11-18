@@ -10,6 +10,16 @@ enum Theme {
     static let accent = Color(light: 0x3D5AFE, dark: 0x8C9BFF)
     /// The text on the primary button.
     static let onAccent = Color(light: 0xFFFFFF, dark: 0x121830)
+    /// The border of a card and of a field.
+    static let line = Color(light: 0xDDE3EE, dark: 0x3A4666)
+    /// The colors of a grade and of the strip. They are for borders, fills and symbols. Text stays primary or secondary.
+    static let good = Color(light: 0x2DB36A, dark: 0x4CC98A)
+    static let almost = Color(light: 0xE8A317, dark: 0xF0B94A)
+    static let miss = Color(light: 0xD93A3A, dark: 0xFF7A7A)
+    /// A due card in the strip.
+    static let waiting = Color(light: 0xC3CCDD, dark: 0x46527A)
+    /// A due card in the strip with more misses than correct answers.
+    static let heavy = Color(light: 0xE07A7A, dark: 0xC26472)
 }
 
 private extension Color {
@@ -102,6 +112,18 @@ extension View {
     /// Fills the available space and puts the ground color behind the view, also under the safe areas.
     func groundBackground() -> some View {
         frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.ground)
+    }
+
+    /// A card: the surface color with a border and a darker lower edge.
+    func cardStyle(border: Color = Theme.line) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 24)
+        let edge: CGFloat = 6
+        return padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.surface, in: shape)
+            .overlay { shape.strokeBorder(border, lineWidth: 2) }
+            .background { shape.fill(border.mix(with: .black, by: 0.2)).offset(y: edge) }
+            .padding(.bottom, edge)
     }
 
     /// For a button that is the only row of its section: the primary style, with no row background and no row insets.
