@@ -1,8 +1,8 @@
 import Foundation
 
 /// The strip above the card of the Nauka tab: the card on screen, then the next due cards.
-struct QueueStrip: Equatable {
-    enum Segment: Equatable {
+struct QueueStrip {
+    enum Segment {
         case current, good, almost, miss, heavy, waiting
     }
 

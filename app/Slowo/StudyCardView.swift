@@ -65,6 +65,7 @@ struct StudyCardView: View {
         .cardStyle(border: border)
         .offset(x: offset)
         .rotationEffect(.degrees(offset / 20))
+        // Active during the reload inside `answer`: the next card then shows with the progress view until the call ends.
         .simultaneousGesture(swipe, isEnabled: review != nil)
         .accessibilityElement(children: .combine)
         .accessibilityActions {
