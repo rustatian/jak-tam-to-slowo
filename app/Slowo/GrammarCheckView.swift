@@ -11,7 +11,7 @@ struct GrammarCheckView: View {
     @State private var failed = false
 
     var body: some View {
-        Form {
+        ThemedForm {
             ForEach($check.cards) { $card in
                 Section {
                     LabeledContent("Twoja forma", value: card.grammar.used)

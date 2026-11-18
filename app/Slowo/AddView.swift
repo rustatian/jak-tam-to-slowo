@@ -61,6 +61,7 @@ struct AddView: View {
                 form
             }
         }
+        .groundBackground()
         .navigationTitle("Dodaj")
         // The destination sits outside the Form and outside the branch for no group, so a change of the branch does not close the check screen.
         .navigationDestination(item: checked) {

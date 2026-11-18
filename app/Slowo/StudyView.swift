@@ -37,6 +37,7 @@ struct StudyView: View {
                 content
             }
         }
+        .groundBackground()
         .navigationTitle("Nauka")
         .task(id: profile.me?.groupId) { await load() }
         .onChange(of: scenePhase) { _, phase in
@@ -52,7 +53,7 @@ struct StudyView: View {
         if let card = study.card, let direction = profile.me?.direction {
             form(card, direction)
         } else if study.queue != nil {
-            List {}
+            ThemedList {}
                 .overlay {
                     if let nextDueAt = study.nextDueAt {
                         ContentUnavailableView {
@@ -87,7 +88,7 @@ struct StudyView: View {
         let grammar = card.card.grammar
         // The answer of a grammar card is a Polish form in both directions.
         let header: LocalizedStringKey = grammar != nil || direction == .ruPl ? "Odpowiedź po polsku" : "Odpowiedź po rosyjsku"
-        return Form {
+        return ThemedForm {
             Section {
                 if let grammar {
                     GrammarPrompt(examplePl: card.card.examplePl, hint: grammar.hint)

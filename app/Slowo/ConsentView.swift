@@ -31,17 +31,13 @@ struct ConsentView: View {
                 }
                 .padding()
             }
+            .groundBackground()
             .navigationTitle("Zgoda na AI")
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 12) {
-                    Button {
-                        Task { await agree() }
-                    } label: {
-                        Text("Zgadzam się").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(working)
+                    Button("Zgadzam się") { Task { await agree() } }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(working)
                     Button("Nie teraz") { dismiss() }
                 }
                 .padding()

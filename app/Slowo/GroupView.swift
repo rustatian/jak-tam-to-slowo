@@ -13,6 +13,7 @@ struct GroupView: View {
     var body: some View {
         // The ZStack keeps one identity for all states, so a change of the state does not start the task again.
         ZStack { content }
+            .groundBackground()
             .navigationTitle(profile.me?.groupId == nil ? "Grupa" : membership.group?.name ?? "Grupa")
             .task(id: profile.me?.groupId) { await load() }
     }
@@ -21,7 +22,7 @@ struct GroupView: View {
         if profile.me?.groupId == nil {
             CreateGroupView(membership: membership)
         } else if let group = membership.group {
-            List {
+            ThemedList {
                 Section {
                     NavigationLink {
                         NameView(title: "Nazwa grupy", name: group.name) { try await membership.rename($0) }
@@ -113,7 +114,7 @@ private struct CreateGroupView: View {
     @State private var error: String?
 
     var body: some View {
-        Form {
+        ThemedForm {
             Section {
                 TextField("Nazwa grupy", text: $name)
                     .textInputAutocapitalization(.words)
@@ -130,6 +131,7 @@ private struct CreateGroupView: View {
             Section {
                 Button("Załóż grupę") { Task { await create() } }
                     .disabled(working || trimmedName(name) == nil)
+                    .primaryButtonRow()
             }
         }
     }
