@@ -524,6 +524,12 @@ type StudyCard struct {
 	// Card A card of the group. A grammar card has the object grammar. A translation card has none.
 	Card Card `json:"card"`
 
+	// Correct The number of correct answers of the learner for the card. 0 for a new card.
+	Correct int `json:"correct"`
+
+	// Incorrect The number of misses of the learner for the card. 0 for a new card.
+	Incorrect int `json:"incorrect"`
+
 	// ProgressVersion The version of the learner's progress for the card. 0 for a new card.
 	ProgressVersion int `json:"progressVersion"`
 }
@@ -531,6 +537,9 @@ type StudyCard struct {
 // StudyQueue defines model for StudyQueue.
 type StudyQueue struct {
 	Cards []StudyCard `json:"cards"`
+
+	// Due The number of due cards at the time of the request. It can be larger than the number of cards in the answer.
+	Due int `json:"due"`
 
 	// NextDueAt The earliest due time that is later than the time of the request. Absent when no card of the group is due later.
 	NextDueAt *time.Time `json:"nextDueAt,omitempty"`

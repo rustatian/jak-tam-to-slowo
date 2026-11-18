@@ -4,15 +4,15 @@ import UserNotifications
 
 @testable import Slowo
 
-let cebula0 = Components.Schemas.StudyCard(card: cebula, progressVersion: 0)
-let dom3 = Components.Schemas.StudyCard(card: dom, progressVersion: 3)
-let psy0 = Components.Schemas.StudyCard(card: psy, progressVersion: 0)
-let luk0 = Components.Schemas.StudyCard(card: luk, progressVersion: 0)
+let cebula0 = Components.Schemas.StudyCard(card: cebula, progressVersion: 0, correct: 0, incorrect: 0)
+let dom3 = Components.Schemas.StudyCard(card: dom, progressVersion: 3, correct: 2, incorrect: 1)
+let psy0 = Components.Schemas.StudyCard(card: psy, progressVersion: 0, correct: 0, incorrect: 0)
+let luk0 = Components.Schemas.StudyCard(card: luk, progressVersion: 0, correct: 0, incorrect: 0)
 let later = start.addingTimeInterval(600)
 let groupedPlRu = Components.Schemas.Me(id: "s1", email: "ola@example.com", displayName: "", direction: .plRu, reminder: false, groupId: "g1")
 
 func q(_ cards: [Components.Schemas.StudyCard], next: Date? = nil) -> Operations.GetStudyQueue.Output {
-    .ok(.init(body: .json(.init(cards: cards, nextDueAt: next))))
+    .ok(.init(body: .json(.init(cards: cards, due: cards.count, nextDueAt: next))))
 }
 
 func graded(_ grade: Components.Schemas.Grade, _ correction: String) -> Components.Schemas.Review {

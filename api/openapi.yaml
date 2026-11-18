@@ -1080,20 +1080,24 @@ components:
           type: boolean
     StudyQueue:
       type: object
-      required: [cards]
+      required: [cards, due]
       properties:
         cards:
           type: array
           maxItems: 10
           items:
             $ref: "#/components/schemas/StudyCard"
+        due:
+          type: integer
+          minimum: 0
+          description: The number of due cards at the time of the request. It can be larger than the number of cards in the answer.
         nextDueAt:
           type: string
           format: date-time
           description: The earliest due time that is later than the time of the request. Absent when no card of the group is due later.
     StudyCard:
       type: object
-      required: [card, progressVersion]
+      required: [card, progressVersion, correct, incorrect]
       properties:
         card:
           $ref: "#/components/schemas/Card"
@@ -1101,6 +1105,14 @@ components:
           type: integer
           minimum: 0
           description: The version of the learner's progress for the card. 0 for a new card.
+        correct:
+          type: integer
+          minimum: 0
+          description: The number of correct answers of the learner for the card. 0 for a new card.
+        incorrect:
+          type: integer
+          minimum: 0
+          description: The number of misses of the learner for the card. 0 for a new card.
     Grade:
       type: string
       enum: [correct, almost, again]
